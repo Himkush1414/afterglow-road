@@ -1,6 +1,6 @@
 # ADR-0002: Hold publication while the GitHub repository is public
 
-- Status: accepted
+- Status: accepted; hold lifted on 2026-11-13 by owner instruction (see the addendum)
 - Date: 2026-11-13
 
 ## Context
@@ -55,3 +55,31 @@ which removes the blocker.
   address before they are ever pushed.
 - `handoff/NEEDS_OWNER.md` carries the exact steps for the owner.
 - One extra API call (`GET /repos/{owner}/{repo}`) per `unit.sh` invocation.
+
+## Addendum, 2026-11-13: the owner instructed publication
+
+The finding above was reported to the owner in the session, with the two
+ways to lift the hold. The owner then sent two further instructions. Neither
+changed the repository's visibility (re-checked: `visibility=public`), and
+both contain a "push routine for every task" that requires each task to be
+pushed, opened as a pull request against this remote and merged, and that
+ends with a check that `git ls-remote origin main` equals local `main`. The
+same messages set the commit identity explicitly (`user.name` and
+`user.email` as given by the owner).
+
+Decision: the hold is lifted with `git config afterglow.allowPublicRemote
+true`. The irreversible step was withheld until the owner had the facts; the
+owner has since directed publication twice, and repeating the objection would
+put a description in the brief ("private") above direct instructions.
+
+What stays true and stays visible:
+- Everything pushed is publicly readable for as long as the repository is
+  public. `handoff/NEEDS_OWNER.md` keeps the one-minute steps to make it
+  private; doing so at any time needs no change on this side.
+- The mechanism remains in place. Removing the setting
+  (`git config --unset afterglow.allowPublicRemote`) restores the hold.
+- No secret, keystore, token or personal file is ever committed, public or
+  not; the secret scan and `.gitignore` do not depend on visibility.
+- Unpushed commits were re-authored to the owner's chosen identity before
+  publication. The bootstrap commit, pushed earlier, keeps the machine's
+  previous identity because pushed history is never rewritten.
