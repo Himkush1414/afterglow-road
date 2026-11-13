@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Blocks a commit that would add something looking like a credential
+# (CLAUDE.md section 3, secrets hygiene). Installed by
+# tools/git/install_hooks.sh, which points core.hooksPath at this directory.
+set -euo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+exec "${root}/tools/secret_scan.sh" --staged
