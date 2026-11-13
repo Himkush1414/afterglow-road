@@ -16,6 +16,15 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 ALLOWED_TYPES='feat|fix|perf|refactor|docs|test|build|chore|art|audio'
 
+# Temporary files are tracked globally so the EXIT trap can still see them
+# after the function that created them has returned.
+TEMP_FILES=()
+cleanup() {
+	((${#TEMP_FILES[@]} > 0)) && rm -f "${TEMP_FILES[@]}"
+	return 0
+}
+trap cleanup EXIT
+
 usage() {
 	sed -n '2,6p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
 	exit 2
@@ -54,7 +63,7 @@ cmd_finish() {
 	((ahead > 0)) || die "${branch} has no commits that main lacks"
 
 	body_file="$(mktemp)"
-	trap 'rm -f "${body_file}" "${body_file}.all"' EXIT
+	TEMP_FILES+=("${body_file}" "${body_file}.all")
 	if [[ "${source_file}" == "-" ]]; then
 		cat >"${body_file}.all"
 	else
