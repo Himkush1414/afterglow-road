@@ -43,6 +43,33 @@ drop_rejected_env_token() {
 }
 drop_rejected_env_token
 
+# "owner/name" of the origin remote on github.com.
+remote_slug() {
+	git remote get-url origin | sed -E 's#^https://github\.com/##; s#\.git$##'
+}
+
+# Print the reason publishing is currently not allowed, or nothing when it is.
+# ADR-0002: the source of a paid game is not pushed to a public repository
+# unless the owner has said so (git config afterglow.allowPublicRemote true).
+publish_blocker() {
+	local visibility
+	if ! gh_online; then
+		printf 'gh has no accepted GitHub credential\n'
+		return 0
+	fi
+	if [[ "$(git config --get --bool afterglow.allowPublicRemote || true)" == "true" ]]; then
+		return 0
+	fi
+	if ! visibility="$(gh api "repos/$(remote_slug)" --jq '.visibility' 2>/dev/null)"; then
+		printf 'cannot read the remote repository\n'
+		return 0
+	fi
+	if [[ "${visibility}" != "private" ]]; then
+		printf 'remote repository is %s, expected private (ADR-0002)\n' "${visibility}"
+	fi
+	return 0
+}
+
 # Number of queued (not yet replayed) entries.
 queue_length() {
 	local count=0 entry
