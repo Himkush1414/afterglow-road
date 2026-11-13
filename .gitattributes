@@ -1,0 +1,48 @@
+# Normalise line endings: text is LF in the repository and in every checkout,
+# so files hash the same on Windows, WSL and CI.
+* text=auto eol=lf
+
+# Scripts must stay LF even when checked out on Windows.
+*.sh text eol=lf
+*.py text eol=lf
+*.gd text eol=lf
+*.gdshader text eol=lf
+*.gdshaderinc text eol=lf
+*.tscn text eol=lf
+*.tres text eol=lf
+*.godot text eol=lf
+*.cfg text eol=lf
+*.import text eol=lf
+*.json text eol=lf
+*.csv text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.svg text eol=lf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary assets: never diff, never convert.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.exr binary
+*.hdr binary
+*.ktx2 binary
+*.ogg binary
+*.wav binary
+*.mp3 binary
+*.glb binary
+*.blend binary
+*.ttf binary
+*.otf binary
+*.woff2 binary
+*.zip binary
+*.res binary
+*.scn binary
+*.mesh binary
+*.bin binary
+
+# Keep GitHub's language statistics about the game, not vendored add-ons.
+game/addons/** linguist-vendored
