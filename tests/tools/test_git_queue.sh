@@ -117,6 +117,32 @@ check "local main equals remote main" equals "$(git rev-parse main)" "$(remote_m
 check "merge commit has the task tip as second parent" equals \
 	"$(git log -1 --format=%s main^2)" "docs: docs/epsilon step 2"
 
+printf 'commits by another author are not published\n'
+unit start docs/eta >/dev/null
+printf 'eta\n' >notes-eta.txt
+git add -A
+git -c user.name="someone else" -c user.email="else@example.invalid" commit --quiet -m "docs: eta by the wrong author"
+finish_output="$(
+	unit finish - <<'BODY' || true
+docs: eta
+
+## What
+Fixture authored by the wrong identity.
+
+## CHECKED
+- nothing, this is a fixture
+BODY
+)"
+check "finish reports the authorship problem" grep -q "are not authored by queue test" <<<"${finish_output}"
+check "nothing new was merged" equals "$(merges_on_remote)" "5"
+check "the branch was not pushed" bash -c "! git -C '${FAKE_GH_REMOTE}' show-ref --verify --quiet refs/heads/docs/eta"
+check "the task stays queued" equals "$(queue_count)" "1"
+git commit --quiet --amend --no-edit --reset-author
+git branch --quiet --force docs/eta main
+tools/git/replay_queue.sh >/dev/null 2>&1
+check "published once the author is corrected" equals "$(merges_on_remote)" "6"
+check "local main equals remote main" equals "$(git rev-parse main)" "$(remote_main)"
+
 printf 'milestone tag entries\n'
 printf 'M0 bootstrap\n' >".git/pr-queue/$(printf '%04d' 99)-TAG-v0.0.0.tag"
 tools/git/replay_queue.sh >/dev/null 2>&1
