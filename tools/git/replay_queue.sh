@@ -90,6 +90,7 @@ for entry in "${QUEUE_DIR}"/[0-9][0-9][0-9][0-9]-*; do
 		note "[${number}] ${branch} is already in origin/main; skipping"
 	else
 		note "[${number}] ${branch}: ${title}"
+		((dry_run)) || require_owner_authorship origin/main "${branch}"
 		run git push --quiet -u origin "${branch}"
 		if ((dry_run)) || [[ -z "$(gh pr list --head "${branch}" --state open --json number --jq '.[].number')" ]]; then
 			run gh_retry gh pr create --base main --head "${branch}" --title "${title}" --body-file "${body_file}"
@@ -109,5 +110,13 @@ done
 # branch is merged; until then it stays on the newest queued tip.
 if [[ "$(queue_length)" == "0" ]]; then
 	run git pull --quiet --ff-only origin main
+	if ((!dry_run)); then
+		# Final verification of the push routine: the remote must hold exactly
+		# what local main holds.
+		remote_main="$(git ls-remote origin refs/heads/main | cut -f1)"
+		[[ "${remote_main}" == "$(git rev-parse main)" ]] ||
+			die "verification failed: remote main ${remote_main:0:7} differs from local main $(git rev-parse --short main)"
+		note "verified: remote main equals local main ($(git rev-parse --short main)); newest task commit by $(git log -1 --no-merges --format='%an <%ae>' main)"
+	fi
 fi
 note "replayed ${processed} entr$( ((processed == 1)) && printf 'y' || printf 'ies'); $(queue_length) left in the queue"

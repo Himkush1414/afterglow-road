@@ -73,6 +73,22 @@ publish_blocker() {
 	return 0
 }
 
+# The identity new commits get, in the same form as `git log --format='%an <%ae>'`.
+commit_identity() {
+	printf '%s <%s>\n' "$(git config user.name || true)" "$(git config user.email || true)"
+}
+
+# Fail unless every commit the branch adds on top of the given base is
+# authored by the configured identity. Pull requests only count for the owner
+# when the commits carry the owner's identity.
+require_owner_authorship() {
+	local base="$1" branch="$2" expected wrong
+	expected="$(commit_identity)"
+	wrong="$(git log --no-merges --format='%h %an <%ae>' "${base}..${branch}" | grep -vF -- " ${expected}" || true)"
+	[[ -z "${wrong}" ]] || die "commits on ${branch} are not authored by ${expected}:
+${wrong}"
+}
+
 # Number of queued (not yet replayed) entries.
 queue_length() {
 	local count=0 entry
