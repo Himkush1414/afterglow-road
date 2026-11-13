@@ -31,9 +31,7 @@ usage() {
 }
 
 mode() {
-	if [[ "$(queue_length)" != "0" ]]; then
-		printf 'offline\n'
-	elif gh_online; then
+	if [[ "$(queue_length)" == "0" && -z "$(publish_blocker)" ]]; then
 		printf 'online\n'
 	else
 		printf 'offline\n'
@@ -99,7 +97,10 @@ cmd_finish() {
 }
 
 cmd_status() {
+	local blocker
+	blocker="$(publish_blocker)"
 	printf 'mode: %s\n' "$(mode)"
+	printf 'publish blocker: %s\n' "${blocker:-none}"
 	printf 'queued tasks: %s\n' "$(queue_length)"
 	printf 'commits on main: %s\n' "$(git rev-list --count main)"
 	printf 'branch: %s\n' "$(git branch --show-current)"

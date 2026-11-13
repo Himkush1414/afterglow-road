@@ -34,7 +34,8 @@ run() {
 [[ -z "$(git status --porcelain)" ]] || die "working tree is not clean"
 [[ "$(git branch --show-current)" == "main" ]] || die "run this from main"
 if ((!dry_run)); then
-	gh_online || die "GitHub still rejects the token; see handoff/NEEDS_OWNER.md"
+	blocker="$(publish_blocker)"
+	[[ -z "${blocker}" ]] || die "not publishing: ${blocker}; see handoff/NEEDS_OWNER.md"
 	"$(dirname "${BASH_SOURCE[0]}")/setup_auth.sh"
 fi
 
