@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+# Shared helpers for the tools/git scripts. Source it, do not execute it.
+# Nothing in here ever prints, stores or passes the GitHub token; it is only
+# ever read from the environment by gh itself.
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+GIT_DIR_ABS="$(git rev-parse --absolute-git-dir)"
+QUEUE_DIR="${GIT_DIR_ABS}/pr-queue"
+GH_STAMP="${GIT_DIR_ABS}/afterglow-gh-last-call"
+GH_MIN_GAP_SECONDS=5
+export REPO_ROOT QUEUE_DIR
+
+die() {
+	printf 'error: %s\n' "$*" >&2
+	exit 1
+}
+
+note() {
+	printf '%s\n' "$*" >&2
+}
+
+# True when gh can authenticate against github.com with the current token.
+gh_online() {
+	gh api user --silent >/dev/null 2>&1
+}
+
+# Number of queued (not yet replayed) entries.
+queue_length() {
+	local count=0 entry
+	if [[ -d "${QUEUE_DIR}" ]]; then
+		for entry in "${QUEUE_DIR}"/[0-9][0-9][0-9][0-9]-*; do
+			[[ -e "${entry}" ]] && count=$((count + 1))
+		done
+	fi
+	printf '%d\n' "${count}"
+}
+
+# Next free four-digit queue number, counting replayed entries too.
+queue_next_number() {
+	local highest=0 entry base number
+	for entry in "${QUEUE_DIR}"/[0-9][0-9][0-9][0-9]-* "${QUEUE_DIR}"/done/[0-9][0-9][0-9][0-9]-*; do
+		[[ -e "${entry}" ]] || continue
+		base="$(basename "${entry}")"
+		number=$((10#${base%%-*}))
+		((number > highest)) && highest="${number}"
+	done
+	printf '%04d\n' "$((highest + 1))"
+}
+
+# Sleep until at least GH_MIN_GAP_SECONDS have passed since the previous
+# pull-request API call, then record this call.
+gh_gap() {
+	local now last wait_for
+	now="$(date +%s)"
+	if [[ -f "${GH_STAMP}" ]]; then
+		last="$(<"${GH_STAMP}")"
+		wait_for=$((GH_MIN_GAP_SECONDS - (now - last)))
+		((wait_for > 0)) && sleep "${wait_for}"
+	fi
+	date +%s >"${GH_STAMP}"
+}
+
+# Run a gh command with the brief's back-off rules:
+#   rate limiting (403/429/secondary limit): wait 60 s, doubling to 15 min;
+#   transient states (mergeability still being computed, 5xx): retry after 10 s.
+# Anything else fails at once. Never loops tightly.
+gh_retry() {
+	local backoff=60 transient_left=6 output status
+	while true; do
+		gh_gap
+		status=0
+		output="$("$@" 2>&1)" || status=$?
+		if ((status == 0)); then
+			[[ -n "${output}" ]] && printf '%s\n' "${output}"
+			return 0
+		fi
+		if grep -qiE 'rate limit|HTTP 403|HTTP 429|submitted too quickly' <<<"${output}"; then
+			note "rate limited; waiting ${backoff}s before retrying: $*"
+			sleep "${backoff}"
+			backoff=$((backoff * 2))
+			((backoff > 900)) && backoff=900
+			continue
+		fi
+		if ((transient_left > 0)) && grep -qiE 'not mergeable|mergeab|HTTP 50[0-9]|Base branch was modified|timeout|connection reset' <<<"${output}"; then
+			transient_left=$((transient_left - 1))
+			note "transient failure; retrying in 10s (${transient_left} tries left): $*"
+			sleep 10
+			continue
+		fi
+		printf '%s\n' "${output}" >&2
+		return "${status}"
+	done
+}
