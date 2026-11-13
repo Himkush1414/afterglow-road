@@ -1,16 +1,14 @@
 #!/usr/bin/env bash
 # Verify the GitHub token, wire git to use it through gh, and set the commit
 # identity to the account's no-reply address (CLAUDE.md section 3).
-# The token is only ever read from GH_TOKEN by gh; it is never printed.
+# gh reads the token from its own store or from GH_TOKEN; it is never printed.
 set -euo pipefail
 
 # shellcheck source=tools/git/lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-[[ -n "${GH_TOKEN:-}" ]] || die "GH_TOKEN is not set; see handoff/NEEDS_OWNER.md"
-
 if ! identity="$(gh api user --jq '(.id|tostring) + " " + .login' 2>/dev/null)"; then
-	die "GitHub rejected the token (gh api user failed); see handoff/NEEDS_OWNER.md. Git identity left unchanged."
+	die "gh cannot authenticate (no accepted token in gh's store or GH_TOKEN); see handoff/NEEDS_OWNER.md. Git identity left unchanged."
 fi
 account_id="${identity%% *}"
 login="${identity#* }"

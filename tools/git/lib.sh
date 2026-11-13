@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Shared helpers for the tools/git scripts. Source it, do not execute it.
-# Nothing in here ever prints, stores or passes the GitHub token; it is only
-# ever read from the environment by gh itself.
+# Nothing in here ever prints, stores or passes the GitHub token. gh reads it
+# either from its own credential store (`gh auth login --with-token`, run by
+# the owner's instruction on 2026-11-13) or from the GH_TOKEN variable.
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 GIT_DIR_ABS="$(git rev-parse --absolute-git-dir)"
@@ -23,6 +24,24 @@ note() {
 gh_online() {
 	gh api user --silent >/dev/null 2>&1
 }
+
+# gh lets GH_TOKEN override its stored login. A stale or mistyped variable
+# (the session's original one is rejected with HTTP 401) would therefore hide
+# a perfectly good stored login. When the variable is rejected but the stored
+# login works, drop the variable for this process and its children, so that
+# gh and the git credential helper both use the stored login.
+drop_rejected_env_token() {
+	[[ -n "${GH_TOKEN:-}" ]] || return 0
+	gh_online && return 0
+	if (
+		unset GH_TOKEN
+		gh_online
+	); then
+		unset GH_TOKEN
+	fi
+	return 0
+}
+drop_rejected_env_token
 
 # Number of queued (not yet replayed) entries.
 queue_length() {
