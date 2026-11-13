@@ -1,0 +1,53 @@
+# --- Secrets: never commit any of these (CLAUDE.md section 3) ---
+*.keystore
+*.jks
+.env
+.env.*
+*.p12
+*.pem
+*.mobileprovision
+google-services*
+GoogleService-Info.plist
+export_credentials.cfg
+**/export_credentials.cfg
+
+# --- Build output and bulk generated data (shipped via GitHub Releases) ---
+/builds/
+/game/android/
+/game/.godot/
+/assets_cache/
+*.apk
+*.aab
+*.ipa
+*.pck
+*.tpz
+
+# --- Godot editor leftovers ---
+*.tmp
+*~
+.import/
+mono_crash.*.json
+
+# --- Python / generators ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Blender backups ---
+*.blend1
+*.blend2
+
+# --- OS and editors ---
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
+
+# --- Local tool state ---
+/.claude/settings.local.json
