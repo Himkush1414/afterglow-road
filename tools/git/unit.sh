@@ -50,7 +50,7 @@ cmd_start() {
 	git show-ref --verify --quiet "refs/heads/${branch}" && die "branch ${branch} already exists"
 	git switch --quiet main
 	if [[ "$(mode)" == "online" ]]; then
-		git pull --quiet --ff-only
+		git pull --quiet --ff-only origin main
 	fi
 	git switch --quiet -c "${branch}"
 	note "started ${branch}"
