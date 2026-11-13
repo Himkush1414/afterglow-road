@@ -8,7 +8,10 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 GIT_DIR_ABS="$(git rev-parse --absolute-git-dir)"
 QUEUE_DIR="${GIT_DIR_ABS}/pr-queue"
 GH_STAMP="${GIT_DIR_ABS}/afterglow-gh-last-call"
-GH_MIN_GAP_SECONDS=5
+# The brief demands at least 5 s between pull-request API calls. The override
+# exists only so tests/tools/test_git_queue.sh, which talks to a stand-in gh
+# and never to GitHub, does not sleep for minutes.
+GH_MIN_GAP_SECONDS="${AFTERGLOW_TEST_GH_GAP_SECONDS:-5}"
 export REPO_ROOT QUEUE_DIR
 
 die() {
