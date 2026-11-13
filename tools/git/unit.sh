@@ -5,16 +5,21 @@
 #   tools/git/unit.sh finish <file|->     # line 1: PR title, line 2: blank, rest: PR body
 #   tools/git/unit.sh status
 #
-# Online (token accepted, queue empty) this is the flow from CLAUDE.md
-# section 3: push, open the PR, merge it with a merge commit, pull main.
-# Offline it queues the PR as described in ADR-0001 and fast-forwards local
-# main, so work never stops and no task loses its own pull request.
+# finish always records the task in the queue of ADR-0001 and fast-forwards
+# local main. If nothing blocks publication it then drains the queue: each
+# queued branch is pushed, gets its pull request and is merged with a merge
+# commit (CLAUDE.md section 3). With an empty queue that is exactly the normal
+# online flow; after an offline period it catches up a batch at a time.
 set -euo pipefail
 
 # shellcheck source=tools/git/lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 ALLOWED_TYPES='feat|fix|perf|refactor|docs|test|build|chore|art|audio'
+
+# Most queue entries one finish call publishes (about 15 s each because of the
+# mandatory gaps between pull-request API calls).
+DRAIN_BATCH=15
 
 # Temporary files are tracked globally so the EXIT trap can still see them
 # after the function that created them has returned.
@@ -52,7 +57,7 @@ cmd_start() {
 }
 
 cmd_finish() {
-	local source_file="${1:-}" branch title body_file ahead number entry
+	local source_file="${1:-}" branch title body_file ahead number entry blocker
 	[[ -n "${source_file}" ]] || usage
 	branch="$(git branch --show-current)"
 	[[ -n "${branch}" && "${branch}" != "main" ]] || die "finish must run on a task branch"
@@ -74,26 +79,22 @@ cmd_finish() {
 	[[ -s "${body_file}" ]] || die "PR body is empty"
 	grep -q 'CHECKED' "${body_file}" || die "PR body must contain a CHECKED section"
 
-	if [[ "$(mode)" == "online" ]]; then
-		git push --quiet -u origin "${branch}"
-		gh_retry gh pr create --base main --head "${branch}" --title "${title}" --body-file "${body_file}"
-		gh_retry gh pr merge "${branch}" --merge --delete-branch
-		git switch --quiet main
-		git pull --quiet --ff-only
-		git show-ref --verify --quiet "refs/heads/${branch}" && git branch --quiet -d "${branch}"
-		note "merged ${branch} (${ahead} commit(s))"
-	else
-		mkdir -p "${QUEUE_DIR}"
-		number="$(queue_next_number)"
-		entry="${QUEUE_DIR}/${number}-${branch//\//__}.md"
-		{
-			printf '%s\n\n' "${title}"
-			cat "${body_file}"
-		} >"${entry}"
-		git switch --quiet main
-		git merge --quiet --ff-only "${branch}"
-		note "queued ${branch} as ${number} (${ahead} commit(s)); $(queue_length) task(s) waiting for GitHub"
+	mkdir -p "${QUEUE_DIR}"
+	number="$(queue_next_number)"
+	entry="${QUEUE_DIR}/${number}-${branch//\//__}.md"
+	{
+		printf '%s\n\n' "${title}"
+		cat "${body_file}"
+	} >"${entry}"
+	git switch --quiet main
+	git merge --quiet --ff-only "${branch}"
+
+	blocker="$(publish_blocker)"
+	if [[ -n "${blocker}" ]]; then
+		note "queued ${branch} as ${number} (${ahead} commit(s)); $(queue_length) task(s) waiting: ${blocker}"
+		return 0
 	fi
+	"$(dirname "${BASH_SOURCE[0]}")/replay_queue.sh" --limit "${DRAIN_BATCH}"
 }
 
 cmd_status() {
