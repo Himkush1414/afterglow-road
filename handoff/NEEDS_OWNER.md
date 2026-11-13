@@ -7,36 +7,28 @@ says where to run them. An item is closed only when the fix was verified.
 
 ### 2. The GitHub repository is public; the brief says private
 
-**Status:** OPEN since 2026-11-13. Work continues locally; publication is on
-hold (see `docs/decisions/ADR-0002-hold-pushes-while-remote-is-public.md`).
+**Status:** OPEN since 2026-11-13, not blocking. Publication was held at
+first and is now running, because your push routine (sent twice on
+2026-11-13) tells every task to be pushed and merged on this remote. See the
+addendum in `docs/decisions/ADR-0002-hold-pushes-while-remote-is-public.md`.
 
-**What was checked (2026-11-13):**
-- `gh api repos/Himkush1414/afterglow-road` → `private=false`,
-  `visibility=public`.
-- An anonymous request to the same endpoint → HTTP 200 (private repositories
-  answer 404).
-- The only thing pushed so far is the bootstrap commit (`CLAUDE.md`). Its
-  author field shows the git identity this machine had at that moment, a
-  personal e-mail address, and it is publicly readable right now. All later
-  commits use the account's GitHub no-reply address.
+**What this means:** every file and every commit in this repository,
+including the design documents and the commit author e-mail address, can be
+read by anyone for as long as the repository is public.
 
-**Fix (1 minute, in a browser):**
+**What was checked (2026-11-13):** `gh api repos/Himkush1414/afterglow-road`
+→ `visibility=public`; an anonymous request → HTTP 200.
+
+**If that is not what you want (1 minute, in a browser):**
 1. Open <https://github.com/Himkush1414/afterglow-road/settings>.
-2. Scroll to *Danger Zone* → *Change repository visibility* → *Change to
-   private* and confirm.
-3. Nothing else. The next finished task notices the change and publishes the
-   queued branches in order, one pull request each. Typing `RESUME` or
-   `STATUS` works too.
+2. *Danger Zone* → *Change repository visibility* → *Change to private*.
+3. Nothing else; work continues unchanged.
 
-**If a public repository is what you want:** type `public is intended` in
-Claude Code. The hold is then lifted with
-`git config afterglow.allowPublicRemote true` and everything is published.
-
-**About the exposed e-mail address:** making the repository private hides it.
-The pushed commit is not rewritten, because the brief forbids force-pushes.
-If you want the address removed from history as well, type
-`rewrite bootstrap commit`; that is a one-time force-push of `main` done
-before anything else is published.
+**The first commit** (`CLAUDE.md` only) was pushed before you set the commit
+identity and shows the previous git identity of this machine, another
+personal e-mail address. Pushed history is never rewritten here. If you want
+that address gone from history, type `rewrite bootstrap commit` (a one-time
+force-push of `main`).
 
 ### 3. Revoke the two tokens that are no longer used
 
