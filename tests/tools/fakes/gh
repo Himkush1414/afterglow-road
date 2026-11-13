@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# Stand-in for the GitHub CLI, used only by tests/tools/test_git_queue.sh.
+# It implements the handful of calls the tools/git scripts make and performs
+# pull-request merges as real merge commits in a local bare repository.
+#
+# Environment:
+#   FAKE_GH_STATE      directory for bookkeeping (open PRs, counters, call log)
+#   FAKE_GH_REMOTE     path of the bare repository that plays github.com
+#   FAKE_GH_VISIBILITY "private" or "public"
+#   FAKE_GH_AUTH       "ok" or "bad"
+set -euo pipefail
+
+state="${FAKE_GH_STATE:?}"
+remote="${FAKE_GH_REMOTE:?}"
+mkdir -p "${state}/open"
+printf '%s\n' "$*" >>"${state}/calls.log"
+
+fail() {
+	printf '%s\n' "$*" >&2
+	exit 1
+}
+
+arg_after() {
+	local wanted="$1"
+	shift
+	while (($# > 0)); do
+		if [[ "$1" == "${wanted}" ]]; then
+			printf '%s\n' "${2:-}"
+			return 0
+		fi
+		shift
+	done
+	return 1
+}
+
+case "${1:-} ${2:-}" in
+	"api user")
+		[[ "${FAKE_GH_AUTH:-ok}" == "ok" ]] || fail "gh: Bad credentials (HTTP 401)"
+		if [[ " $* " == *" --jq "* ]]; then
+			printf '1 tester\n'
+		fi
+		;;
+	"api repos/"*)
+		[[ "${FAKE_GH_AUTH:-ok}" == "ok" ]] || fail "gh: Bad credentials (HTTP 401)"
+		printf '%s\n' "${FAKE_GH_VISIBILITY:-private}"
+		;;
+	"auth setup-git") ;;
+	"pr list")
+		head="$(arg_after --head "$@")"
+		[[ -f "${state}/open/${head//\//__}" ]] && cat "${state}/open/${head//\//__}"
+		exit 0
+		;;
+	"pr create")
+		head="$(arg_after --head "$@")"
+		title="$(arg_after --title "$@")"
+		body_file="$(arg_after --body-file "$@")"
+		[[ -s "${body_file}" ]] || fail "pull request create failed: empty body"
+		git -C "${remote}" show-ref --verify --quiet "refs/heads/${head}" ||
+			fail "pull request create failed: head ref ${head} does not exist on the remote"
+		number=$(($(cat "${state}/counter" 2>/dev/null || printf '0') + 1))
+		printf '%d\n' "${number}" >"${state}/counter"
+		printf '%d\n' "${number}" >"${state}/open/${head//\//__}"
+		printf '%s\n' "${title}" >"${state}/title-${number}"
+		printf 'https://example.invalid/pull/%d\n' "${number}"
+		;;
+	"pr merge")
+		head="$3"
+		[[ " $* " == *" --merge "* ]] || fail "only merge commits are allowed in this project"
+		marker="${state}/open/${head//\//__}"
+		[[ -f "${marker}" ]] || fail "no open pull request for ${head}"
+		number="$(cat "${marker}")"
+		scratch="$(mktemp -d)"
+		git clone --quiet "${remote}" "${scratch}/clone"
+		git -C "${scratch}/clone" -c user.name=merger -c user.email=merger@example.invalid \
+			merge --quiet --no-ff "origin/${head}" -m "Merge pull request #${number} from ${head}"
+		git -C "${scratch}/clone" push --quiet origin main
+		if [[ " $* " == *" --delete-branch "* ]]; then
+			git -C "${scratch}/clone" push --quiet origin --delete "${head}"
+			if git show-ref --verify --quiet "refs/heads/${head}"; then
+				git branch --quiet -D "${head}"
+			fi
+		fi
+		rm -rf "${scratch}" "${marker}"
+		printf '%d\n' "${number}" >>"${state}/merged"
+		;;
+	*)
+		fail "fake gh: unsupported call: $*"
+		;;
+esac
