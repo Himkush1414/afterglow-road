@@ -40,12 +40,16 @@ if ((!dry_run)); then
 fi
 
 # Remote main must either not exist yet (first publication: push the bootstrap
-# commit, the one commit the brief allows directly on main) or be an ancestor
-# of local main.
+# commit, the one commit the brief allows directly on main) or be consistent
+# with local main. After a partial replay origin/main ends in a merge commit
+# that local main does not contain, so ancestry is the wrong test. What must
+# hold is that origin/main has exactly the content of the newest commit both
+# histories share: nothing else has been pushed there.
 if git ls-remote --exit-code --heads origin main >/dev/null 2>&1; then
-	run git fetch --quiet origin main
-	git merge-base --is-ancestor origin/main main ||
-		die "origin/main is not an ancestor of local main; refusing to continue"
+	git fetch --quiet origin main
+	shared="$(git merge-base origin/main main)" || die "origin/main and local main share no history"
+	[[ "$(git rev-parse "origin/main^{tree}")" == "$(git rev-parse "${shared}^{tree}")" ]] ||
+		die "origin/main contains changes that local main does not; refusing to continue"
 else
 	root_commit="$(git rev-list --max-parents=0 main | tail -n 1)"
 	note "remote has no main yet; publishing bootstrap commit ${root_commit:0:7}"
@@ -101,5 +105,9 @@ for entry in "${QUEUE_DIR}"/[0-9][0-9][0-9][0-9]-*; do
 	processed=$((processed + 1))
 done
 
-run git pull --quiet --ff-only origin main
+# Local main can only fast-forward onto the merge commits once every queued
+# branch is merged; until then it stays on the newest queued tip.
+if [[ "$(queue_length)" == "0" ]]; then
+	run git pull --quiet --ff-only origin main
+fi
 note "replayed ${processed} entr$( ((processed == 1)) && printf 'y' || printf 'ies'); $(queue_length) left in the queue"
