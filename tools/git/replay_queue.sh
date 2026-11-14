@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Publish the offline queue (ADR-0001): push every queued branch in order,
+# Publish the offline queue: push every queued branch in order,
 # open its pull request and merge it with a merge commit.
 #
 #   tools/git/replay_queue.sh            # replay everything
@@ -35,12 +35,12 @@ run() {
 [[ "$(git branch --show-current)" == "main" ]] || die "run this from main"
 if ((!dry_run)); then
 	blocker="$(publish_blocker)"
-	[[ -z "${blocker}" ]] || die "not publishing: ${blocker}; see handoff/NEEDS_OWNER.md"
+	[[ -z "${blocker}" ]] || die "not publishing: ${blocker}"
 	"$(dirname "${BASH_SOURCE[0]}")/setup_auth.sh"
 fi
 
 # Remote main must either not exist yet (first publication: push the bootstrap
-# commit, the one commit the brief allows directly on main) or be consistent
+# commit, the one commit allowed directly on main) or be consistent
 # with local main. After a partial replay origin/main ends in a merge commit
 # that local main does not contain, so ancestry is the wrong test. What must
 # hold is that origin/main has exactly the content of the newest commit both

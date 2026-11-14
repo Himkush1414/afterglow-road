@@ -5,10 +5,10 @@
 #   tools/git/unit.sh finish <file|->     # line 1: PR title, line 2: blank, rest: PR body
 #   tools/git/unit.sh status
 #
-# finish always records the task in the queue of ADR-0001 and fast-forwards
+# finish always records the task in the local offline queue and fast-forwards
 # local main. If nothing blocks publication it then drains the queue: each
 # queued branch is pushed, gets its pull request and is merged with a merge
-# commit (CLAUDE.md section 3). With an empty queue that is exactly the normal
+# commit (see CLAUDE.md, Git flow). With an empty queue that is exactly the normal
 # online flow; after an offline period it catches up a batch at a time.
 set -euo pipefail
 
