@@ -55,7 +55,7 @@ asset/LFS limits · tag `v0.0.0`.
 
 ## Resume commands
 ```bash
-cd ~/projects/afterglow-road
+cd /mnt/d/afterglow-road
 git status && git log --oneline -5
 tools/git/unit.sh status          # expect: mode online, blocker none
 tests/tools/test_git_queue.sh && tests/tools/test_secret_scan.sh

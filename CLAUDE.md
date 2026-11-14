@@ -27,10 +27,14 @@ and `git log -5`, then continue exactly where the handoff says.
    `docs/KNOWN_GAPS.md`.
 4. **Quality.** Ship quality only: no placeholder art called final, no stubs
    in main, no dead code. Statically typed GDScript everywhere.
-5. **Stay inside `~/projects/afterglow-road`.** Tools go under `~/tools` or
-   `~/.local` only. Never touch other repos, other folders or the Windows C:
-   drive. Anything needing sudo goes to NEEDS_OWNER; use a user-level
-   alternative meanwhile.
+5. **Stay inside `/mnt/d/afterglow-road`** (Windows `D:\afterglow-road`). It
+   is the only copy of the project; never create another project folder.
+   Only the project lives there: tools, caches and SDKs go under `~/tools`
+   or `~/.local` in the WSL home (also on drive D). Never touch other repos,
+   other folders or the Windows C: drive. Anything needing sudo goes to
+   NEEDS_OWNER; use a user-level alternative meanwhile. Drive D does not
+   store Unix file modes (`core.filemode=false`), so add every new script
+   with `git add --chmod=+x`.
 6. **Keep working until the owner types STOP.** When a milestone ends, start
    the next one immediately. Never wait for approval.
 7. **Originality.** Everything is made from scratch in this repo. Outside
