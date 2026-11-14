@@ -21,7 +21,7 @@ Everything is created from scratch in this repository: code, procedural generato
 1.7 Owner commands: STOP, RESUME, STATUS (reply in at most 8 lines), BUILD ANDROID (build a debug APK, attach it to a GitHub Release, give 3 install steps), BUILD PC (Windows zip, attach to a Release).
 
 ## 2. ENVIRONMENT
-- Windows PC + WSL2 Ubuntu. The WSL distro lives on drive D; drive C is nearly full. Work only in ~/projects/afterglow-road. Put tools under ~/tools. Check `df -h ~` before big downloads; if free space is under 20 GB, record it in NEEDS_OWNER.
+- Windows PC + WSL2 Ubuntu. The WSL distro lives on drive D; drive C is nearly full. Work only in /mnt/d/afterglow-road (Windows D:\afterglow-road), the only copy of the project. Only the project goes there; put tools, caches and SDKs under ~/tools or ~/.local in the WSL home (also on drive D, never C). Check `df -h ~` before big downloads; if free space is under 20 GB, record it in NEEDS_OWNER.
 - The owner has NO Mac. The owner reviews through downloadable builds (Windows zip, Android APK) attached to GitHub Releases, so the Windows side needs no editor setup. Write docs/OWNER_SETUP.md anyway: how to install the pinned Godot on Windows, clone to D:\ (not \\wsl$), pull, run, and install the APK on a phone.
 - Use the Godot Linux binary with --headless for import, tests and exports. WSL may lack a usable GPU. For visual self-checks, try xvfb-run with Mesa software Vulkan (lavapipe) or the Compatibility renderer with software OpenGL. Build tools/screenshot/ (load a scene, advance N frames, save a PNG) and READ the PNGs to judge your own work. If rendering is impossible here, say so and use owner screenshots instead.
 - Python 3 venv at ~/tools/venv (numpy, scipy, pillow, gdtoolkit) for generators. Blender (Linux build, headless: blender -b -P script.py) for procedural modelling and glTF export if installable; otherwise generate meshes in GDScript.
@@ -57,7 +57,7 @@ No long documentation work at STOP.
 On RESUME (or the first message of any new session): read CLAUDE.md, handoff/HANDOFF.md, handoff/NEEDS_OWNER.md, run git status and git log -5, then continue exactly where the handoff says.
 
 ## 5. FIRST ACTIONS (in this order)
-1. Confirm cwd is ~/projects/afterglow-road. Run git init -b main if needed, set the remote, verify gh auth quietly.
+1. Confirm cwd is /mnt/d/afterglow-road. Run git init -b main if needed, set the remote, verify gh auth quietly.
 2. Write CLAUDE.md at the repo root: a compact version of sections 1, 3, 4, 17 and 18, so any future session obeys them even after context loss. Make the bootstrap commit to main and push.
 3. Create the layout: docs/ (GDD/, story/, decisions/, art/, audio/, STORE/, ASSET_LICENSES.md, KNOWN_GAPS.md, TOOLCHAIN.md, OWNER_SETUP.md), handoff/ (HANDOFF.md, STATUS.md, NEEDS_OWNER.md), game/ (the Godot project: src/, scenes/, content/, shaders/, ui/, addons/), tools/ (check.sh, build scripts, worldgen/, assetgen/, audiogen/, screenshot/), tests/, builds/ (gitignored), .github/workflows/.
 4. Install and pin the toolchain, documented with exact versions in docs/TOOLCHAIN.md: latest STABLE Godot 4.x (4.7.x at the time of writing; confirm at godotengine.org), matching export templates, JDK 17, Android SDK command-line tools with the platform and build-tools versions the pinned Godot's build template requires, GUT (Godot unit tests), gdtoolkit. Do not use the distro-packaged Android SDK.
