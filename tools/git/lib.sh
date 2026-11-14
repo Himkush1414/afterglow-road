@@ -2,13 +2,13 @@
 # Shared helpers for the tools/git scripts. Source it, do not execute it.
 # Nothing in here ever prints, stores or passes the GitHub token. gh reads it
 # either from its own credential store (`gh auth login --with-token`, run by
-# the owner's instruction on 2026-11-13) or from the GH_TOKEN variable.
+# the maintainer) or from the GH_TOKEN variable.
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 GIT_DIR_ABS="$(git rev-parse --absolute-git-dir)"
 QUEUE_DIR="${GIT_DIR_ABS}/pr-queue"
 GH_STAMP="${GIT_DIR_ABS}/afterglow-gh-last-call"
-# The brief demands at least 5 s between pull-request API calls. The override
+# At least 5 s must pass between pull-request API calls. The override
 # exists only so tests/tools/test_git_queue.sh, which talks to a stand-in gh
 # and never to GitHub, does not sleep for minutes.
 GH_MIN_GAP_SECONDS="${AFTERGLOW_TEST_GH_GAP_SECONDS:-5}"
@@ -52,8 +52,8 @@ remote_slug() {
 }
 
 # Print the reason publishing is currently not allowed, or nothing when it is.
-# ADR-0002: the source of a paid game is not pushed to a public repository
-# unless the owner has said so (git config afterglow.allowPublicRemote true).
+# Publishing to a remote that is not private needs an explicit opt-in
+# (git config afterglow.allowPublicRemote true).
 publish_blocker() {
 	local visibility
 	if ! gh_online; then
@@ -68,7 +68,7 @@ publish_blocker() {
 		return 0
 	fi
 	if [[ "${visibility}" != "private" ]]; then
-		printf 'remote repository is %s, expected private (ADR-0002)\n' "${visibility}"
+		printf 'remote repository is %s, expected private (set afterglow.allowPublicRemote to publish anyway)\n' "${visibility}"
 	fi
 	return 0
 }
@@ -79,8 +79,8 @@ commit_identity() {
 }
 
 # Fail unless every commit the branch adds on top of the given base is
-# authored by the configured identity. Pull requests only count for the owner
-# when the commits carry the owner's identity.
+# authored by the configured identity, so every published commit carries
+# the maintainer's identity.
 require_owner_authorship() {
 	local base="$1" branch="$2" expected wrong
 	expected="$(commit_identity)"
@@ -125,7 +125,7 @@ gh_gap() {
 	date +%s >"${GH_STAMP}"
 }
 
-# Run a gh command with the brief's back-off rules:
+# Run a gh command with these back-off rules:
 #   rate limiting (403/429/secondary limit): wait 60 s, doubling to 15 min;
 #   transient states (mergeability still being computed, 5xx): retry after 10 s.
 # Anything else fails at once. Never loops tightly.
