@@ -1,4 +1,4 @@
-# --- Secrets: never commit any of these (CLAUDE.md section 3) ---
+# --- Secrets: never commit any of these ---
 *.keystore
 *.jks
 .env
@@ -49,5 +49,10 @@ desktop.ini
 .vscode/
 *.swp
 
-# --- Local tool state ---
-/.claude/settings.local.json
+# --- Local-only working files: never commit any of these ---
+/_local/
+/docs/
+/handoff/
+CLAUDE.local.md
+/.claude/
+/.mcp.json
