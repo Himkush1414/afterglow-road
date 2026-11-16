@@ -34,6 +34,7 @@ window/handheld/orientation=4
 3d/physics_engine="Jolt Physics"
 common/physics_ticks_per_second=60
 common/physics_interpolation=true
+jolt_physics_3d/simulation/penetration_slop=0.005
 
 [rendering]
 

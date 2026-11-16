@@ -273,11 +273,9 @@ func _shots() -> void:
 				elif ground:
 					holes += 1
 		var magenta := holes
-		img.save_png(
-			dir.path_join(
-				"terrain_%s_%s.png" % [name, RenderingServer.get_current_rendering_method()]
-			)
-		)
+		if dir != "":
+			var method := RenderingServer.get_current_rendering_method()
+			img.save_png(dir.path_join("terrain_%s_%s.png" % [name, method]))
 		print("%s: %d instances, clear-colour pixels under terrain: %d" % [name, n, magenta])
 	var total := 0
 	var worst_n := 0
