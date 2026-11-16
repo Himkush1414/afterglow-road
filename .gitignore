@@ -11,7 +11,7 @@ GoogleService-Info.plist
 export_credentials.cfg
 **/export_credentials.cfg
 
-# --- Build output and bulk generated data (shipped via GitHub Releases) ---
+# --- Build output and bulk generated data (never committed) ---
 /builds/
 /game/android/
 /game/.godot/
@@ -51,6 +51,7 @@ desktop.ini
 
 # --- Local-only working files: never commit any of these ---
 /_local/
+/game/content/
 /docs/
 /handoff/
 CLAUDE.local.md
