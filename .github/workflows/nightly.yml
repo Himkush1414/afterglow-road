@@ -1,0 +1,63 @@
+# Nightly project check on main: headless import, unit tests on the sample
+# content, linters and the tool tests. Also runs on demand. Never runs on
+# pull requests (the checks run locally before every merge).
+name: nightly
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  GODOT_VERSION: 4.7.2-stable
+  GODOT_SHA512: 9aa00f7a605200940bce3027a567b782f49bd8e940dd06ae9e987bd65aee1b1467edd56ed84fcdcbdd44354bf613bdbb4e5d2913e925850368e150c59ed54c65
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Install the pinned Python tools
+        run: |
+          python -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --disable-pip-version-check --require-hashes -r tools/requirements.txt
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+
+      - name: Cache the engine
+        id: engine
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/godot
+          key: godot-${{ env.GODOT_VERSION }}-${{ env.GODOT_SHA512 }}
+
+      - name: Download and verify the engine
+        if: steps.engine.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/godot"
+          cd "$RUNNER_TEMP/godot"
+          zip="Godot_v${GODOT_VERSION}_linux.x86_64.zip"
+          curl -fsSL --retry 3 -o "$zip" "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}/${zip}"
+          echo "${GODOT_SHA512}  ${zip}" | sha512sum -c -
+          unzip -q "$zip" && rm "$zip"
+
+      - name: Run the project checks
+        run: |
+          export GODOT_BIN="$RUNNER_TEMP/godot/Godot_v${GODOT_VERSION}_linux.x86_64"
+          git config --global user.name "ci"
+          git config --global user.email "ci@example.invalid"
+          tools/check.sh
