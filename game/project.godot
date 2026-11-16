@@ -8,8 +8,16 @@ config_version=5
 config/name="afterglow-road"
 config/features=PackedStringArray("4.7")
 run/main_scene="res://scenes/boot.tscn"
+config/version="0.1.0"
+
+[autoload]
+
+Log="*res://src/core/log.gd"
+App="*res://src/core/app.gd"
 
 [debug]
+
+file_logging/enable_file_logging=true
 
 gdscript/warnings/untyped_declaration=2
 
