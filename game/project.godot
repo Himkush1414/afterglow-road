@@ -9,6 +9,10 @@ config/name="afterglow-road"
 config/features=PackedStringArray("4.7")
 run/main_scene="res://scenes/boot.tscn"
 
+[debug]
+
+gdscript/warnings/untyped_declaration=2
+
 [display]
 
 window/size/viewport_width=1920
