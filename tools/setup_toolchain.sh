@@ -34,14 +34,14 @@ BLENDER_VERSION=5.2.4
 BLENDER_URL="https://download.blender.org/release/Blender5.2/blender-${BLENDER_VERSION}-linux-x64.tar.xz"
 BLENDER_SHA256=2fd14c50987426897ba60237ee996edf2b4151f4b1a72a460ca20be58c1d2d86
 
-say() { printf 'toolchain: %s\n' "$*"; }
+say() { printf 'toolchain: %s\n' "$*" >&2; }
 die() { printf 'toolchain: ERROR: %s\n' "$*" >&2; exit 1; }
 
 fetch() { # url file algo sum
 	local url="$1" out="${cache}/$2" algo="$3" sum="$4"
 	if [[ ! -f "${out}" ]] || ! printf '%s  %s\n' "${sum}" "${out}" | "${algo}sum" -c --status; then
 		say "downloading $2"
-		curl -fL --retry 3 --max-time 3600 -o "${out}.part" "${url}"
+		curl -fsSL --retry 3 --max-time 3600 -o "${out}.part" "${url}"
 		mv "${out}.part" "${out}"
 	fi
 	printf '%s  %s\n' "${sum}" "${out}" | "${algo}sum" -c --status || { rm -f "${out}"; die "checksum mismatch for $2"; }
