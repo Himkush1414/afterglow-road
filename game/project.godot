@@ -1,0 +1,31 @@
+; Engine configuration file.
+; Settings are edited by hand and kept in version control.
+
+config_version=5
+
+[application]
+
+config/name="afterglow-road"
+config/features=PackedStringArray("4.7")
+run/main_scene="res://scenes/boot.tscn"
+
+[display]
+
+window/size/viewport_width=1920
+window/size/viewport_height=1080
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+window/handheld/orientation=4
+
+[physics]
+
+3d/physics_engine="Jolt Physics"
+common/physics_ticks_per_second=60
+common/physics_interpolation=true
+
+[rendering]
+
+renderer/rendering_method="forward_plus"
+renderer/rendering_method.mobile="mobile"
+rendering_device/fallback_to_opengl3=false
+textures/vram_compression/import_etc2_astc=true
