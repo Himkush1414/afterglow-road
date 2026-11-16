@@ -59,6 +59,7 @@ run "private terms scan" tools/private_terms_scan.sh
 if ((!quick)); then
 	if [[ -n "${GODOT_BIN:-}" || -x "${root}/_local/tools/godot/4.7.2-stable/Godot_v4.7.2-stable_linux.x86_64" ]]; then
 		run "godot import" tools/godot.sh --headless --import
+		run "boot to title" bash -c 'out="$(tools/godot.sh --headless --quit-after 60 2>&1)"; echo "${out}"; grep -q "app: scene title" <<<"${out}" && ! grep -q -E "SCRIPT ERROR|^ERROR" <<<"${out}"'
 		if [[ -f game/src/tests/run_tests.gd ]]; then
 			run "unit tests" tools/godot.sh --headless -s res://src/tests/run_tests.gd
 		else

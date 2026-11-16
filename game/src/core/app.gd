@@ -1,0 +1,47 @@
+extends Node
+## Autoload "App". Owns the boot sequence and scene changes.
+
+signal scene_shown(path: String)
+
+const TITLE_SCENE := "res://ui/title.tscn"
+
+var current_path := ""
+
+
+func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
+	Log.info("app", "start %s, %s build" % [version(), "dev" if is_dev() else "release"])
+
+
+## True in the editor and in exports with the "dev" feature tag; debug
+## tools exist only then.
+func is_dev() -> bool:
+	return OS.has_feature("dev") or OS.has_feature("editor")
+
+
+func version() -> String:
+	return str(ProjectSettings.get_setting("application/config/version", "0.0.0"))
+
+
+## Replaces the current scene. Used by every screen change.
+func show_scene(path: String) -> Error:
+	if not ResourceLoader.exists(path):
+		Log.error("app", "no scene at %s" % path)
+		return ERR_FILE_NOT_FOUND
+	var packed := load(path) as PackedScene
+	if packed == null:
+		Log.error("app", "cannot load scene %s" % path)
+		return ERR_CANT_OPEN
+	var err := get_tree().change_scene_to_packed(packed)
+	if err != OK:
+		Log.error("app", "cannot show scene %s (%s)" % [path, error_string(err)])
+		return err
+	current_path = path
+	await get_tree().scene_changed
+	Log.info("app", "scene %s" % path.get_file().get_basename())
+	scene_shown.emit(path)
+	return OK
+
+
+func show_title() -> void:
+	await show_scene(TITLE_SCENE)
