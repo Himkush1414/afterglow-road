@@ -1,0 +1,118 @@
+{
+	"items": [
+		{
+			"id": "twig",
+			"name_key": "item.twig",
+			"category": "resource",
+			"stack": 10,
+			"weight_kg": 0.1,
+			"material": "wood",
+			"hold": "1h",
+			"tool": null,
+			"fuel": {
+				"gmin": 5,
+				"class": "K"
+			},
+			"effect": null,
+			"place": null,
+			"world_scene": "",
+			"icon": "",
+			"held_pose": "small_1h"
+		},
+		{
+			"id": "rock",
+			"name_key": "item.rock",
+			"category": "resource",
+			"stack": 5,
+			"weight_kg": 1.0,
+			"material": "stone",
+			"hold": "1h",
+			"tool": null,
+			"fuel": null,
+			"effect": null,
+			"place": null,
+			"world_scene": "",
+			"icon": "",
+			"held_pose": "small_1h"
+		},
+		{
+			"id": "fiber",
+			"name_key": "item.fiber",
+			"category": "resource",
+			"stack": 20,
+			"weight_kg": 0.05,
+			"material": "plant",
+			"hold": "1h",
+			"tool": null,
+			"fuel": {
+				"gmin": 2,
+				"class": "T"
+			},
+			"effect": null,
+			"place": null,
+			"world_scene": "",
+			"icon": "",
+			"held_pose": "small_1h"
+		},
+		{
+			"id": "string",
+			"name_key": "item.string",
+			"category": "build_material",
+			"stack": 10,
+			"weight_kg": 0.05,
+			"material": "plant",
+			"hold": "1h",
+			"tool": null,
+			"fuel": null,
+			"effect": null,
+			"place": null,
+			"world_scene": "",
+			"icon": "",
+			"held_pose": "small_1h"
+		},
+		{
+			"id": "hatchet",
+			"name_key": "item.hatchet",
+			"category": "tool",
+			"stack": 1,
+			"weight_kg": 1.0,
+			"material": "stone",
+			"hold": "1h",
+			"tool": {
+				"class": "chop",
+				"tier": 1,
+				"power": 5,
+				"durability": 50,
+				"swing_s": 1.0,
+				"stamina": 3
+			},
+			"fuel": null,
+			"effect": null,
+			"place": null,
+			"world_scene": "",
+			"icon": "",
+			"held_pose": "tool_1h"
+		},
+		{
+			"id": "berry",
+			"name_key": "item.berry",
+			"category": "food",
+			"stack": 10,
+			"weight_kg": 0.1,
+			"material": "plant",
+			"hold": "1h",
+			"tool": null,
+			"fuel": null,
+			"effect": {
+				"kind": "food",
+				"hunger": 2,
+				"spoil_gh": 24,
+				"use_time_s": 1.0
+			},
+			"place": null,
+			"world_scene": "",
+			"icon": "",
+			"held_pose": "small_1h"
+		}
+	]
+}

@@ -15,6 +15,8 @@ var schema_path := SCHEMA_PATH
 var errors: PackedStringArray = []
 var _files := {}
 var _collections := {}
+## collection -> id -> typed def
+var _defs := {}
 
 
 func _ready() -> void:
@@ -38,6 +40,7 @@ func load_root(path: String) -> bool:
 	errors.clear()
 	_files.clear()
 	_collections.clear()
+	_defs.clear()
 	var schema: Variant = _read_json(schema_path)
 	if not schema is Dictionary:
 		return false
@@ -74,6 +77,7 @@ func load_root(path: String) -> bool:
 		return false
 	for file: String in _files:
 		_deep_read_only(_files[file])
+	_build_defs()
 	Log.info("content", "loaded %d files from %s" % [_files.size(), path])
 	return true
 
@@ -88,9 +92,26 @@ func entry(collection: String, id: String) -> Dictionary:
 	return (_collections.get(collection, {}) as Dictionary).get(id, {})
 
 
+func item(id: StringName) -> ItemDef:
+	return (_defs.get("items", {}) as Dictionary).get(id)
+
+
+func material(id: StringName) -> MaterialDef:
+	return (_defs.get("materials", {}) as Dictionary).get(id)
+
+
 ## Ids of `collection` in file order.
 func ids(collection: String) -> Array:
 	return (_collections.get(collection, {}) as Dictionary).keys()
+
+
+func _build_defs() -> void:
+	var builders := {"items": ItemDef.from_dict, "materials": MaterialDef.from_dict}
+	for name: String in builders:
+		var by_id := {}
+		for id: String in ids(name):
+			by_id[StringName(id)] = (builders[name] as Callable).call(entry(name, id))
+		_defs[name] = by_id
 
 
 func _index(file: String, value: Variant, collections: Dictionary) -> void:

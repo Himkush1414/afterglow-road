@@ -111,3 +111,18 @@ func _clear() -> void:
 		if DirAccess.dir_exists_absolute(DIR + sub):
 			for f in DirAccess.get_files_at(DIR + sub):
 				DirAccess.remove_absolute(DIR + sub + "/" + f)
+
+
+func test_typed_defs_match_the_data() -> void:
+	check(ContentDB.load_root(ContentDB.SAMPLE_ROOT), "%s" % [ContentDB.errors])
+	for id: String in ContentDB.ids("items"):
+		var d := ContentDB.entry("items", id)
+		var it := ContentDB.item(StringName(id))
+		check(it != null, "def for %s" % id)
+		check_eq(it.stack, int(d.stack), id)
+		check_eq(it.material, StringName(d.material), id)
+		check_eq(it.tool != null, d.tool != null, "%s tool" % id)
+		if it.tool != null:
+			check_eq(it.tool.tool_class, StringName(d.tool["class"]), id)
+		check(ContentDB.material(it.material) != null, "%s material resolves" % id)
+	check(ContentDB.item(&"no_such_item") == null, "unknown id")

@@ -1,0 +1,52 @@
+{
+	"materials": [
+		{
+			"id": "wood",
+			"density_kg_m3": 600,
+			"flammable": true,
+			"ignite_s": 10,
+			"burn_gmin_per_kg": 20,
+			"chop": 1,
+			"mine": 0.5,
+			"cut": 0.5,
+			"hammer": 0.5,
+			"dig": 0,
+			"impact_break_j": 0,
+			"footstep": "wood",
+			"impact_sound": "knock",
+			"hit_particles": "chips"
+		},
+		{
+			"id": "stone",
+			"density_kg_m3": 2500,
+			"flammable": false,
+			"ignite_s": 0,
+			"burn_gmin_per_kg": 0,
+			"chop": 0.2,
+			"mine": 1,
+			"cut": 0.2,
+			"hammer": 0.5,
+			"dig": 0,
+			"impact_break_j": 0,
+			"footstep": "stone",
+			"impact_sound": "clack",
+			"hit_particles": "dust"
+		},
+		{
+			"id": "plant",
+			"density_kg_m3": 200,
+			"flammable": true,
+			"ignite_s": 3,
+			"burn_gmin_per_kg": 10,
+			"chop": 1,
+			"mine": 0,
+			"cut": 1,
+			"hammer": 0.2,
+			"dig": 0,
+			"impact_break_j": 0,
+			"footstep": "grass",
+			"impact_sound": "rustle",
+			"hit_particles": "leaves"
+		}
+	]
+}

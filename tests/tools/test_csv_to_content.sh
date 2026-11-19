@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# Test for tools/csv_to_content.py with made-up tables.
+set -euo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+tool="${here}/../../tools/csv_to_content.py"
+sandbox="$(mktemp -d)"
+trap 'rm -rf "${sandbox}"' EXIT
+failures=0
+pass() { printf '  ok    %s\n' "$1"; }
+fail() { printf '  FAIL  %s\n' "$1"; failures=$((failures + 1)); }
+
+csv="${sandbox}/csv"
+out="${sandbox}/out"
+mkdir -p "${csv}" "${out}"
+cat >"${csv}/materials.csv" <<'T'
+id,density_kg_m3,flammable,ignite_s,burn_gmin_per_kg,chop,mine,cut,hammer,dig,impact_break_j,footstep,impact_sound,hit_particles
+mat_a,500,1,5,10,1.0,0.5,0.5,0.5,0,0,step_a,sound_a,fx_a
+T
+cat >"${csv}/items.csv" <<'T'
+id,name,category,stack,weight_kg,material,hold,tool_class,tier,power,durability,fuel_gmin,fuel_class,notes
+thing_a,A,resource,10,0.5,mat_a,1h,,,,,7,K,
+tool_a,B,tool,1,1.5,mat_a,2h,chop,1,8,90,0,,
+kit_a,C,placeable,1,2,mat_a,2h,,,,,0,,
+T
+cat >"${csv}/item_effects.csv" <<'T'
+id,kind,hunger,slot
+thing_a,food,3,
+fluid_a,drink,1,
+T
+printf 'class,swing_s,hit_s,stamina,notes\nchop,1.5,0.5,6,\n' >"${csv}/tool_classes.csv"
+printf 'id,cost\npiece_a,kit_a:1\npiece_b,thing_a:2|tool_a:1\n' >"${csv}/build_pieces.csv"
+echo '{"kept": true}' >"${out}/other.json"
+
+if python3 "${tool}" "${csv}" "${out}" >/dev/null; then pass "converts"; else fail "converts"; fi
+check() { # description python-expression-over-items-and-mats
+	if python3 -c "
+import json,sys
+items=json.load(open('${out}/items.json'))
+mats=json.load(open('${out}/materials.json'))
+by={i['id']:i for i in items['items']}
+sys.exit(0 if ($2) else 1)"; then pass "$1"; else fail "$1"; fi
+}
+check "material flag is a bool" "mats['materials'][0]['flammable'] is True"
+check "fuel object" "by['thing_a']['fuel']=={'gmin':7,'class':'K'}"
+check "no fuel without class" "by['tool_a']['fuel'] is None"
+check "tool swing from the class table" "by['tool_a']['tool']=={'class':'chop','tier':1,'power':8,'durability':90,'swing_s':1.5,'stamina':6}"
+check "sparse effect" "by['thing_a']['effect']=={'kind':'food','hunger':3}"
+check "fluid kept apart" "items['fluids']==[{'id':'fluid_a','effect':{'kind':'drink','hunger':1}}]"
+check "placeable deploys its piece" "by['kit_a']['place']=={'piece':'piece_a'}"
+check "poses" "[by[k]['held_pose'] for k in ('thing_a','tool_a','kit_a')]==['small_1h','tool_2h','carry_front']"
+check "name key" "by['tool_a']['name_key']=='item.tool_a'"
+if grep -q kept "${out}/other.json"; then pass "other files left alone"; else fail "other files left alone"; fi
+
+sed -i 's/thing_a,A,resource,10,0.5/thing_a,A,resource,ten,0.5/' "${csv}/items.csv"
+rm "${out}/items.json"
+if msg="$(python3 "${tool}" "${csv}" "${out}" 2>&1)"; then fail "bad number refused"; else pass "bad number refused"; fi
+if grep -q "items.csv:2 stack: 'ten' is not a number" <<<"${msg}"; then pass "problem names row and column"; else fail "problem names row and column: ${msg}"; fi
+if [[ ! -e "${out}/items.json" ]]; then pass "nothing written on error"; else fail "nothing written on error"; fi
+
+if ((failures)); then echo "FAILED: ${failures}"; exit 1; fi
+echo "all passed"
