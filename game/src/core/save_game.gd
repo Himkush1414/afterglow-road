@@ -55,8 +55,16 @@ func _process(delta: float) -> void:
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_PAUSED or what == NOTIFICATION_WM_CLOSE_REQUEST:
-		if active_slot != "":
-			save_slot(active_slot)
+		flush()
+
+
+## Saves the active slot now (if any) and lets a running write finish; used
+## before the app may be stopped.
+func flush() -> void:
+	if active_slot != "":
+		save_slot(active_slot)
+	else:
+		_wait_for_writer()
 
 
 ## Counts real time and starts a background save of `active_slot` when the

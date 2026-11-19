@@ -47,6 +47,12 @@ func show_title() -> void:
 	await show_scene(TITLE_SCENE)
 
 
+## Quits cleanly: the active slot is saved and running writes finish first.
+func quit() -> void:
+	SaveGame.flush()
+	get_tree().quit()
+
+
 ## Shows the game scene and starts a new game in `slot` (or continues it).
 func start_game(slot: String, is_new: bool) -> Error:
 	var err: Error = await show_scene(Game.SCENE)
