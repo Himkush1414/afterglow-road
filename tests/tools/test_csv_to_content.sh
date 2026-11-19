@@ -45,6 +45,7 @@ id,name,tool_class,min_tier,hp,drops,biomes,world_count,respawn_gdays,cue
 node_a,A,mine,1,60,thing_a:4|tool_a:1@0.4|fluid_a:1@wet,b_one;b_two,300,0,note
 node_b,B,hand,0,1,thing_a:2,b_one,runtime,2,
 T
+printf 'table,rolls,entries\nloot_a,2,thing_a:30:1-2|nothing:70:0-0\n' >"${csv}/loot.csv"
 cat >"${csv}/recipes.csv" <<'T'
 id,output,qty,station,tool_class,inputs,time,time_unit,unlock,notes
 rec_a,thing_a,2,piece_b,chop/cut,tool_a:1,6,swings,item:kit_a+station:piece_b,also gives thing_a:3
@@ -62,6 +63,7 @@ pieces=json.load(open('${out}/build_pieces.json'))
 rec={r['id']:r for r in json.load(open('${out}/recipes.json'))['recipes']}
 tr={r['id']:r for r in json.load(open('${out}/trees.json'))['trees']}
 nd={r['id']:r for r in json.load(open('${out}/nodes.json'))['nodes']}
+lt=json.load(open('${out}/loot.json'))['tables']
 by={i['id']:i for i in items['items']}
 sys.exit(0 if ($2) else 1)"; then pass "$1"; else fail "$1"; fi
 }
@@ -80,6 +82,7 @@ check "tree drops and harvest" "(tr['tree_a']['extra_drops'],tr['tree_a']['harve
 check "hand harvest with regrow" "tr['tree_b']['harvest_no_fell']=={'item':'thing_a','qty':3,'tool':'hand','cooldown_gday':1.5}"
 check "node drops with chance and condition" "nd['node_a']['drops']==[{'item':'thing_a','qty':4,'chance':1,'condition':''},{'item':'tool_a','qty':1,'chance':0.4,'condition':''},{'item':'fluid_a','qty':1,'chance':1,'condition':'wet'}]"
 check "node lists and runtime count" "(nd['node_a']['biomes'],nd['node_a']['world_count'],nd['node_b']['world_count'],'cue' in nd['node_a'],nd['node_a']['name_key'])==(['b_one','b_two'],300,None,False,'node.node_a')"
+check "loot table" "lt==[{'id':'loot_a','rolls':2,'entries':[{'item':'thing_a','weight':30,'min':1,'max':2},{'item':'nothing','weight':70,'min':0,'max':0}]}]"
 check "placeable deploys its piece" "by['kit_a']['place']=={'piece':'piece_a'}"
 check "poses" "[by[k]['held_pose'] for k in ('thing_a','tool_a','kit_a')]==['small_1h','tool_2h','carry_front']"
 check "name key" "by['tool_a']['name_key']=='item.tool_a'"
@@ -90,6 +93,11 @@ rm "${out}/items.json"
 if msg="$(python3 "${tool}" "${csv}" "${out}" 2>&1)"; then fail "effect of unknown id refused"; else pass "effect of unknown id refused"; fi
 if grep -q "'thing_b' is neither an item nor a unit" <<<"${msg}"; then pass "names the unknown id"; else fail "names the unknown id: ${msg}"; fi
 sed -i '$d' "${csv}/item_effects.csv"
+cp "${csv}/loot.csv" "${sandbox}/loot.keep"
+printf 'table,rolls,entries\nloot_a,1,thing_a:5:3-1\n' >"${csv}/loot.csv"
+if msg="$(python3 "${tool}" "${csv}" "${out}" 2>&1)"; then fail "min above max refused"; else pass "min above max refused"; fi
+if grep -q "has min above max" <<<"${msg}"; then pass "names the bad span"; else fail "names the bad span: ${msg}"; fi
+cp "${sandbox}/loot.keep" "${csv}/loot.csv"
 sed -i 's/thing_a,A,resource,10,0.5/thing_a,A,resource,ten,0.5/' "${csv}/items.csv"
 if msg="$(python3 "${tool}" "${csv}" "${out}" 2>&1)"; then fail "bad number refused"; else pass "bad number refused"; fi
 if grep -q "items.csv:2 stack: 'ten' is not a number" <<<"${msg}"; then pass "problem names row and column"; else fail "problem names row and column: ${msg}"; fi
