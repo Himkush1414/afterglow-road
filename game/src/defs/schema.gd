@@ -5,7 +5,8 @@ extends RefCounted
 ## "min", "max" (numbers); "enum" (strings); "nullable"; "optional" (object
 ## fields; all others are required); "of" + "min_len" (list); "fields"
 ## (object; unknown keys are errors); "values" (map, string keys);
-## "ref": <collection> (an id that must exist there; collected in `refs`).
+## "ref": <collection> or [collections] (an id that must exist in one of them;
+## collected in `refs`).
 ## JSON numbers arrive as floats, so "int" accepts any integral number.
 
 const ID_PATTERN := "^[a-z][a-z0-9_]*$"
@@ -15,7 +16,7 @@ const SPEC_KEYS: Array[String] = [
 
 ## "path: reason" for every problem found.
 var errors: PackedStringArray = []
-## [collection, id, path] for every "ref" value seen.
+## [collection or [collections], id, path] for every "ref" value seen.
 var refs: Array[Array] = []
 var _types: Dictionary
 var _id_re := RegEx.create_from_string(ID_PATTERN)

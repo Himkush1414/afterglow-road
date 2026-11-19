@@ -3,8 +3,8 @@
 
 Usage: csv_to_content.py <csv dir> <output data dir>
 
-Writes materials.json and items.json (effect rows of ids that are not
-items become `fluids` there); other files in the output folder are
+Writes materials.json, items.json (with the pseudo-items of units.csv as
+`units`) and build_pieces.json; other files in the output folder are
 left alone. Columns map 1:1 to JSON fields except where a rule below says
 otherwise. Exit code 1 with one line per problem when a table is invalid.
 """
@@ -85,7 +85,7 @@ def placed_pieces(pieces):
     return out
 
 
-def items(rows, effects, tool_classes, pieces, problems):
+def items(rows, effects, tool_classes, pieces, units, problems):
     by_effect = {e["id"]: e for e in effects}
     swing = {t["class"]: t for t in tool_classes}
     placed = placed_pieces(pieces)
@@ -134,13 +134,72 @@ def items(rows, effects, tool_classes, pieces, problems):
                 "held_pose": held_pose(r, tool),
             }
         )
-    # Effect rows of ids that are not items are fluids (04 §1.2 pseudo-items).
-    fluids = []
-    for fid in sorted(set(by_effect) - {r["id"] for r in rows}):
-        e = by_effect[fid]
-        effect = {k: v if k in EFFECT_TEXT else number(v, f"item_effects.csv {fid} {k}", problems) for k, v in e.items() if k != "id" and v != ""}
-        fluids.append({"id": fid, "effect": effect})
-    return {"items": out, "fluids": fluids}
+    # Pseudo-items (fluids and units, 04 §1.2) are listed in units.csv.
+    item_ids = {r["id"] for r in rows}
+    unit_list = []
+    for u in units:
+        e = by_effect.get(u["id"])
+        effect = None
+        if e:
+            effect = {k: v if k in EFFECT_TEXT else number(v, f"item_effects.csv {u['id']} {k}", problems) for k, v in e.items() if k != "id" and v != ""}
+        unit_list.append({"id": u["id"], "effect": effect})
+    known = item_ids | {u["id"] for u in units}
+    problems.extend(f"item_effects.csv: '{x}' is neither an item nor a unit" for x in sorted(set(by_effect) - known))
+    return {"items": out, "units": unit_list}
+
+
+def cost(text, where, problems):
+    """'a:1|b/c:2|d:1/e:4' -> [[{item, qty}], [{b,2},{c,2}], [{d,1},{e,4}]] (04 §1.2)."""
+    slots = []
+    for slot in text.split("|"):
+        options = []
+        trailing = slot.rsplit(":", 1)[1] if ":" in slot else None
+        for opt in slot.split("/"):
+            item, _, qty = opt.partition(":")
+            qty = qty or trailing
+            if not item or qty is None:
+                problems.append(f"{where}: '{slot}' needs item:qty")
+                continue
+            options.append({"item": item, "qty": number(qty, where, problems)})
+        slots.append(options)
+    return slots
+
+
+SLOTS_RAIN = {"cell_floor", "cell_roof", "cell_stairs"}
+SLOTS_WIND = {"edge", "door", "window", "corner"}
+
+
+def pieces(rows, problems):
+    out = []
+    for i, r in enumerate(rows, 2):
+        where = f"build_pieces.csv:{i}"
+        size = r["size_m"].split("x")
+        if len(size) != 3:
+            problems.append(f"{where} size_m: expected AxBxC")
+        out.append(
+            {
+                "id": r["id"],
+                "name_key": f"piece.{r['id']}",
+                "category": r["category"],
+                "tier": number(r["tier"], f"{where} tier", problems),
+                "slot": r["slot"],
+                "size_m": [number(v, f"{where} size_m", problems) for v in size],
+                "cost": cost(r["cost"], f"{where} cost", problems),
+                "tool_class": r["tool_class"],
+                "hp": number(r["hp"], f"{where} hp", problems),
+                "support_base": number(r["support_base"], f"{where} support_base", problems) if r["support_base"] else None,
+                "support_v": number(r["support_v"], f"{where} support_v", problems) if r["support_v"] else None,
+                "support_h": number(r["support_h"], f"{where} support_h", problems) if r["support_h"] else None,
+                "flammable": r["flammable"] == "1",
+                "stages": number(r["stages"], f"{where} stages", problems),
+                # Q-33: whether the piece takes part in the shelter rays.
+                "blocks_wind": r["slot"] in SLOTS_WIND,
+                "blocks_rain": r["slot"] in SLOTS_RAIN,
+                "scene": "",
+                "ghost_scene": "",
+            }
+        )
+    return {"pieces": out}
 
 
 def main():
@@ -157,8 +216,10 @@ def main():
                 read(csv_dir, "item_effects.csv", required=False),
                 read(csv_dir, TOOL_CLASSES, required=False),
                 read(csv_dir, "build_pieces.csv", required=False),
+                read(csv_dir, "units.csv", required=False),
                 problems,
             ),
+            "build_pieces.json": pieces(read(csv_dir, "build_pieces.csv"), problems),
         }
     except Problems as e:
         problems = e.args[0]

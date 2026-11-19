@@ -67,8 +67,9 @@ func load_root(path: String) -> bool:
 			errors.append("%s: required file is missing in %s" % [file, data_dir])
 	errors.append_array(checker.errors)
 	for r: Array in checker.refs:
-		if not (_collections.get(r[0], {}) as Dictionary).has(r[1]):
-			errors.append("%s: '%s' is not an id in %s" % [r[2], r[1], r[0]])
+		var where: Array = r[0] if r[0] is Array else [r[0]]
+		if not where.any(func(c: String) -> bool: return entry(c, r[1]) != {}):
+			errors.append("%s: '%s' is not an id in %s" % [r[2], r[1], " or ".join(where)])
 	if not errors.is_empty():
 		for e in errors:
 			Log.error("content", e)
@@ -100,13 +101,21 @@ func material(id: StringName) -> MaterialDef:
 	return (_defs.get("materials", {}) as Dictionary).get(id)
 
 
+func piece(id: StringName) -> PieceDef:
+	return (_defs.get("pieces", {}) as Dictionary).get(id)
+
+
 ## Ids of `collection` in file order.
 func ids(collection: String) -> Array:
 	return (_collections.get(collection, {}) as Dictionary).keys()
 
 
 func _build_defs() -> void:
-	var builders := {"items": ItemDef.from_dict, "materials": MaterialDef.from_dict}
+	var builders := {
+		"items": ItemDef.from_dict,
+		"materials": MaterialDef.from_dict,
+		"pieces": PieceDef.from_dict,
+	}
 	for name: String in builders:
 		var by_id := {}
 		for id: String in ids(name):

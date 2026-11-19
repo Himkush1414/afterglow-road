@@ -7,6 +7,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 GAME = ROOT / "game"
+TIMEOUT_S = 300
 
 
 def main() -> int:
@@ -27,7 +28,11 @@ def main() -> int:
         "--",
         f"res://{rel.as_posix()}",
     ]
-    return subprocess.run(cmd, cwd=ROOT, check=False).returncode
+    try:
+        return subprocess.run(cmd, cwd=ROOT, check=False, timeout=TIMEOUT_S).returncode
+    except subprocess.TimeoutExpired:
+        print(f"validation did not finish in {TIMEOUT_S} s (script error?)", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

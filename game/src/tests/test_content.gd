@@ -10,7 +10,11 @@ const SCHEMA := {
 		{
 			"type": "object",
 			"fields":
-			{"id": {"type": "id"}, "next": {"type": "id", "ref": "things", "nullable": true}}
+			{
+				"id": {"type": "id"},
+				"next": {"type": "id", "ref": "things", "nullable": true},
+				"alt": {"type": "id", "ref": ["spare", "things"], "optional": true}
+			}
 		}
 	},
 	"files":
@@ -52,7 +56,10 @@ func test_the_active_content_loads_without_errors() -> void:
 
 
 func test_entries_are_indexed_by_id() -> void:
-	_write("data/things.json", '{"things": [{"id": "a", "next": "b"}, {"id": "b", "next": null}]}')
+	_write(
+		"data/things.json",
+		'{"things": [{"id": "a", "next": "b", "alt": "a"}, {"id": "b", "next": null}]}'
+	)
 	check(_load(), "loads: %s" % [ContentDB.errors])
 	check_eq(ContentDB.ids("things"), ["a", "b"])
 	check_eq(ContentDB.entry("things", "a").next, "b")
@@ -78,6 +85,11 @@ func test_bad_data_is_reported_and_nothing_is_kept() -> void:
 		],
 		["data/things.json", '{"things": [', "things.json:"],
 		["data/extra.json", "{}", "extra.json: no schema for this file"],
+		[
+			"data/things.json",
+			'{"things": [{"id": "a", "next": null, "alt": "zz"}]}',
+			"things.json.things[0].alt: 'zz' is not an id in spare or things",
+		],
 	]
 	for c: Array in cases:
 		before_each()
@@ -126,3 +138,9 @@ func test_typed_defs_match_the_data() -> void:
 			check_eq(it.tool.tool_class, StringName(d.tool["class"]), id)
 		check(ContentDB.material(it.material) != null, "%s material resolves" % id)
 	check(ContentDB.item(&"no_such_item") == null, "unknown id")
+	for id: String in ContentDB.ids("pieces"):
+		var p := ContentDB.piece(StringName(id))
+		check_eq(p.size_m.x, float(ContentDB.entry("pieces", id).size_m[0]), id)
+		for slot: Array in p.cost:
+			for opt: Dictionary in slot:
+				check(ContentDB.item(StringName(opt.item)) != null, "%s cost %s" % [id, opt.item])
