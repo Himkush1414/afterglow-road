@@ -1,9 +1,9 @@
 keys,en,_note
-ui.title.continue,Continue,title menu
-ui.title.new_game,New game,title menu
-ui.title.quit,Quit,title menu
-ui.pause.resume,Resume,pause menu
-ui.pause.save,Save,pause menu
-ui.pause.quit_to_title,Quit to title,pause menu; saves first
-ui.pause.saved,Saved.,pause menu status
-ui.pause.save_failed,Could not save.,pause menu status
+menu.continue,Continue,
+menu.new_game,New game,
+menu.quit,Quit,
+pause.resume,Resume,
+pause.save,Save,
+pause.quit_title,Quit to title,
+pause.saved,Saved,
+err.save_failed,Could not save. Free some storage and try again.,

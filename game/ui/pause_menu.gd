@@ -42,7 +42,7 @@ func _on_intent(name: StringName, kind: StringName) -> void:
 
 func _save() -> void:
 	var ok := SaveGame.save_slot(Game.current.slot) == OK
-	status.text = "ui.pause.saved" if ok else "ui.pause.save_failed"
+	status.text = "pause.saved" if ok else "err.save_failed"
 
 
 func _quit_to_title() -> void:

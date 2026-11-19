@@ -29,16 +29,16 @@ grow_vertical = 2
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 72)
 layout_mode = 2
-text = "ui.title.continue"
+text = "menu.continue"
 
 [node name="NewGame" type="Button" parent="Menu"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 72)
 layout_mode = 2
-text = "ui.title.new_game"
+text = "menu.new_game"
 
 [node name="Quit" type="Button" parent="Menu"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 72)
 layout_mode = 2
-text = "ui.title.quit"
+text = "menu.quit"
