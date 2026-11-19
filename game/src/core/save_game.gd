@@ -14,10 +14,17 @@ const BACKUPS: Array[String] = ["state.bin.bak1", "state.bin.bak2"]
 const META := "meta.json"
 const REGIONS := "regions"
 const TMP := ".tmp"
-## File frame (Q-37): raw size (8 bytes), SHA-256 of the compressed bytes (32).
-const HEADER_BYTES := 40
+## File frame (Q-37): save version (4 bytes), raw size (8), SHA-256 of the
+## compressed bytes (32).
+const HEADER_BYTES := 44
 const MAX_RAW_BYTES := 1 << 30
 
+## Version this game writes; files of older versions are migrated on read.
+var version := SAVE_VERSION
+## Migration steps, from_version -> Callable(Dictionary) -> Dictionary, for
+## state.bin and for region files. A missing step refuses the file.
+var migrations := {}
+var region_migrations := {}
 ## Folder that holds the slot folders; tests point it elsewhere.
 var saves_dir := SAVES_DIR
 ## File state.bin was read from by the last successful load ("" before).
@@ -95,14 +102,18 @@ func load_slot(slot: String) -> Error:
 	var meta: Variant = read_meta(slot)
 	if not meta is Dictionary:
 		return _fail("no readable meta in %s" % dir, ERR_FILE_CORRUPT)
+	if int(meta.get("save_version", 0)) > version:
+		return _fail("%s was saved by a newer game version" % slot, ERR_FILE_UNRECOGNIZED)
 	var state: Variant = null
 	var source := ""
 	for file: String in [STATE] + BACKUPS:
-		state = read_var(dir.path_join(file))
+		var read := read_versioned(dir.path_join(file))
+		if not read.is_empty():
+			state = _migrate(migrations, read[1], read[0])
 		if state is Dictionary:
 			source = file
 			break
-		Log.warn("save", "%s/%s unreadable" % [slot, file])
+		Log.warn("save", "%s/%s unreadable or cannot be migrated" % [slot, file])
 	if not state is Dictionary:
 		return _fail("no readable state in %s" % dir, ERR_FILE_CORRUPT)
 	for name: String in _sections:
@@ -121,7 +132,8 @@ func load_region(slot: String, region: Vector2i) -> Dictionary:
 	var path := slot_dir(slot).path_join(REGIONS).path_join("%d_%d.bin" % [region.x, region.y])
 	if not FileAccess.file_exists(path):
 		return {}
-	var data: Variant = read_var(path)
+	var read := read_versioned(path)
+	var data: Variant = null if read.is_empty() else _migrate(region_migrations, read[1], read[0])
 	if not data is Dictionary:
 		Log.error("save", "region file %s unreadable; region starts fresh" % path)
 		return {}
@@ -154,7 +166,7 @@ func _write_meta(dir: String, slot: String) -> Error:
 		meta
 		. merge(
 			{
-				"save_version": SAVE_VERSION,
+				"save_version": version,
 				"game_version": App.version(),
 				"slot": slot,
 				"created_utc": old.get("created_utc", now) if old is Dictionary else now,
@@ -178,6 +190,7 @@ func _write_var(path: String, value: Variant) -> Error:
 	var f := FileAccess.open(path, FileAccess.WRITE)
 	if f == null:
 		return FileAccess.get_open_error()
+	f.store_32(version)
 	f.store_64(raw.size())
 	f.store_buffer(_sha256(packed))
 	f.store_buffer(packed)
@@ -189,16 +202,40 @@ func _write_var(path: String, value: Variant) -> Error:
 ## Value stored by `_write_var` at `path`, or null when the file is missing,
 ## cut short or damaged (checked by hash before anything is decoded).
 func read_var(path: String) -> Variant:
+	var read := read_versioned(path)
+	return null if read.is_empty() else read[1]
+
+
+## [save_version, value] of the file at `path`, or [] (see `read_var`).
+func read_versioned(path: String) -> Array:
 	if not FileAccess.file_exists(path):
-		return null
+		return []
 	var bytes := FileAccess.get_file_as_bytes(path)
 	if bytes.size() < HEADER_BYTES:
-		return null
-	var raw_size := bytes.decode_u64(0)
+		return []
+	var file_version := bytes.decode_u32(0)
+	var raw_size := bytes.decode_u64(4)
 	var packed := bytes.slice(HEADER_BYTES)
-	if bytes.slice(8, HEADER_BYTES) != _sha256(packed) or raw_size > MAX_RAW_BYTES:
+	if bytes.slice(12, HEADER_BYTES) != _sha256(packed) or raw_size > MAX_RAW_BYTES:
+		return []
+	return [file_version, bytes_to_var(packed.decompress(raw_size, FileAccess.COMPRESSION_ZSTD))]
+
+
+## `data` stepped from `from` to `version`, or null when a step is missing,
+## the file is newer than this game or a step does not return a Dictionary.
+func _migrate(steps: Dictionary, data: Variant, from: int) -> Variant:
+	if from > version or from < 1:
+		Log.error("save", "file version %d cannot be read by version %d" % [from, version])
 		return null
-	return bytes_to_var(packed.decompress(raw_size, FileAccess.COMPRESSION_ZSTD))
+	for v in range(from, version):
+		if not steps.has(v):
+			Log.error("save", "no migration from version %d" % v)
+			return null
+		data = (steps[v] as Callable).call(data)
+		if not data is Dictionary:
+			Log.error("save", "migration from version %d failed" % v)
+			return null
+	return data
 
 
 func _sha256(bytes: PackedByteArray) -> PackedByteArray:
