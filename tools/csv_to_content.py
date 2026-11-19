@@ -4,7 +4,7 @@
 Usage: csv_to_content.py <csv dir> <output data dir>
 
 Writes materials.json, items.json (with the pseudo-items of units.csv as
-`units`), build_pieces.json and recipes.json; other files in the output folder are
+`units`), build_pieces.json, recipes.json, trees.json and nodes.json; other files in the output folder are
 left alone. Columns map 1:1 to JSON fields except where a rule below says
 otherwise. Exit code 1 with one line per problem when a table is invalid.
 """
@@ -191,6 +191,79 @@ def recipes(rows, problems):
     return {"recipes": out}
 
 
+DROP = re.compile(r"^(\w+):(\d+)(?:@([\w.]+))?$")
+HARVEST = re.compile(r"^(\w+):(\d+) \((\w+); (?:cooldown|regrow) ([\d.]+) gdays\)$")
+
+
+def drops(text, where, problems):
+    """'a:4|b:1@0.4|c:1@dry' -> [{item, qty, chance, condition}] (Q-35)."""
+    out = []
+    for part in filter(None, text.split("|")):
+        m = DROP.match(part)
+        if not m:
+            problems.append(f"{where}: '{part}' is not item:qty[@chance|@condition]")
+            continue
+        tag = m[3] or ""
+        is_chance = tag.replace(".", "", 1).isdigit()
+        out.append(
+            {
+                "item": m[1],
+                "qty": int(m[2]),
+                "chance": number(tag, where, problems) if is_chance else 1,
+                "condition": "" if is_chance else tag,
+            }
+        )
+    return out
+
+
+def harvest(text, where, problems):
+    if not text:
+        return None
+    m = HARVEST.match(text)
+    if not m:
+        problems.append(f"{where}: '{text}' is not 'item:qty (tool; cooldown N gdays)'")
+        return None
+    tool = "hand" if m[3] == "hands" else m[3]
+    return {"item": m[1], "qty": int(m[2]), "tool": tool, "cooldown_gday": number(m[4], where, problems)}
+
+
+def trees(rows, problems):
+    out = []
+    for i, r in enumerate(rows, 2):
+        where = f"trees.csv:{i}"
+        t = {"id": r["id"], "name_key": f"tree.{r['id']}", "species": r["species"], "size": r["size"]}
+        for key in ("height_m", "trunk_r_m", "canopy_r_m", "hp", "logs", "poles", "sticks"):
+            t[key] = number(r[key], f"{where} {key}", problems)
+        t["extra_drops"] = drops(r["extra_drops"], f"{where} extra_drops", problems)
+        t["variants"] = number(r["variants"], f"{where} variants", problems)
+        t["harvest_no_fell"] = harvest(r["harvest_no_fell"], f"{where} harvest_no_fell", problems)
+        t["models"] = []
+        out.append(t)
+    return {"trees": out}
+
+
+def nodes(rows, problems):
+    out = []
+    for i, r in enumerate(rows, 2):
+        where = f"nodes.csv:{i}"
+        out.append(
+            {
+                "id": r["id"],
+                "name_key": f"node.{r['id']}",
+                "tool_class": r["tool_class"],
+                "min_tier": number(r["min_tier"], f"{where} min_tier", problems),
+                "hp": number(r["hp"], f"{where} hp", problems),
+                "drops": drops(r["drops"], f"{where} drops", problems),
+                "biomes": [b for b in r["biomes"].split(";") if b],
+                # Q-35: "runtime" = placed at run time, not by the generator.
+                "world_count": None if r["world_count"] == "runtime" else number(r["world_count"], f"{where} world_count", problems),
+                "respawn_gdays": number(r["respawn_gdays"], f"{where} respawn_gdays", problems),
+                "scene": "",
+            }
+        )
+    return {"nodes": out}
+
+
 SLOTS_RAIN = {"cell_floor", "cell_roof", "cell_stairs"}
 SLOTS_WIND = {"edge", "door", "window", "corner"}
 
@@ -247,6 +320,8 @@ def main():
             ),
             "build_pieces.json": pieces(read(csv_dir, "build_pieces.csv"), problems),
             "recipes.json": recipes(read(csv_dir, "recipes.csv"), problems),
+            "trees.json": trees(read(csv_dir, "trees.csv"), problems),
+            "nodes.json": nodes(read(csv_dir, "nodes.csv"), problems),
         }
     except Problems as e:
         problems = e.args[0]

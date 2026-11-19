@@ -1,0 +1,31 @@
+{
+	"nodes": [
+		{
+			"id": "rock_pile",
+			"name_key": "node.rock_pile",
+			"tool_class": "hand",
+			"min_tier": 0,
+			"hp": 10,
+			"drops": [
+				{
+					"item": "rock",
+					"qty": 2,
+					"chance": 1,
+					"condition": ""
+				},
+				{
+					"item": "twig",
+					"qty": 1,
+					"chance": 0.5,
+					"condition": ""
+				}
+			],
+			"biomes": [
+				"grass"
+			],
+			"world_count": 4,
+			"respawn_gdays": 1,
+			"scene": ""
+		}
+	]
+}

@@ -1,0 +1,33 @@
+{
+	"trees": [
+		{
+			"id": "small_tree",
+			"name_key": "tree.small_tree",
+			"species": "broadleaf",
+			"size": "mature",
+			"height_m": 8,
+			"trunk_r_m": 0.15,
+			"canopy_r_m": 2.5,
+			"hp": 60,
+			"logs": 2,
+			"poles": 1,
+			"sticks": 3,
+			"extra_drops": [
+				{
+					"item": "fiber",
+					"qty": 1,
+					"chance": 0.5,
+					"condition": ""
+				}
+			],
+			"variants": 1,
+			"harvest_no_fell": {
+				"item": "berry",
+				"qty": 2,
+				"tool": "hand",
+				"cooldown_gday": 2
+			},
+			"models": []
+		}
+	]
+}
