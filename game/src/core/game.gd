@@ -6,6 +6,7 @@ extends Node3D
 
 const SCENE := "res://scenes/game.tscn"
 const SLOTS: Array[String] = ["slot_1", "slot_2", "slot_3"]
+const CONSOLE_SCENE := "res://ui/debug_console.tscn"
 
 static var current: Game
 
@@ -26,6 +27,11 @@ func _exit_tree() -> void:
 	SaveGame.meta_source = func() -> Dictionary: return {}
 	if current == self:
 		current = null
+
+
+func _ready() -> void:
+	if App.is_dev():
+		$UI.add_child((load(CONSOLE_SCENE) as PackedScene).instantiate())
 
 
 func _process(delta: float) -> void:
