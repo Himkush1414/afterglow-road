@@ -1,7 +1,7 @@
 extends Node
 ## Script of the boot scene (03 §15): checks content and the renderer, applies
 ## the quality preset, then hands over to the title screen or to the "not
-## supported" screen. The pipeline warm-up is added here by a later step.
+## supported" screen, after the pipeline warm-up has been drawn.
 
 const NOT_SUPPORTED_SCENE := "res://ui/not_supported.tscn"
 const SUPPORTED_METHODS: Array[String] = ["forward_plus", "mobile"]
@@ -19,7 +19,8 @@ func _ready() -> void:
 		App.show_scene.call_deferred(NOT_SUPPORTED_SCENE)
 		return
 	Quality.apply(Quality.chosen(), get_viewport())
-	App.show_title.call_deferred()
+	await Warmup.run(self)
+	App.show_title()
 
 
 ## Only the Vulkan-based renderers run the game (D-22); the compatibility
