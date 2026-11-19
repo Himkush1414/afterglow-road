@@ -20,7 +20,8 @@ func request(paths: PackedStringArray) -> void:
 		if not ResourceLoader.exists(path):
 			failed.append(path)
 			continue
-		var err := ResourceLoader.load_threaded_request(path, "", true)
+		# Sub-threads off: with them the engine left an object behind at exit.
+		var err := ResourceLoader.load_threaded_request(path, "", false)
 		if err != OK:
 			failed.append(path)
 			continue
