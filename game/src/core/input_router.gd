@@ -19,6 +19,14 @@ const AXIS_DEVICE_SWITCH := 0.2
 const TAP_HOLD: Array[StringName] = [&"interact", &"drop", &"journal"]
 ## Mouse wheel ids that turn into rotate while placing.
 const WHEEL_ROTATE := {"mouse:4": &"rotate_cw", "mouse:5": &"rotate_ccw"}  # wheel up / down
+## Binding families: index into a binding pair.
+const KEYBOARD_MOUSE := 0
+const GAMEPAD := 1
+## Must stay bound in both families (18 §13).
+const REQUIRED: Array[StringName] = [&"interact", &"primary", &"pause"]
+## UI-only intent: shares inputs with gameplay intents by design, so it never
+## conflicts and never loses a binding to a rebind.
+const UI_ONLY: Array[StringName] = [&"back"]
 
 ## Default bindings per intent: [keyboard/mouse ids, gamepad ids] (18 §3.2, §3.3).
 var defaults := _make_defaults()
@@ -26,6 +34,7 @@ var defaults := _make_defaults()
 ## Set by the placement code: the mouse wheel rotates instead of changing slot.
 var placing := false
 var device := Device.KEYBOARD_MOUSE
+var _bindings := {}  # intent -> [keyboard/mouse ids, gamepad ids], current
 var _held := {}  # tap/hold intent -> seconds held, or -1 once reported as hold
 var _look_delta := Vector2.ZERO
 
@@ -43,15 +52,63 @@ func _process(delta: float) -> void:
 	advance(delta)
 
 
-## Creates or resets every intent action with its default bindings.
+## Creates every intent action: defaults, then the saved bindings.
 func register_actions() -> void:
-	for name: StringName in defaults:
+	_bindings = defaults.duplicate(true)
+	var saved: Dictionary = Settings.get_value("controls", "bindings")
+	for key: String in saved:
+		var name := StringName(key)
+		if _valid_pair(name, saved[key]):
+			_bindings[name] = saved[key].duplicate(true)
+		else:
+			Log.warn("input", "ignoring saved bindings for %s" % key)
+	for name: StringName in _bindings:
 		if not InputMap.has_action(name):
 			InputMap.add_action(name, AXIS_PRESS)
-		InputMap.action_erase_events(name)
-		for family: Array in defaults[name]:
-			for id: String in family:
-				InputMap.action_add_event(name, event_from_id(id))
+		_write_action(name)
+
+
+## Current binding ids of an intent for one family.
+func bindings(name: StringName, family: int) -> Array:
+	return (_bindings[name][family] as Array).duplicate() if _bindings.has(name) else []
+
+
+## Binds the intent to one input in a family, replacing its bindings there.
+## Other gameplay intents that had this input lose it; they are returned as
+## the conflicts to report. Saved in Settings (the file is written by the
+## settings screen). Returns null when the intent or id is invalid.
+func rebind(name: StringName, family: int, id: String) -> Variant:
+	if not _bindings.has(name) or event_from_id(id) == null or _family_of(id) != family:
+		Log.warn("input", "cannot bind %s to %s" % [name, id])
+		return null
+	var conflicts: Array[StringName] = []
+	if not name in UI_ONLY:
+		for other: StringName in _bindings:
+			if other == name or other in UI_ONLY:
+				continue
+			var ids: Array = _bindings[other][family]
+			if id in ids:
+				ids.erase(id)
+				conflicts.append(other)
+				_write_action(other)
+	_bindings[name][family] = [id]
+	_write_action(name)
+	_save()
+	return conflicts
+
+
+## Required intents without a binding in the family.
+func missing_required(family: int) -> Array[StringName]:
+	var out: Array[StringName] = []
+	for name in REQUIRED:
+		if (_bindings[name][family] as Array).is_empty():
+			out.append(name)
+	return out
+
+
+func reset_bindings() -> void:
+	Settings.set_value("controls", "bindings", {})
+	register_actions()
 
 
 ## Device detection, tap/hold timing, wheel-to-rotate and look deltas.
@@ -75,7 +132,7 @@ func handle_event(event: InputEvent) -> void:
 				intent.emit(name, &"tap")
 			else:
 				intent.emit(name, &"release")
-	for name: StringName in defaults:
+	for name: StringName in _bindings:
 		if name in TAP_HOLD:
 			continue
 		if event.is_action_pressed(name):
@@ -127,11 +184,9 @@ func look_rate() -> Vector2:
 func glyph(name: StringName) -> String:
 	if device == Device.TOUCH:
 		return "touch:%s" % name
-	for e in InputMap.action_get_events(name):
-		var id := id_from_event(e)
-		if (device == Device.GAMEPAD) == (id.begins_with("pad:") or id.begins_with("axis:")):
-			return id
-	return ""
+	var family := GAMEPAD if device == Device.GAMEPAD else KEYBOARD_MOUSE
+	var ids := bindings(name, family)
+	return ids[0] if not ids.is_empty() else ""
 
 
 func id_from_event(event: InputEvent) -> String:
@@ -178,6 +233,38 @@ func event_from_id(id: String) -> InputEvent:
 				a.axis_value = 1.0 if parts[2] == "+" else -1.0
 				out = a
 	return out
+
+
+func _write_action(name: StringName) -> void:
+	InputMap.action_erase_events(name)
+	for family: Array in _bindings[name]:
+		for id: String in family:
+			InputMap.action_add_event(name, event_from_id(id))
+
+
+## Stores only the intents whose bindings differ from the defaults.
+func _save() -> void:
+	var changed := {}
+	for name: StringName in _bindings:
+		if _bindings[name] != defaults[name]:
+			changed[String(name)] = _bindings[name].duplicate(true)
+	Settings.set_value("controls", "bindings", changed)
+
+
+func _valid_pair(name: StringName, pair: Variant) -> bool:
+	if not defaults.has(name) or not pair is Array or (pair as Array).size() != 2:
+		return false
+	for family in 2:
+		if not pair[family] is Array:
+			return false
+		for id: Variant in pair[family]:
+			if not id is String or event_from_id(id) == null or _family_of(id) != family:
+				return false
+	return true
+
+
+func _family_of(id: String) -> int:
+	return GAMEPAD if id.begins_with("pad:") or id.begins_with("axis:") else KEYBOARD_MOUSE
 
 
 func _detect_device(event: InputEvent) -> void:
