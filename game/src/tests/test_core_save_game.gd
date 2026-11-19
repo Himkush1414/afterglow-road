@@ -8,6 +8,8 @@ const SLOT := "slot_1"
 var _data := {}
 var _loaded: Variant = null
 var _regions := {}
+var _autosave_s := SaveGame.autosave_s
+var _saves: Array[String] = []
 
 
 func before_each() -> void:
@@ -19,9 +21,16 @@ func before_each() -> void:
 	SaveGame.register_section("probe", func() -> Variant: return _data.duplicate(true), _accept)
 	SaveGame.region_source = func() -> Dictionary: return _regions
 	SaveGame.meta_source = func() -> Dictionary: return {"day": 3}
+	_saves.clear()
+	if not SaveGame.saved.is_connected(_on_saved):
+		SaveGame.saved.connect(_on_saved)
 
 
 func after_each() -> void:
+	while SaveGame.is_writing():
+		await tree.process_frame
+	SaveGame.active_slot = ""
+	SaveGame.autosave_s = _autosave_s
 	SaveGame.version = SaveGame.SAVE_VERSION
 	SaveGame.migrations = {}
 	SaveGame.region_migrations = {}
@@ -119,6 +128,64 @@ func test_missing_steps_and_newer_files_are_refused() -> void:
 	SaveGame.version = 1
 	check_eq(SaveGame.load_slot(SLOT), ERR_FILE_UNRECOGNIZED, "newer save refused")
 	check_eq(SaveGame.load_region(SLOT, Vector2i(9, 9)), {}, "no region file")
+
+
+func test_a_background_save_writes_the_snapshot_taken_at_the_call() -> void:
+	check(SaveGame.save_slot_async(SLOT), "started")
+	check(SaveGame.is_writing(), "writing")
+	check(not SaveGame.save_slot_async(SLOT), "one write at a time")
+	_data = _sample(99)  # the game goes on changing its state
+	while SaveGame.is_writing():
+		await tree.process_frame
+	check_eq(_saves, ["%s:%d" % [SLOT, OK]] as Array[String], "saved signal")
+	check_eq(SaveGame.load_slot(SLOT), OK)
+	check_eq(_loaded.n, 1, "snapshot from the call, not the later state")
+
+
+func test_a_blocking_save_waits_for_a_running_one() -> void:
+	SaveGame.save_slot_async(SLOT)
+	_data = _sample(2)
+	check_eq(SaveGame.save_slot(SLOT), OK)
+	check(not SaveGame.is_writing(), "writer finished first")
+	await tree.process_frame
+	check_eq(_saves.size(), 2, "both reported: %s" % [_saves])
+	SaveGame.load_slot(SLOT)
+	check_eq(_loaded.n, 2, "the later save is the one on disk")
+
+
+func test_autosave_follows_the_interval_and_restarts_after_a_save() -> void:
+	SaveGame.autosave_s = 10.0
+	SaveGame.advance_autosave(9.0)
+	check(not SaveGame.has_save(SLOT), "no active slot: nothing")
+	SaveGame.active_slot = SLOT
+	SaveGame.advance_autosave(4.0)
+	check(not SaveGame.is_writing(), "4 s: not yet")
+	SaveGame.advance_autosave(7.0)
+	check(SaveGame.is_writing(), "11 s: autosave started")
+	while SaveGame.is_writing():
+		await tree.process_frame
+	check(SaveGame.has_save(SLOT), "autosaved")
+	SaveGame.advance_autosave(6.0)
+	check_eq(SaveGame.save_slot(SLOT), OK, "manual save")
+	SaveGame.advance_autosave(9.0)
+	check(not SaveGame.is_writing(), "a manual save restarts the interval")
+	check_eq(_autosave_s, float(ContentDB.tuning("save").autosave_s), "interval from tuning")
+
+
+func test_os_pause_and_close_save_the_active_slot_at_once() -> void:
+	SaveGame.notification(Node.NOTIFICATION_APPLICATION_PAUSED)
+	check(not SaveGame.has_save(SLOT), "no active slot: nothing")
+	SaveGame.active_slot = SLOT
+	SaveGame.notification(Node.NOTIFICATION_APPLICATION_PAUSED)
+	check(SaveGame.has_save(SLOT), "saved on OS pause")
+	_data = _sample(5)
+	SaveGame.notification(Node.NOTIFICATION_WM_CLOSE_REQUEST)
+	SaveGame.load_slot(SLOT)
+	check_eq(_loaded.n, 5, "saved on close")
+
+
+func _on_saved(slot: String, err: Error) -> void:
+	_saves.append("%s:%d" % [slot, err])
 
 
 func _rename(d: Dictionary, from: String, to: String) -> Dictionary:

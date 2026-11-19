@@ -8,5 +8,8 @@
 		"night_below_deg": -6.0,
 		"golden_from_deg": 0.0,
 		"day_from_deg": 6.0
+	},
+	"save": {
+		"autosave_s": 120
 	}
 }
