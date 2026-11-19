@@ -22,6 +22,9 @@ func before_each() -> void:
 
 
 func after_each() -> void:
+	SaveGame.version = SaveGame.SAVE_VERSION
+	SaveGame.migrations = {}
+	SaveGame.region_migrations = {}
 	SaveGame.unregister_section("probe")
 	SaveGame.saves_dir = SaveGame.SAVES_DIR
 	SaveGame.region_source = func() -> Dictionary: return {}
@@ -88,6 +91,45 @@ func test_section_rules() -> void:
 	SaveGame.register_section("later", func() -> Variant: return 0, _accept)
 	check_eq(SaveGame.load_slot(SLOT), OK, "a section missing from an older file is skipped")
 	SaveGame.unregister_section("later")
+
+
+func test_older_files_are_migrated_step_by_step() -> void:
+	_regions = {Vector2i(1, 1): {"old": 5}}
+	SaveGame.save_slot(SLOT)  # version 1
+	SaveGame.version = 3
+	SaveGame.migrations = {1: _rename.bind("n", "m"), 2: _rename.bind("m", "count")}
+	SaveGame.region_migrations = {1: _rename.bind("old", "mid"), 2: _rename.bind("mid", "new")}
+	check_eq(SaveGame.load_slot(SLOT), OK)
+	check_eq([_loaded.get("count"), _loaded.has("n")], [1, false], "state stepped 1 -> 3")
+	check_eq(SaveGame.load_region(SLOT, Vector2i(1, 1)), {"new": 5}, "region stepped 1 -> 3")
+	SaveGame.save_slot(SLOT)  # now version 3 on disk
+	SaveGame.migrations = {}
+	check_eq(SaveGame.load_slot(SLOT), OK, "a current file needs no step")
+	check_eq(int(SaveGame.read_meta(SLOT).save_version), 3)
+
+
+func test_missing_steps_and_newer_files_are_refused() -> void:
+	SaveGame.save_slot(SLOT)
+	SaveGame.version = 2
+	check_eq(SaveGame.load_slot(SLOT), ERR_FILE_CORRUPT, "no step from 1: nothing readable")
+	SaveGame.migrations = {1: func(_d: Dictionary) -> Variant: return null}
+	check_eq(SaveGame.load_slot(SLOT), ERR_FILE_CORRUPT, "a failing step refuses the file")
+	SaveGame.migrations = {1: func(d: Dictionary) -> Dictionary: return d}
+	SaveGame.save_slot(SLOT)  # version 2 on disk
+	SaveGame.version = 1
+	check_eq(SaveGame.load_slot(SLOT), ERR_FILE_UNRECOGNIZED, "newer save refused")
+	check_eq(SaveGame.load_region(SLOT, Vector2i(9, 9)), {}, "no region file")
+
+
+func _rename(d: Dictionary, from: String, to: String) -> Dictionary:
+	var out := d.duplicate(true)
+	if out.has("probe"):
+		out.probe[to] = out.probe[from]
+		out.probe.erase(from)
+	else:
+		out[to] = out[from]
+		out.erase(from)
+	return out
 
 
 func _accept(d: Variant) -> bool:
