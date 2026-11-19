@@ -105,6 +105,10 @@ func piece(id: StringName) -> PieceDef:
 	return (_defs.get("pieces", {}) as Dictionary).get(id)
 
 
+func recipe(id: StringName) -> RecipeDef:
+	return (_defs.get("recipes", {}) as Dictionary).get(id)
+
+
 ## Ids of `collection` in file order.
 func ids(collection: String) -> Array:
 	return (_collections.get(collection, {}) as Dictionary).keys()
@@ -115,6 +119,7 @@ func _build_defs() -> void:
 		"items": ItemDef.from_dict,
 		"materials": MaterialDef.from_dict,
 		"pieces": PieceDef.from_dict,
+		"recipes": RecipeDef.from_dict,
 	}
 	for name: String in builders:
 		var by_id := {}

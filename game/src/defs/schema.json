@@ -456,6 +456,84 @@
 					"type": "string"
 				}
 			}
+		},
+		"recipe": {
+			"type": "object",
+			"fields": {
+				"id": {
+					"type": "id"
+				},
+				"output": {
+					"type": "id",
+					"ref": [
+						"items",
+						"units"
+					]
+				},
+				"qty": {
+					"type": "int",
+					"min": 1
+				},
+				"station": {
+					"type": "id",
+					"ref": "pieces",
+					"literals": [
+						"hand"
+					]
+				},
+				"tool_class": {
+					"type": "list",
+					"of": {
+						"type": "string",
+						"enum": [
+							"chop",
+							"mine",
+							"cut",
+							"hammer",
+							"dig",
+							"saw"
+						]
+					}
+				},
+				"inputs": {
+					"type": "cost"
+				},
+				"time": {
+					"type": "number",
+					"min": 0
+				},
+				"time_unit": {
+					"type": "string",
+					"enum": [
+						"s",
+						"gmin",
+						"swings"
+					]
+				},
+				"unlock": {
+					"type": "list",
+					"of": {
+						"type": "string",
+						"tagged_ref": {
+							"item": [
+								"items",
+								"units"
+							],
+							"station": "pieces"
+						},
+						"literals": [
+							"start"
+						]
+					},
+					"min_len": 1
+				},
+				"byproducts": {
+					"type": "list",
+					"of": {
+						"type": "cost_option"
+					}
+				}
+			}
 		}
 	},
 	"files": {
@@ -530,6 +608,24 @@
 			},
 			"collections": {
 				"pieces": "pieces"
+			}
+		},
+		"recipes.json": {
+			"required": true,
+			"spec": {
+				"type": "object",
+				"fields": {
+					"recipes": {
+						"type": "list",
+						"of": {
+							"type": "recipe"
+						},
+						"min_len": 1
+					}
+				}
+			},
+			"collections": {
+				"recipes": "recipes"
 			}
 		}
 	}

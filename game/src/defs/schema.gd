@@ -6,12 +6,25 @@ extends RefCounted
 ## fields; all others are required); "of" + "min_len" (list); "fields"
 ## (object; unknown keys are errors); "values" (map, string keys);
 ## "ref": <collection> or [collections] (an id that must exist in one of them;
-## collected in `refs`).
+## collected in `refs`); "tagged_ref": {tag: collection(s)} for "tag:id"
+## strings; "literals": strings accepted as they are by ref and tagged_ref.
 ## JSON numbers arrive as floats, so "int" accepts any integral number.
 
 const ID_PATTERN := "^[a-z][a-z0-9_]*$"
 const SPEC_KEYS: Array[String] = [
-	"type", "min", "max", "enum", "nullable", "optional", "of", "min_len", "fields", "values", "ref"
+	"type",
+	"min",
+	"max",
+	"enum",
+	"nullable",
+	"optional",
+	"of",
+	"min_len",
+	"fields",
+	"values",
+	"ref",
+	"tagged_ref",
+	"literals",
 ]
 
 ## "path: reason" for every problem found.
@@ -56,8 +69,17 @@ func check(value: Variant, spec: Dictionary, path: String) -> void:
 				errors.append("%s: schema has unknown type '%s'" % [path, type])
 				return
 			check(value, _types[type], path)
-	if spec.has("ref") and (value is String):
+	if not value is String or value in spec.get("literals", []):
+		return
+	if spec.has("ref"):
 		refs.append([spec.ref, value, path])
+	if spec.has("tagged_ref"):
+		var tags: Dictionary = spec.tagged_ref
+		var parts: PackedStringArray = (value as String).split(":")
+		if parts.size() != 2 or not tags.has(parts[0]):
+			errors.append("%s: '%s' is not <%s>:<id>" % [path, value, "|".join(tags.keys())])
+		else:
+			refs.append([tags[parts[0]], parts[1], path])
 
 
 func _check_number(value: Variant, spec: Dictionary, path: String, integral: bool) -> void:

@@ -4,11 +4,12 @@
 Usage: csv_to_content.py <csv dir> <output data dir>
 
 Writes materials.json, items.json (with the pseudo-items of units.csv as
-`units`) and build_pieces.json; other files in the output folder are
+`units`), build_pieces.json and recipes.json; other files in the output folder are
 left alone. Columns map 1:1 to JSON fields except where a rule below says
 otherwise. Exit code 1 with one line per problem when a table is invalid.
 """
 import csv
+import re
 import json
 import pathlib
 import sys
@@ -165,6 +166,31 @@ def cost(text, where, problems):
     return slots
 
 
+BYPRODUCT = re.compile(r"also gives (\w+):(\d+)")
+
+
+def recipes(rows, problems):
+    out = []
+    for i, r in enumerate(rows, 2):
+        where = f"recipes.csv:{i}"
+        out.append(
+            {
+                "id": r["id"],
+                "output": r["output"],
+                "qty": number(r["qty"], f"{where} qty", problems),
+                "station": r["station"],
+                "tool_class": [t for t in r["tool_class"].split("/") if t],
+                "inputs": cost(r["inputs"], f"{where} inputs", problems),
+                "time": number(r["time"], f"{where} time", problems),
+                "time_unit": r["time_unit"],
+                # Q-34: "a+b" in the table = either unlocks.
+                "unlock": [u for part in r["unlock"].split("|") for u in part.split("+") if u],
+                "byproducts": [{"item": m[0], "qty": int(m[1])} for m in BYPRODUCT.findall(r["notes"])],
+            }
+        )
+    return {"recipes": out}
+
+
 SLOTS_RAIN = {"cell_floor", "cell_roof", "cell_stairs"}
 SLOTS_WIND = {"edge", "door", "window", "corner"}
 
@@ -220,6 +246,7 @@ def main():
                 problems,
             ),
             "build_pieces.json": pieces(read(csv_dir, "build_pieces.csv"), problems),
+            "recipes.json": recipes(read(csv_dir, "recipes.csv"), problems),
         }
     except Problems as e:
         problems = e.args[0]

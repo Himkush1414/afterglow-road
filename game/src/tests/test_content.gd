@@ -138,6 +138,11 @@ func test_typed_defs_match_the_data() -> void:
 			check_eq(it.tool.tool_class, StringName(d.tool["class"]), id)
 		check(ContentDB.material(it.material) != null, "%s material resolves" % id)
 	check(ContentDB.item(&"no_such_item") == null, "unknown id")
+	for id: String in ContentDB.ids("recipes"):
+		var r := ContentDB.recipe(StringName(id))
+		check(ContentDB.item(r.output) != null, "%s output" % id)
+		check_eq(r.unlock.size(), (ContentDB.entry("recipes", id).unlock as Array).size(), id)
+		check(r.station == &"hand" or ContentDB.piece(r.station) != null, "%s station" % id)
 	for id: String in ContentDB.ids("pieces"):
 		var p := ContentDB.piece(StringName(id))
 		check_eq(p.size_m.x, float(ContentDB.entry("pieces", id).size_m[0]), id)

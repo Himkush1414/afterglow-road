@@ -1,0 +1,88 @@
+{
+	"recipes": [
+		{
+			"id": "r_string",
+			"output": "string",
+			"qty": 1,
+			"station": "hand",
+			"tool_class": [],
+			"inputs": [
+				[
+					{
+						"item": "fiber",
+						"qty": 3
+					}
+				]
+			],
+			"time": 2,
+			"time_unit": "s",
+			"unlock": [
+				"start"
+			],
+			"byproducts": []
+		},
+		{
+			"id": "r_hatchet",
+			"output": "hatchet",
+			"qty": 1,
+			"station": "hand",
+			"tool_class": [],
+			"inputs": [
+				[
+					{
+						"item": "rock",
+						"qty": 1
+					}
+				],
+				[
+					{
+						"item": "twig",
+						"qty": 1
+					}
+				],
+				[
+					{
+						"item": "string",
+						"qty": 1
+					}
+				]
+			],
+			"time": 4,
+			"time_unit": "s",
+			"unlock": [
+				"item:rock"
+			],
+			"byproducts": []
+		},
+		{
+			"id": "r_twine",
+			"output": "string",
+			"qty": 2,
+			"station": "fire_pit",
+			"tool_class": [],
+			"inputs": [
+				[
+					{
+						"item": "fiber",
+						"qty": 4
+					},
+					{
+						"item": "twig",
+						"qty": 4
+					}
+				]
+			],
+			"time": 10,
+			"time_unit": "gmin",
+			"unlock": [
+				"station:fire_pit"
+			],
+			"byproducts": [
+				{
+					"item": "twig",
+					"qty": 1
+				}
+			]
+		}
+	]
+}
