@@ -166,3 +166,32 @@ func test_live_router_moves_from_engine_input() -> void:
 	Input.flush_buffered_events()
 	await tree.process_frame
 	check_eq(InputRouter.move_vector(), Vector2.ZERO, "W released")
+
+
+func test_keys_typed_into_a_text_field_are_not_intents() -> void:
+	var field := LineEdit.new()
+	tree.root.add_child(field)
+	field.grab_focus()
+	var seen: Array[String] = []
+	var on_intent := func(n: StringName, k: StringName) -> void: seen.append("%s:%s" % [n, k])
+	InputRouter.intent.connect(on_intent)
+	var e: InputEvent = InputRouter.event_from_id("key:%d" % KEY_E)
+	InputRouter._input(e)
+	check_eq(seen, [] as Array[String], "press while typing ignored")
+	InputRouter._input(_released(e))
+	check_eq(seen, [] as Array[String], "release passes but nothing was held")
+	var esc: InputEvent = InputRouter.event_from_id("key:%d" % KEY_ESCAPE)
+	InputRouter._input(esc)
+	check_eq(seen, [] as Array[String], "escape is text here too")
+	var tilde: InputEvent = InputRouter.event_from_id("key:%d" % KEY_QUOTELEFT)
+	InputRouter._input(tilde)
+	check_eq(seen, ["console:press"] as Array[String], "the console key still passes")
+	InputRouter._input(_released(tilde))
+	seen.clear()
+	field.release_focus()
+	InputRouter._input(e)
+	InputRouter._input(_released(e))
+	InputRouter.advance(0.0)
+	check(seen.has("interact:tap"), "without focus the key is an intent: %s" % [seen])
+	InputRouter.intent.disconnect(on_intent)
+	field.queue_free()
