@@ -43,7 +43,7 @@ func test_save_and_quit_to_title() -> void:
 	InputRouter.intent.emit(&"pause", &"press")
 	Game.clock_of().set_now(4321.0)
 	_menu.save_button.pressed.emit()
-	check_eq(_menu.status.text, "ui.pause.saved")
+	check_eq(_menu.status.text, "pause.saved")
 	SaveGame.load_slot("slot_1")
 	check_near(Game.clock_of().now_gmin, 4321.0, 1e-6, "saved state")
 	Game.clock_of().set_now(5555.0)

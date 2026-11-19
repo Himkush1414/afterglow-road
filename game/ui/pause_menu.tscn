@@ -38,19 +38,19 @@ grow_vertical = 2
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 72)
 layout_mode = 2
-text = "ui.pause.resume"
+text = "pause.resume"
 
 [node name="Save" type="Button" parent="Menu"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 72)
 layout_mode = 2
-text = "ui.pause.save"
+text = "pause.save"
 
 [node name="QuitToTitle" type="Button" parent="Menu"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 72)
 layout_mode = 2
-text = "ui.pause.quit_to_title"
+text = "pause.quit_title"
 
 [node name="Status" type="Label" parent="Menu"]
 unique_name_in_owner = true

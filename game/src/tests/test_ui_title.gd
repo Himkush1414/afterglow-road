@@ -20,7 +20,7 @@ func test_entries_follow_the_saves_and_start_the_game() -> void:
 	var title := tree.current_scene
 	check(title.continue_button.disabled, "no save: Continue disabled")
 	check(not title.new_game_button.disabled, "New game enabled")
-	check_eq(title.continue_button.text, "ui.title.continue", "text is a key")
+	check_eq(title.continue_button.text, "menu.continue", "text is a key")
 	check_eq(title.tr(title.continue_button.text), "Continue", "key is translated")
 	title.new_game_button.pressed.emit()
 	await App.scene_shown
