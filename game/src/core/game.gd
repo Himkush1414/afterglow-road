@@ -41,6 +41,17 @@ func _ready() -> void:
 		)
 
 
+## Focus loss and OS pause stop a single-player game behind the pause menu;
+## focus loss also saves (an OS pause is saved by SaveGame at once).
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_APPLICATION_PAUSED:
+		var menu := get_node_or_null("UI/PauseMenu")
+		if menu and not menu.visible:
+			menu.open()
+		if what == NOTIFICATION_APPLICATION_FOCUS_OUT and slot != "":
+			SaveGame.save_slot_async(slot)
+
+
 func _process(delta: float) -> void:
 	play_seconds += delta
 
