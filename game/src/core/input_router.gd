@@ -45,7 +45,20 @@ func _ready() -> void:
 
 
 func _input(event: InputEvent) -> void:
+	if _typing(event):
+		return
 	handle_event(event)
+
+
+## True for a key press while a text field has focus (the console line):
+## such keys are text, not intents. Releases still pass so nothing sticks;
+## the console key passes so the console can close.
+func _typing(event: InputEvent) -> bool:
+	if not (event is InputEventKey and event.is_pressed()) or not is_inside_tree():
+		return false
+	var focus := get_viewport().gui_get_focus_owner()
+	var text_field := focus is LineEdit or focus is TextEdit
+	return text_field and not event.is_action(&"console")
 
 
 func _process(delta: float) -> void:
