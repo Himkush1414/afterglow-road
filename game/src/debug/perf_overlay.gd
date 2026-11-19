@@ -1,10 +1,19 @@
 class_name PerfOverlay
 extends Label
 ## Performance overlay (03 §14), dev builds only: fps, frame time, draw
-## calls, primitives, video and static memory, and the per-system times
-## that systems report with `PerfOverlay.record`. Refreshes twice a second.
+## calls, primitives, video and static memory, pipeline compilations, and the
+## per-system times that systems report with `PerfOverlay.record`. Refreshes
+## twice a second.
 
 const REFRESH_S := 0.5
+## The five pipeline-compilation monitors (03 §15.7), in display order.
+const PIPELINES := {
+	"canvas": Performance.PIPELINE_COMPILATIONS_CANVAS,
+	"mesh": Performance.PIPELINE_COMPILATIONS_MESH,
+	"surface": Performance.PIPELINE_COMPILATIONS_SURFACE,
+	"draw": Performance.PIPELINE_COMPILATIONS_DRAW,
+	"specialization": Performance.PIPELINE_COMPILATIONS_SPECIALIZATION,
+}
 
 ## system name -> last reported milliseconds
 static var system_ms: Dictionary = {}
@@ -14,6 +23,14 @@ var _since := 0.0
 
 static func record(system: String, ms: float) -> void:
 	system_ms[system] = ms
+
+
+## Current pipeline-compilation counts, name -> count.
+static func pipeline_counts() -> Dictionary:
+	var out := {}
+	for name: String in PIPELINES:
+		out[name] = int(Performance.get_monitor(PIPELINES[name]))
+	return out
 
 
 func _ready() -> void:
@@ -60,6 +77,11 @@ func stats_text() -> String:
 			]
 		),
 	]
+	var counts := pipeline_counts()
+	var parts: PackedStringArray = []
+	for name: String in counts:
+		parts.append("%s %d" % [name, counts[name]])
+	lines.append("pipelines " + "  ".join(parts))
 	for system: String in system_ms:
 		lines.append("%s %.2f ms" % [system, system_ms[system]])
 	return "\n".join(lines)
