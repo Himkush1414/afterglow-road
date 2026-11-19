@@ -7,6 +7,7 @@ extends Node3D
 const SCENE := "res://scenes/game.tscn"
 const SLOTS: Array[String] = ["slot_1", "slot_2", "slot_3"]
 const CONSOLE_SCENE := "res://ui/debug_console.tscn"
+const PERF_SCENE := "res://ui/perf_overlay.tscn"
 
 static var current: Game
 
@@ -31,7 +32,13 @@ func _exit_tree() -> void:
 
 func _ready() -> void:
 	if App.is_dev():
-		$UI.add_child((load(CONSOLE_SCENE) as PackedScene).instantiate())
+		var console: DebugConsole = (load(CONSOLE_SCENE) as PackedScene).instantiate()
+		var perf: PerfOverlay = (load(PERF_SCENE) as PackedScene).instantiate()
+		$UI.add_child(perf)
+		$UI.add_child(console)
+		console.register(
+			"perf", func(_a: PackedStringArray) -> String: return perf.toggle(), "perf"
+		)
 
 
 func _process(delta: float) -> void:

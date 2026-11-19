@@ -54,3 +54,18 @@ func test_other_commands_and_registry() -> void:
 	await App.scene_shown
 	await tree.process_frame
 	check_near(Game.clock_of().now_gmin, 3000.0, 1.0, "load restored the save")
+
+
+func test_perf_command_toggles_the_overlay() -> void:
+	var perf: PerfOverlay = Game.current.get_node("UI/PerfOverlay")
+	check(not perf.visible, "hidden at start")
+	check_eq(_c.run("perf"), "perf overlay on")
+	check(perf.visible, "shown")
+	for key: String in ["fps", "frame", "draw calls", "primitives", "video", "static"]:
+		check(perf.text.contains(key), "shows %s" % key)
+	PerfOverlay.record("probe", 1.25)
+	await tree.create_timer(PerfOverlay.REFRESH_S + 0.1, true).timeout
+	check(perf.text.contains("probe 1.25 ms"), "per-system time shown after a refresh")
+	PerfOverlay.system_ms.erase("probe")
+	check_eq(_c.run("perf"), "perf overlay off")
+	check(not perf.visible, "hidden again")
