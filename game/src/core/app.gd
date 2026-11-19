@@ -4,13 +4,18 @@ extends Node
 signal scene_shown(path: String)
 
 const TITLE_SCENE := "res://ui/title.tscn"
+const LOADING_SCENE := "res://ui/loading_screen.tscn"
 
 var current_path := ""
+## Instanced once and kept (03 §15.6).
+var loading: LoadingScreen
 
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	Log.info("app", "start %s, %s build" % [version(), "dev" if is_dev() else "release"])
+	loading = (load(LOADING_SCENE) as PackedScene).instantiate()
+	add_child(loading)
 
 
 ## True in the editor and in exports with the "dev" feature tag; debug
@@ -55,6 +60,9 @@ func quit() -> void:
 
 ## Shows the game scene and starts a new game in `slot` (or continues it).
 func start_game(slot: String, is_new: bool) -> Error:
+	loading.begin(PackedStringArray([Game.SCENE]))
+	if not loading.loader.is_done():
+		await loading.scenes_ready
 	var err: Error = await show_scene(Game.SCENE)
 	if err != OK:
 		return err

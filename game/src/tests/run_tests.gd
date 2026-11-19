@@ -92,6 +92,13 @@ func _run() -> void:
 					print("      - " + f)
 	var total_s := (Time.get_ticks_msec() - started) / 1000.0
 	print("tests: %d passed, %d failed, %.1f s" % [passed, failed, total_s])
+	# Let work the last tests started (loading screen, threaded loads) end,
+	# so the engine does not report it as leaked at exit.
+	var loading: CanvasLayer = root.get_node("App").get("loading")
+	for i in 300:
+		if not loading.visible:
+			break
+		await process_frame
 	quit(1 if failed > 0 or passed == 0 else 0)
 
 
