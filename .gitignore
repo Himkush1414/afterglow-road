@@ -21,6 +21,8 @@ export_credentials.cfg
 *.ipa
 *.pck
 *.tpz
+# Translations are generated from ui/i18n/*.csv on import.
+*.translation
 
 # --- Godot editor leftovers ---
 *.tmp

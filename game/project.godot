@@ -47,3 +47,7 @@ renderer/rendering_method="forward_plus"
 renderer/rendering_method.mobile="mobile"
 rendering_device/fallback_to_opengl3=false
 textures/vram_compression/import_etc2_astc=true
+
+[internationalization]
+
+locale/translations=PackedStringArray("res://ui/i18n/ui.en.translation")
