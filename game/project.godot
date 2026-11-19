@@ -13,6 +13,7 @@ config/version="0.1.0"
 [autoload]
 
 Log="*res://src/core/log.gd"
+Settings="*res://src/core/settings.gd"
 App="*res://src/core/app.gd"
 
 [debug]
