@@ -3,7 +3,8 @@ extends Node
 ## Owns game time (03 §8): `now_gmin` = game minutes since day 1, 00:00.
 ## Real time advances it by `time_scale` / `gmin_real_s` game minutes per
 ## second unless `paused`. The day phase follows the sun's elevation.
-## All numbers come from the "clock" tuning group through `configure`.
+## All numbers come from the "clock" tuning group (checked by ContentDB
+## against schema.json) through `configure`.
 
 signal phase_changed(phase: Phase)
 signal hour_changed(hour: int)
@@ -13,17 +14,6 @@ enum Phase { NIGHT, DAWN, GOLDEN, DAY, DUSK }
 const GMIN_PER_DAY := 1440.0
 ## Members only this class writes (checked by test_core_state_owners).
 const STATE: Array[StringName] = [&"now_gmin", &"phase", &"hour"]
-## Keys of the tuning group; each must be a number.
-const KEYS: Array[String] = [
-	"gmin_real_s",
-	"start_gmin",
-	"latitude_deg",
-	"sun_declination_deg",
-	"solar_noon_h",
-	"night_below_deg",
-	"golden_from_deg",
-	"day_from_deg",
-]
 
 var now_gmin := 0.0
 var time_scale := 1.0:
@@ -39,19 +29,10 @@ func _process(delta: float) -> void:
 	advance(delta)
 
 
-## Takes the "clock" tuning group. Returns false and logs when a key is
-## missing or not a number; the clock then stays stopped.
-func configure(cfg: Dictionary) -> bool:
-	for key in KEYS:
-		if not (cfg.get(key) is float or cfg.get(key) is int):
-			Log.error("clock", "tuning clock.%s missing or not a number" % key)
-			return false
-	if float(cfg.gmin_real_s) <= 0.0:
-		Log.error("clock", "tuning clock.gmin_real_s must be positive")
-		return false
-	_cfg = cfg.duplicate()
+## Takes the "clock" tuning group, as ContentDB has checked it.
+func configure(cfg: Dictionary) -> void:
+	_cfg = cfg
 	_sync()
-	return true
 
 
 func is_configured() -> bool:

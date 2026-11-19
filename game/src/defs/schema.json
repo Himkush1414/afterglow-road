@@ -1,0 +1,23 @@
+{
+	"types": {
+		"tuning_clock": {
+			"type": "object",
+			"fields": {
+				"gmin_real_s": {"type": "number", "min": 0.01},
+				"start_gmin": {"type": "number", "min": 0},
+				"latitude_deg": {"type": "number", "min": -89, "max": 89},
+				"sun_declination_deg": {"type": "number", "min": -30, "max": 30},
+				"solar_noon_h": {"type": "number", "min": 0, "max": 24},
+				"night_below_deg": {"type": "number", "min": -90, "max": 90},
+				"golden_from_deg": {"type": "number", "min": -90, "max": 90},
+				"day_from_deg": {"type": "number", "min": -90, "max": 90}
+			}
+		}
+	},
+	"files": {
+		"tuning.json": {
+			"required": true,
+			"spec": {"type": "object", "fields": {"clock": {"type": "tuning_clock"}}}
+		}
+	}
+}
