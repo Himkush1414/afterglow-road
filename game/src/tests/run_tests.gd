@@ -75,9 +75,10 @@ func _run() -> void:
 			case.tree = self
 			var t0 := Time.get_ticks_usec()
 			_errors.take()
-			case.before_each()
+			# Hooks may await (scene changes); each finishes before the next step.
+			await Callable(case, "before_each").call()
 			await Callable(case, name).call()
-			case.after_each()
+			await Callable(case, "after_each").call()
 			case.settle_engine_errors(_errors.take())
 			var ms := (Time.get_ticks_usec() - t0) / 1000.0
 			var label := "%s:%s" % [path.get_file().get_basename(), name]
