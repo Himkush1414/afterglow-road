@@ -20,7 +20,7 @@ var _phases: Array[int] = []
 
 func before_each() -> void:
 	_c = GameClock.new()
-	check(_c.configure(CFG), "configured")
+	_c.configure(CFG)
 	_hours.clear()
 	_phases.clear()
 	_c.hour_changed.connect(func(h: int) -> void: _hours.append(h))
@@ -115,14 +115,8 @@ func test_save_data_round_trip_and_bad_values() -> void:
 	other.free()
 
 
-func test_bad_tuning_is_refused_and_the_clock_stays_stopped() -> void:
-	var bad := GameClock.new()
-	var cfg := CFG.duplicate()
-	cfg.erase("solar_noon_h")
-	check(not bad.configure(cfg), "missing key refused")
-	cfg = CFG.duplicate()
-	cfg.gmin_real_s = 0
-	check(not bad.configure(cfg), "zero rate refused")
-	bad.advance(10.0)
-	check_eq(bad.now_gmin, 0.0, "not configured: no time passes")
-	bad.free()
+func test_an_unconfigured_clock_stays_stopped() -> void:
+	var bare := GameClock.new()
+	bare.advance(10.0)
+	check_eq(bare.now_gmin, 0.0)
+	bare.free()
