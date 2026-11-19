@@ -1,0 +1,82 @@
+{
+	"pieces": [
+		{
+			"id": "fire_pit",
+			"name_key": "piece.fire_pit",
+			"category": "camp",
+			"tier": 0,
+			"slot": "free",
+			"size_m": [
+				1.0,
+				0.3,
+				1.0
+			],
+			"cost": [
+				[
+					{
+						"item": "rock",
+						"qty": 3
+					}
+				],
+				[
+					{
+						"item": "twig",
+						"qty": 2
+					}
+				]
+			],
+			"tool_class": "",
+			"hp": 100,
+			"support_base": null,
+			"support_v": null,
+			"support_h": null,
+			"flammable": false,
+			"stages": 1,
+			"blocks_wind": false,
+			"blocks_rain": false,
+			"scene": "",
+			"ghost_scene": ""
+		},
+		{
+			"id": "wall",
+			"name_key": "piece.wall",
+			"category": "timber",
+			"tier": 0,
+			"slot": "edge",
+			"size_m": [
+				2.0,
+				2.0,
+				0.1
+			],
+			"cost": [
+				[
+					{
+						"item": "twig",
+						"qty": 4
+					}
+				],
+				[
+					{
+						"item": "string",
+						"qty": 1
+					},
+					{
+						"item": "fiber",
+						"qty": 3
+					}
+				]
+			],
+			"tool_class": "",
+			"hp": 80,
+			"support_base": null,
+			"support_v": null,
+			"support_h": null,
+			"flammable": true,
+			"stages": 1,
+			"blocks_wind": true,
+			"blocks_rain": false,
+			"scene": "",
+			"ghost_scene": ""
+		}
+	]
+}

@@ -235,7 +235,8 @@
 			"type": "object",
 			"fields": {
 				"piece": {
-					"type": "id"
+					"type": "id",
+					"ref": "pieces"
 				}
 			}
 		},
@@ -318,14 +319,141 @@
 				}
 			}
 		},
-		"fluid": {
+		"unit": {
 			"type": "object",
 			"fields": {
 				"id": {
 					"type": "id"
 				},
 				"effect": {
-					"type": "item_effect"
+					"type": "item_effect",
+					"nullable": true
+				}
+			}
+		},
+		"cost_option": {
+			"type": "object",
+			"fields": {
+				"item": {
+					"type": "id",
+					"ref": [
+						"items",
+						"units"
+					]
+				},
+				"qty": {
+					"type": "int",
+					"min": 1
+				}
+			}
+		},
+		"cost": {
+			"type": "list",
+			"of": {
+				"type": "list",
+				"of": {
+					"type": "cost_option"
+				},
+				"min_len": 1
+			}
+		},
+		"piece": {
+			"type": "object",
+			"fields": {
+				"id": {
+					"type": "id"
+				},
+				"name_key": {
+					"type": "string"
+				},
+				"category": {
+					"type": "string",
+					"enum": [
+						"camp",
+						"station",
+						"timber",
+						"cement",
+						"story"
+					]
+				},
+				"tier": {
+					"type": "int",
+					"min": 0
+				},
+				"slot": {
+					"type": "string",
+					"enum": [
+						"free",
+						"fixed",
+						"cell_floor",
+						"cell_roof",
+						"cell_stairs",
+						"edge",
+						"corner",
+						"door",
+						"window"
+					]
+				},
+				"size_m": {
+					"type": "list",
+					"of": {
+						"type": "number",
+						"min": 0
+					},
+					"min_len": 3
+				},
+				"cost": {
+					"type": "cost"
+				},
+				"tool_class": {
+					"type": "string",
+					"enum": [
+						"",
+						"chop",
+						"mine",
+						"cut",
+						"hammer",
+						"dig",
+						"saw"
+					]
+				},
+				"hp": {
+					"type": "int",
+					"min": 1
+				},
+				"support_base": {
+					"type": "number",
+					"min": 0,
+					"nullable": true
+				},
+				"support_v": {
+					"type": "number",
+					"min": 0,
+					"nullable": true
+				},
+				"support_h": {
+					"type": "number",
+					"min": 0,
+					"nullable": true
+				},
+				"flammable": {
+					"type": "bool"
+				},
+				"stages": {
+					"type": "int",
+					"min": 1
+				},
+				"blocks_wind": {
+					"type": "bool"
+				},
+				"blocks_rain": {
+					"type": "bool"
+				},
+				"scene": {
+					"type": "string"
+				},
+				"ghost_scene": {
+					"type": "string"
 				}
 			}
 		}
@@ -372,10 +500,10 @@
 						},
 						"min_len": 1
 					},
-					"fluids": {
+					"units": {
 						"type": "list",
 						"of": {
-							"type": "fluid"
+							"type": "unit"
 						},
 						"optional": true
 					}
@@ -383,7 +511,25 @@
 			},
 			"collections": {
 				"items": "items",
-				"fluids": "fluids"
+				"units": "units"
+			}
+		},
+		"build_pieces.json": {
+			"required": true,
+			"spec": {
+				"type": "object",
+				"fields": {
+					"pieces": {
+						"type": "list",
+						"of": {
+							"type": "piece"
+						},
+						"min_len": 1
+					}
+				}
+			},
+			"collections": {
+				"pieces": "pieces"
 			}
 		}
 	}

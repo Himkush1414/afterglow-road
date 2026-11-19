@@ -29,7 +29,12 @@ thing_a,food,3,
 fluid_a,drink,1,
 T
 printf 'class,swing_s,hit_s,stamina,notes\nchop,1.5,0.5,6,\n' >"${csv}/tool_classes.csv"
-printf 'id,cost\npiece_a,kit_a:1\npiece_b,thing_a:2|tool_a:1\n' >"${csv}/build_pieces.csv"
+cat >"${csv}/build_pieces.csv" <<'T'
+id,name,category,tier,slot,size_m,cost,tool_class,hp,support_base,support_v,support_h,flammable,stages,notes
+piece_a,A,camp,0,free,1.0x0.5x2,kit_a:1,,50,,,,1,3,
+piece_b,B,timber,1,edge,2x2x0.1,thing_a:2|tool_a:1/unit_a:4|thing_a/tool_a:3,hammer,80,,10,18,0,1,
+T
+printf 'id,notes\nfluid_a,\n' >"${csv}/units.csv"
 echo '{"kept": true}' >"${out}/other.json"
 
 if python3 "${tool}" "${csv}" "${out}" >/dev/null; then pass "converts"; else fail "converts"; fi
@@ -38,6 +43,7 @@ check() { # description python-expression-over-items-and-mats
 import json,sys
 items=json.load(open('${out}/items.json'))
 mats=json.load(open('${out}/materials.json'))
+pieces=json.load(open('${out}/build_pieces.json'))
 by={i['id']:i for i in items['items']}
 sys.exit(0 if ($2) else 1)"; then pass "$1"; else fail "$1"; fi
 }
@@ -46,14 +52,21 @@ check "fuel object" "by['thing_a']['fuel']=={'gmin':7,'class':'K'}"
 check "no fuel without class" "by['tool_a']['fuel'] is None"
 check "tool swing from the class table" "by['tool_a']['tool']=={'class':'chop','tier':1,'power':8,'durability':90,'swing_s':1.5,'stamina':6}"
 check "sparse effect" "by['thing_a']['effect']=={'kind':'food','hunger':3}"
-check "fluid kept apart" "items['fluids']==[{'id':'fluid_a','effect':{'kind':'drink','hunger':1}}]"
+check "unit with its effect" "items['units']==[{'id':'fluid_a','effect':{'kind':'drink','hunger':1}}]"
+check "cost syntax" "pieces['pieces'][1]['cost']==[[{'item':'thing_a','qty':2}],[{'item':'tool_a','qty':1},{'item':'unit_a','qty':4}],[{'item':'thing_a','qty':3},{'item':'tool_a','qty':3}]]"
+check "piece fields" "{k:pieces['pieces'][1][k] for k in ('size_m','support_base','support_v','stages','blocks_wind','blocks_rain','flammable','name_key')}=={'size_m':[2,2,0.1],'support_base':None,'support_v':10,'stages':1,'blocks_wind':True,'blocks_rain':False,'flammable':False,'name_key':'piece.piece_b'}"
+check "free piece blocks nothing, keeps stages" "(pieces['pieces'][0]['blocks_wind'],pieces['pieces'][0]['blocks_rain'],pieces['pieces'][0]['stages'])==(False,False,3)"
 check "placeable deploys its piece" "by['kit_a']['place']=={'piece':'piece_a'}"
 check "poses" "[by[k]['held_pose'] for k in ('thing_a','tool_a','kit_a')]==['small_1h','tool_2h','carry_front']"
 check "name key" "by['tool_a']['name_key']=='item.tool_a'"
 if grep -q kept "${out}/other.json"; then pass "other files left alone"; else fail "other files left alone"; fi
 
-sed -i 's/thing_a,A,resource,10,0.5/thing_a,A,resource,ten,0.5/' "${csv}/items.csv"
+printf 'thing_b,food,1,\n' >>"${csv}/item_effects.csv"
 rm "${out}/items.json"
+if msg="$(python3 "${tool}" "${csv}" "${out}" 2>&1)"; then fail "effect of unknown id refused"; else pass "effect of unknown id refused"; fi
+if grep -q "'thing_b' is neither an item nor a unit" <<<"${msg}"; then pass "names the unknown id"; else fail "names the unknown id: ${msg}"; fi
+sed -i '$d' "${csv}/item_effects.csv"
+sed -i 's/thing_a,A,resource,10,0.5/thing_a,A,resource,ten,0.5/' "${csv}/items.csv"
 if msg="$(python3 "${tool}" "${csv}" "${out}" 2>&1)"; then fail "bad number refused"; else pass "bad number refused"; fi
 if grep -q "items.csv:2 stack: 'ten' is not a number" <<<"${msg}"; then pass "problem names row and column"; else fail "problem names row and column: ${msg}"; fi
 if [[ ! -e "${out}/items.json" ]]; then pass "nothing written on error"; else fail "nothing written on error"; fi
