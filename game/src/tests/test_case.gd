@@ -5,6 +5,8 @@ extends RefCounted
 ## not raised, so one failing check does not hide the next.
 
 var failures: PackedStringArray = []
+## Fragments of engine errors this test causes on purpose (expect_engine_error).
+var expected_errors: PackedStringArray = []
 ## Set by the runner: the SceneTree, for tests that need nodes or frames.
 var tree: SceneTree
 
@@ -48,6 +50,30 @@ func check_near(actual: float, expected: float, tolerance: float, message: Strin
 
 func fail(message: String) -> void:
 	failures.append(message)
+
+
+## Declares that the test will cause one engine error containing fragment;
+## the test fails if it does not happen.
+func expect_engine_error(fragment: String) -> void:
+	expected_errors.append(fragment)
+
+
+## Called by the runner with the engine errors seen during the test: each
+## expected fragment consumes one matching error; the rest are failures.
+func settle_engine_errors(errors: PackedStringArray) -> void:
+	var left := errors.duplicate()
+	for fragment in expected_errors:
+		var hit := -1
+		for i in left.size():
+			if left[i].contains(fragment):
+				hit = i
+				break
+		if hit < 0:
+			fail("expected engine error not raised: " + fragment)
+		else:
+			left.remove_at(hit)
+	for e in left:
+		fail("engine error: " + e)
 
 
 func _prefix(message: String) -> String:

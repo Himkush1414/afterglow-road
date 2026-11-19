@@ -78,8 +78,7 @@ func _run() -> void:
 			case.before_each()
 			await Callable(case, name).call()
 			case.after_each()
-			for e in _errors.take():
-				case.fail("engine error: " + e)
+			case.settle_engine_errors(_errors.take())
 			var ms := (Time.get_ticks_usec() - t0) / 1000.0
 			var label := "%s:%s" % [path.get_file().get_basename(), name]
 			if case.failures.is_empty():
