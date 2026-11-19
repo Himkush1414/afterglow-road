@@ -17,5 +17,10 @@ func _run() -> void:
 	# Autoloads are not known when this script is compiled.
 	var db: Node = root.get_node("ContentDB")
 	var ok: bool = db.load_root(args[0])
-	print("RESULT %s (%s, %d errors)" % ["PASS" if ok else "FAIL", args[0], db.errors.size()])
+	var problems: PackedStringArray = db.text_problems() if ok else PackedStringArray()
+	for p in problems:
+		printerr("text: " + p)
+	ok = ok and problems.is_empty()
+	var count: int = db.errors.size() + problems.size()
+	print("RESULT %s (%s, %d errors)" % ["PASS" if ok else "FAIL", args[0], count])
 	quit(0 if ok else 1)

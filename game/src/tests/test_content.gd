@@ -173,3 +173,30 @@ func test_text_tables_follow_the_loaded_tree() -> void:
 	check_eq(tr("pause.title"), "Paused", "interface text from the project")
 	_load()  # a tree without text: the sample text is removed
 	check_eq(tr("item.twig"), "item.twig", "previous tree's text unregistered")
+
+
+func test_text_tables_are_complete_for_the_active_and_sample_trees() -> void:
+	for tree_root: String in [ContentDB.SAMPLE_ROOT, ContentDB.default_root()]:
+		check(ContentDB.load_root(tree_root), tree_root)
+		check_eq(ContentDB.text_problems(), PackedStringArray(), tree_root)
+
+
+func test_text_problems_are_reported() -> void:
+	DirAccess.make_dir_recursive_absolute(DIR + "/text")
+	_write("data/things.json", '{"things": [{"id": "a", "next": null}]}')
+	var lines := "keys,en,_note\nthing.a,A,\nBad Key,x,\nthing.a,again,\nmenu.quit,clash,\n"
+	_write("text/content.csv", lines)
+	ContentDB.schema_path = DIR + "/schema.json"
+	check(ContentDB.load_root(DIR), "loads")
+	check_eq(
+		ContentDB.text_problems(),
+		PackedStringArray(
+			[
+				"content.csv:3: key 'Bad Key' is not lower case with dots",
+				"content.csv:4: key 'thing.a' is defined twice",
+				"content.csv:5: key 'menu.quit' is defined twice",
+			]
+		)
+	)
+	DirAccess.remove_absolute(DIR + "/text/content.csv")
+	DirAccess.remove_absolute(DIR + "/text")
