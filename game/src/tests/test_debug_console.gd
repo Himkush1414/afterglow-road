@@ -61,7 +61,7 @@ func test_perf_command_toggles_the_overlay() -> void:
 	check(not perf.visible, "hidden at start")
 	check_eq(_c.run("perf"), "perf overlay on")
 	check(perf.visible, "shown")
-	for key: String in ["fps", "frame", "draw calls", "primitives", "video", "static"]:
+	for key: String in ["fps", "frame", "draw calls", "primitives", "video", "static", "pipelines"]:
 		check(perf.text.contains(key), "shows %s" % key)
 	PerfOverlay.record("probe", 1.25)
 	await tree.create_timer(PerfOverlay.REFRESH_S + 0.1, true).timeout
@@ -69,3 +69,15 @@ func test_perf_command_toggles_the_overlay() -> void:
 	PerfOverlay.system_ms.erase("probe")
 	check_eq(_c.run("perf"), "perf overlay off")
 	check(not perf.visible, "hidden again")
+
+
+func test_pipeline_monitors_are_counted_and_shown() -> void:
+	var counts := PerfOverlay.pipeline_counts()
+	check_eq(counts.keys(), ["canvas", "mesh", "surface", "draw", "specialization"])
+	var overlay := PerfOverlay.new()
+	var text := overlay.stats_text()
+	overlay.free()
+	for name: String in counts:
+		var live := int(Performance.get_monitor(PerfOverlay.PIPELINES[name]))
+		check(counts[name] >= 0 and counts[name] <= live, "%s matches the monitor" % name)
+		check(text.contains("%s " % name), "%s shown" % name)
