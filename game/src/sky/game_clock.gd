@@ -11,6 +11,8 @@ signal hour_changed(hour: int)
 enum Phase { NIGHT, DAWN, GOLDEN, DAY, DUSK }
 
 const GMIN_PER_DAY := 1440.0
+## Members only this class writes (checked by test_core_state_owners).
+const STATE: Array[StringName] = [&"now_gmin", &"phase", &"hour"]
 ## Keys of the tuning group; each must be a number.
 const KEYS: Array[String] = [
 	"gmin_real_s",
