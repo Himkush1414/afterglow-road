@@ -35,6 +35,16 @@ piece_a,A,camp,0,free,1.0x0.5x2,kit_a:1,,50,,,,1,3,
 piece_b,B,timber,1,edge,2x2x0.1,thing_a:2|tool_a:1/unit_a:4|thing_a/tool_a:3,hammer,80,,10,18,0,1,
 T
 printf 'id,notes\nfluid_a,\n' >"${csv}/units.csv"
+cat >"${csv}/trees.csv" <<'T'
+id,species,size,height_m,trunk_r_m,canopy_r_m,hp,logs,poles,sticks,extra_drops,variants,harvest_no_fell
+tree_a,sp_a,mature,10,0.2,2,90,3,0,4,thing_a:1@0.25,2,thing_a:2 (cut; cooldown 4 gdays)
+tree_b,sp_a,shrub,2,0.05,1,10,0,0,2,,1,thing_a:3 (hands; regrow 1.5 gdays)
+T
+cat >"${csv}/nodes.csv" <<'T'
+id,name,tool_class,min_tier,hp,drops,biomes,world_count,respawn_gdays,cue
+node_a,A,mine,1,60,thing_a:4|tool_a:1@0.4|fluid_a:1@wet,b_one;b_two,300,0,note
+node_b,B,hand,0,1,thing_a:2,b_one,runtime,2,
+T
 cat >"${csv}/recipes.csv" <<'T'
 id,output,qty,station,tool_class,inputs,time,time_unit,unlock,notes
 rec_a,thing_a,2,piece_b,chop/cut,tool_a:1,6,swings,item:kit_a+station:piece_b,also gives thing_a:3
@@ -50,6 +60,8 @@ items=json.load(open('${out}/items.json'))
 mats=json.load(open('${out}/materials.json'))
 pieces=json.load(open('${out}/build_pieces.json'))
 rec={r['id']:r for r in json.load(open('${out}/recipes.json'))['recipes']}
+tr={r['id']:r for r in json.load(open('${out}/trees.json'))['trees']}
+nd={r['id']:r for r in json.load(open('${out}/nodes.json'))['nodes']}
 by={i['id']:i for i in items['items']}
 sys.exit(0 if ($2) else 1)"; then pass "$1"; else fail "$1"; fi
 }
@@ -64,6 +76,10 @@ check "piece fields" "{k:pieces['pieces'][1][k] for k in ('size_m','support_base
 check "free piece blocks nothing, keeps stages" "(pieces['pieces'][0]['blocks_wind'],pieces['pieces'][0]['blocks_rain'],pieces['pieces'][0]['stages'])==(False,False,3)"
 check "recipe with alternatives and byproduct" "rec['rec_a']=={'id':'rec_a','output':'thing_a','qty':2,'station':'piece_b','tool_class':['chop','cut'],'inputs':[[{'item':'tool_a','qty':1}]],'time':6,'time_unit':'swings','unlock':['item:kit_a','station:piece_b'],'byproducts':[{'item':'thing_a','qty':3}]}"
 check "plain recipe" "(rec['rec_b']['tool_class'],rec['rec_b']['unlock'],rec['rec_b']['byproducts'])==([],['start'],[])"
+check "tree drops and harvest" "(tr['tree_a']['extra_drops'],tr['tree_a']['harvest_no_fell'])==([{'item':'thing_a','qty':1,'chance':0.25,'condition':''}],{'item':'thing_a','qty':2,'tool':'cut','cooldown_gday':4})"
+check "hand harvest with regrow" "tr['tree_b']['harvest_no_fell']=={'item':'thing_a','qty':3,'tool':'hand','cooldown_gday':1.5}"
+check "node drops with chance and condition" "nd['node_a']['drops']==[{'item':'thing_a','qty':4,'chance':1,'condition':''},{'item':'tool_a','qty':1,'chance':0.4,'condition':''},{'item':'fluid_a','qty':1,'chance':1,'condition':'wet'}]"
+check "node lists and runtime count" "(nd['node_a']['biomes'],nd['node_a']['world_count'],nd['node_b']['world_count'],'cue' in nd['node_a'],nd['node_a']['name_key'])==(['b_one','b_two'],300,None,False,'node.node_a')"
 check "placeable deploys its piece" "by['kit_a']['place']=={'piece':'piece_a'}"
 check "poses" "[by[k]['held_pose'] for k in ('thing_a','tool_a','kit_a')]==['small_1h','tool_2h','carry_front']"
 check "name key" "by['tool_a']['name_key']=='item.tool_a'"

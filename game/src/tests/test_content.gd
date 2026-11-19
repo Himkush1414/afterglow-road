@@ -143,6 +143,14 @@ func test_typed_defs_match_the_data() -> void:
 		check(ContentDB.item(r.output) != null, "%s output" % id)
 		check_eq(r.unlock.size(), (ContentDB.entry("recipes", id).unlock as Array).size(), id)
 		check(r.station == &"hand" or ContentDB.piece(r.station) != null, "%s station" % id)
+	for id: String in ContentDB.ids("trees"):
+		var t := ContentDB.tree(StringName(id))
+		check_eq(t.hp, int(ContentDB.entry("trees", id).hp), id)
+		for d: Dictionary in t.extra_drops:
+			check(ContentDB.item(StringName(d.item)) != null, "%s drop %s" % [id, d.item])
+	for id: String in ContentDB.ids("nodes"):
+		var n := ContentDB.node(StringName(id))
+		check(not n.drops.is_empty() and not n.biomes.is_empty(), id)
 	for id: String in ContentDB.ids("pieces"):
 		var p := ContentDB.piece(StringName(id))
 		check_eq(p.size_m.x, float(ContentDB.entry("pieces", id).size_m[0]), id)

@@ -109,6 +109,14 @@ func recipe(id: StringName) -> RecipeDef:
 	return (_defs.get("recipes", {}) as Dictionary).get(id)
 
 
+func tree(id: StringName) -> TreeDef:
+	return (_defs.get("trees", {}) as Dictionary).get(id)
+
+
+func node(id: StringName) -> NodeDef:
+	return (_defs.get("nodes", {}) as Dictionary).get(id)
+
+
 ## Ids of `collection` in file order.
 func ids(collection: String) -> Array:
 	return (_collections.get(collection, {}) as Dictionary).keys()
@@ -120,6 +128,8 @@ func _build_defs() -> void:
 		"materials": MaterialDef.from_dict,
 		"pieces": PieceDef.from_dict,
 		"recipes": RecipeDef.from_dict,
+		"trees": TreeDef.from_dict,
+		"nodes": NodeDef.from_dict,
 	}
 	for name: String in builders:
 		var by_id := {}
