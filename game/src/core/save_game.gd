@@ -2,8 +2,8 @@ extends Node
 ## Autoload "SaveGame". Save and load orchestration (04 §3). Owners register
 ## a section of state.bin; region deltas come from one region source. Files
 ## are Dictionaries (`var_to_bytes`), ZSTD-compressed and framed with a
-## hash (Q-37), written to a temporary file and renamed over the target; state.bin keeps two backups and loading
-## falls back to them.
+## hash (Q-37), written to a temporary file and renamed over the target;
+## state.bin keeps two backups and loading falls back to them.
 
 signal loaded(slot: String, source: String)
 
@@ -62,7 +62,8 @@ func save_slot(slot: String) -> Error:
 	var state := {}
 	for name: String in _sections:
 		state[name] = (_sections[name][0] as Callable).call()
-	# shortcut: positions are stored as they are; the map-coordinate conversion of 04 §3.4 comes with WorldData.
+	# shortcut: positions are stored as they are; the map-coordinate
+	# conversion of 04 §3.4 comes with WorldData.
 	var regions: Dictionary = region_source.call()
 	var renames: Array[String] = []
 	for r: Vector2i in regions:
