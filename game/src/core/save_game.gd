@@ -6,6 +6,7 @@ extends Node
 ## state.bin keeps two backups and loading falls back to them.
 
 signal loaded(slot: String, source: String)
+signal saved(slot: String, err: Error)
 
 const SAVES_DIR := "user://saves"
 const SAVE_VERSION := 1
@@ -33,8 +34,39 @@ var last_source := ""
 var meta_source := func() -> Dictionary: return {}
 ## Region deltas to write: Dictionary[Vector2i, Dictionary].
 var region_source := func() -> Dictionary: return {}
+## Slot of the running game ("" on the title screen); autosaved and saved
+## when the OS pauses the app or the window closes.
+var active_slot := ""
+## Real seconds between autosaves (tuning save.autosave_s; 0 = off).
+var autosave_s := 0.0
 ## name -> [save: Callable() -> Variant, load: Callable(Variant) -> bool]
 var _sections := {}
+var _task := -1
+var _since_save := 0.0
+
+
+func _ready() -> void:
+	autosave_s = float(ContentDB.tuning("save").get("autosave_s", 0.0))
+
+
+func _process(delta: float) -> void:
+	advance_autosave(delta)
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_PAUSED or what == NOTIFICATION_WM_CLOSE_REQUEST:
+		if active_slot != "":
+			save_slot(active_slot)
+
+
+## Counts real time and starts a background save of `active_slot` when the
+## interval has passed since its last save.
+func advance_autosave(delta: float) -> void:
+	if active_slot == "" or autosave_s <= 0.0:
+		return
+	_since_save += delta
+	if _since_save >= autosave_s and save_slot_async(active_slot):
+		_since_save = 0.0
 
 
 ## Registers section `name` of state.bin. `save_fn()` returns its data;
@@ -59,40 +91,127 @@ func has_save(slot: String) -> bool:
 	return FileAccess.file_exists(slot_dir(slot).path_join(META))
 
 
-## Writes the slot (04 §3.4 order): region temporaries, state temporary,
-## backup rotation, renames, meta.json last.
+## Writes the slot now and returns when it is on disk (04 §3.4 order:
+## region temporaries, state temporary, backup rotation, renames, meta last).
 func save_slot(slot: String) -> Error:
-	var dir := slot_dir(slot)
-	var err := DirAccess.make_dir_recursive_absolute(dir.path_join(REGIONS))
-	if err != OK:
-		return _fail("cannot create %s" % dir, err)
+	_wait_for_writer()
+	var job := _snapshot(slot)
+	var err := _write_job(job)
+	_report(job, err)
+	return err
+
+
+## Takes the snapshot now and writes it on a worker thread; `saved` is
+## emitted when it is on disk. Returns false (and starts nothing) while
+## another write is running.
+func save_slot_async(slot: String) -> bool:
+	if is_writing():
+		return false
+	var job := _snapshot(slot)
+	_task = WorkerThreadPool.add_task(
+		func() -> void: _finish_async.call_deferred(job, _write_job(job))
+	)
+	return true
+
+
+func is_writing() -> bool:
+	return _task >= 0
+
+
+func _finish_async(job: Dictionary, err: Error) -> void:
+	if _task >= 0:
+		WorkerThreadPool.wait_for_task_completion(_task)
+		_task = -1
+	_report(job, err)
+
+
+## Blocks until a running write is on disk; its report still follows.
+func _wait_for_writer() -> void:
+	if _task >= 0:
+		WorkerThreadPool.wait_for_task_completion(_task)
+		_task = -1
+
+
+## Everything a write needs, copied on the main thread so the game can go on
+## changing its state while a worker writes.
+func _snapshot(slot: String) -> Dictionary:
 	var state := {}
 	for name: String in _sections:
-		state[name] = (_sections[name][0] as Callable).call()
+		var data: Variant = (_sections[name][0] as Callable).call()
+		state[name] = data.duplicate(true) if data is Dictionary or data is Array else data
 	# shortcut: positions are stored as they are; the map-coordinate
 	# conversion of 04 §3.4 comes with WorldData.
-	var regions: Dictionary = region_source.call()
-	var renames: Array[String] = []
-	for r: Vector2i in regions:
-		var path := dir.path_join(REGIONS).path_join("%d_%d.bin" % [r.x, r.y])
-		err = _write_var(path + TMP, regions[r])
-		if err != OK:
-			return _fail("cannot write %s" % path, err)
-		renames.append(path)
-	err = _write_var(dir.path_join(STATE) + TMP, state)
+	var regions: Dictionary = (region_source.call() as Dictionary).duplicate(true)
+	var now := Time.get_datetime_string_from_system(true)
+	var old: Variant = read_meta(slot)
+	var meta: Dictionary = (meta_source.call() as Dictionary).duplicate(true)
+	(
+		meta
+		. merge(
+			{
+				"save_version": version,
+				"game_version": App.version(),
+				"slot": slot,
+				"created_utc": old.get("created_utc", now) if old is Dictionary else now,
+				"saved_utc": now,
+			},
+			true
+		)
+	)
+	return {
+		"slot": slot,
+		"dir": slot_dir(slot),
+		"version": version,
+		"state": state,
+		"regions": regions,
+		"meta": meta,
+		"error": "",
+	}
+
+
+## File work only (safe on a worker thread: no logging, no scene access).
+func _write_job(job: Dictionary) -> Error:
+	var dir: String = job.dir
+	var err := DirAccess.make_dir_recursive_absolute(dir.path_join(REGIONS))
 	if err != OK:
-		return _fail("cannot write state", err)
+		job.error = "cannot create %s" % dir
+		return err
+	var renames: Array[String] = []
+	for r: Vector2i in job.regions:
+		var path := dir.path_join(REGIONS).path_join("%d_%d.bin" % [r.x, r.y])
+		err = _write_var(path + TMP, job.regions[r], job.version)
+		if err != OK:
+			job.error = "cannot write %s" % path
+			return err
+		renames.append(path)
+	err = _write_var(dir.path_join(STATE) + TMP, job.state, job.version)
+	if err != OK:
+		job.error = "cannot write state"
+		return err
 	_rotate_backups(dir)
 	renames.append(dir.path_join(STATE))
 	for path in renames:
 		err = DirAccess.rename_absolute(path + TMP, path)
 		if err != OK:
-			return _fail("cannot rename %s" % path, err)
-	err = _write_meta(dir, slot)
+			job.error = "cannot rename %s" % path
+			return err
+	err = _write_meta(dir, job.meta)
 	if err != OK:
-		return _fail("cannot write meta", err)
-	Log.info("save", "saved %s (%d sections, %d regions)" % [slot, state.size(), regions.size()])
-	return OK
+		job.error = "cannot write meta"
+	return err
+
+
+func _report(job: Dictionary, err: Error) -> void:
+	if err != OK:
+		_fail("%s: %s" % [job.slot, job.error], err)
+	else:
+		Log.info(
+			"save",
+			"saved %s (%d sections, %d regions)" % [job.slot, job.state.size(), job.regions.size()]
+		)
+	if err == OK and job.slot == active_slot:
+		_since_save = 0.0
+	saved.emit(job.slot, err)
 
 
 ## Reads the slot and hands each section to its owner. state.bin falls back
@@ -158,23 +277,7 @@ func _rotate_backups(dir: String) -> void:
 			DirAccess.rename_absolute(from, dir.path_join(files[i]))
 
 
-func _write_meta(dir: String, slot: String) -> Error:
-	var now := Time.get_datetime_string_from_system(true)
-	var old: Variant = read_meta(slot)
-	var meta: Dictionary = meta_source.call()
-	(
-		meta
-		. merge(
-			{
-				"save_version": version,
-				"game_version": App.version(),
-				"slot": slot,
-				"created_utc": old.get("created_utc", now) if old is Dictionary else now,
-				"saved_utc": now,
-			},
-			true
-		)
-	)
+func _write_meta(dir: String, meta: Dictionary) -> Error:
 	var path := dir.path_join(META)
 	var f := FileAccess.open(path + TMP, FileAccess.WRITE)
 	if f == null:
@@ -184,13 +287,13 @@ func _write_meta(dir: String, slot: String) -> Error:
 	return DirAccess.rename_absolute(path + TMP, path)
 
 
-func _write_var(path: String, value: Variant) -> Error:
+func _write_var(path: String, value: Variant, file_version: int) -> Error:
 	var raw := var_to_bytes(value)
 	var packed := raw.compress(FileAccess.COMPRESSION_ZSTD)
 	var f := FileAccess.open(path, FileAccess.WRITE)
 	if f == null:
 		return FileAccess.get_open_error()
-	f.store_32(version)
+	f.store_32(file_version)
 	f.store_64(raw.size())
 	f.store_buffer(_sha256(packed))
 	f.store_buffer(packed)

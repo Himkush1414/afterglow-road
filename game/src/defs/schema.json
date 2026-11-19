@@ -754,6 +754,15 @@
 					"min_len": 1
 				}
 			}
+		},
+		"tuning_save": {
+			"type": "object",
+			"fields": {
+				"autosave_s": {
+					"type": "number",
+					"min": 1
+				}
+			}
 		}
 	},
 	"files": {
@@ -764,6 +773,9 @@
 				"fields": {
 					"clock": {
 						"type": "tuning_clock"
+					},
+					"save": {
+						"type": "tuning_save"
 					}
 				}
 			}
