@@ -1,0 +1,29 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://src/core/warmup.gd" id="1"]
+
+[sub_resource type="BoxMesh" id="box"]
+
+[node name="Warmup" type="Node3D"]
+script = ExtResource("1")
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 4)
+current = true
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.5, 0.866, 0, -0.866, 0.5, 0, 4, 0)
+shadow_enabled = true
+
+[node name="Omni" type="OmniLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1.5, 1)
+shadow_enabled = true
+
+[node name="Probe" type="ReflectionProbe" parent="."]
+
+[node name="Decal" type="Decal" parent="."]
+
+[node name="Box" type="MeshInstance3D" parent="."]
+mesh = SubResource("box")
