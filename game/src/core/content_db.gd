@@ -17,6 +17,8 @@ var _files := {}
 var _collections := {}
 ## collection -> id -> typed def
 var _defs := {}
+## Translations of the loaded tree, registered with the TranslationServer.
+var _text: Array[Translation] = []
 
 
 func _ready() -> void:
@@ -41,6 +43,7 @@ func load_root(path: String) -> bool:
 	_files.clear()
 	_collections.clear()
 	_defs.clear()
+	_unload_text()
 	var schema: Variant = _read_json(schema_path)
 	if not schema is Dictionary:
 		return false
@@ -79,6 +82,7 @@ func load_root(path: String) -> bool:
 	for file: String in _files:
 		_deep_read_only(_files[file])
 	_build_defs()
+	_load_text(path + "/text")
 	Log.info("content", "loaded %d files from %s" % [_files.size(), path])
 	return true
 
@@ -124,6 +128,23 @@ func loot(id: StringName) -> LootTable:
 ## Ids of `collection` in file order.
 func ids(collection: String) -> Array:
 	return (_collections.get(collection, {}) as Dictionary).keys()
+
+
+## Registers every translation imported from `<root>/text/*.csv`.
+func _load_text(dir: String) -> void:
+	if not DirAccess.dir_exists_absolute(dir):
+		return
+	for file in ResourceLoader.list_directory(dir):
+		if file.ends_with(".translation"):
+			var t := load(dir.path_join(file)) as Translation
+			TranslationServer.add_translation(t)
+			_text.append(t)
+
+
+func _unload_text() -> void:
+	for t in _text:
+		TranslationServer.remove_translation(t)
+	_text.clear()
 
 
 func _build_defs() -> void:

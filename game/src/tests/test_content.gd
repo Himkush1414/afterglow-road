@@ -165,3 +165,11 @@ func test_typed_defs_match_the_data() -> void:
 		for slot: Array in p.cost:
 			for opt: Dictionary in slot:
 				check(ContentDB.item(StringName(opt.item)) != null, "%s cost %s" % [id, opt.item])
+
+
+func test_text_tables_follow_the_loaded_tree() -> void:
+	check(ContentDB.load_root(ContentDB.SAMPLE_ROOT), "sample loads")
+	check_eq(tr("item.twig"), "Twig", "sample content text registered")
+	check_eq(tr("pause.title"), "Paused", "interface text from the project")
+	_load()  # a tree without text: the sample text is removed
+	check_eq(tr("item.twig"), "item.twig", "previous tree's text unregistered")
