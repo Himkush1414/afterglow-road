@@ -45,3 +45,15 @@ func show_scene(path: String) -> Error:
 
 func show_title() -> void:
 	await show_scene(TITLE_SCENE)
+
+
+## Shows the game scene and starts a new game in `slot` (or continues it).
+func start_game(slot: String, is_new: bool) -> Error:
+	var err: Error = await show_scene(Game.SCENE)
+	if err != OK:
+		return err
+	err = Game.current.start_new(slot) if is_new else Game.current.start_continue(slot)
+	if err != OK:
+		Log.error("app", "cannot start %s (%s)" % [slot, error_string(err)])
+		await show_title()
+	return err
