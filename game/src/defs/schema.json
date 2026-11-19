@@ -763,6 +763,179 @@
 					"min": 1
 				}
 			}
+		},
+		"quality_preset": {
+			"type": "object",
+			"fields": {
+				"render_scale": {
+					"type": "number",
+					"min": 0,
+					"max": 2
+				},
+				"scaling_filter": {
+					"type": "string",
+					"enum": [
+						"bilinear",
+						"fsr",
+						"fsr2",
+						"none"
+					]
+				},
+				"aa": {
+					"type": "string",
+					"enum": [
+						"fxaa",
+						"msaa2_fxaa",
+						"taa"
+					]
+				},
+				"frame_cap": {
+					"type": "int",
+					"min": 0
+				},
+				"shadow_cascades": {
+					"type": "int",
+					"min": 1,
+					"max": 4
+				},
+				"shadow_distance_m": {
+					"type": "number",
+					"min": 0
+				},
+				"shadow_map": {
+					"type": "int",
+					"min": 256
+				},
+				"shadowed_point_lights": {
+					"type": "int",
+					"min": 0
+				},
+				"terrain_r0_m": {
+					"type": "number",
+					"min": 0
+				},
+				"terrain_quads": {
+					"type": "int",
+					"min": 1
+				},
+				"terrain_shadows": {
+					"type": "bool"
+				},
+				"tree_tiers_m": {
+					"type": "list",
+					"of": {
+						"type": "number",
+						"min": 0
+					},
+					"min_len": 4
+				},
+				"t2_tree_shadows": {
+					"type": "bool"
+				},
+				"grass_radius_m": {
+					"type": "number",
+					"min": 0
+				},
+				"grass_density": {
+					"type": "number",
+					"min": 0
+				},
+				"texture_set": {
+					"type": "string",
+					"enum": [
+						"lo",
+						"hi"
+					]
+				},
+				"ssao": {
+					"type": "bool"
+				},
+				"ssil": {
+					"type": "bool"
+				},
+				"sdfgi": {
+					"type": "bool"
+				},
+				"volumetric_fog": {
+					"type": "bool"
+				},
+				"water_refraction": {
+					"type": "bool"
+				},
+				"water_ssr": {
+					"type": "bool"
+				},
+				"heat_haze": {
+					"type": "bool"
+				},
+				"mirror_size": {
+					"type": "int",
+					"min": 1
+				},
+				"mirror_hz": {
+					"type": "number",
+					"min": 0
+				},
+				"particle_mult": {
+					"type": "number",
+					"min": 0
+				},
+				"rain_streaks": {
+					"type": "int",
+					"min": 0
+				},
+				"building_exterior_m": {
+					"type": "number",
+					"min": 0
+				},
+				"building_shell_m": {
+					"type": "number",
+					"min": 0
+				},
+				"rigid_body_cap": {
+					"type": "int",
+					"min": 0
+				},
+				"animal_caps": {
+					"type": "string",
+					"enum": [
+						"phone",
+						"desktop"
+					]
+				},
+				"animal_cap_mult": {
+					"type": "number",
+					"min": 0
+				},
+				"foot_ik": {
+					"type": "bool"
+				},
+				"sky_radiance_size": {
+					"type": "int",
+					"min": 1
+				},
+				"region_budget_ms": {
+					"type": "number",
+					"min": 0
+				}
+			}
+		},
+		"tuning_quality": {
+			"type": "object",
+			"fields": {
+				"presets": {
+					"type": "map",
+					"values": {
+						"type": "quality_preset"
+					}
+				},
+				"default_mobile": {
+					"type": "id"
+				},
+				"default_desktop": {
+					"type": "id"
+				}
+			}
 		}
 	},
 	"files": {
@@ -776,6 +949,9 @@
 					},
 					"save": {
 						"type": "tuning_save"
+					},
+					"quality": {
+						"type": "tuning_quality"
 					}
 				}
 			}
