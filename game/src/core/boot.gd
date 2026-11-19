@@ -9,4 +9,5 @@ func _ready() -> void:
 		Log.error("boot", "content has %d errors; stopping" % ContentDB.errors.size())
 		get_tree().quit(1)
 		return
+	Quality.apply(Quality.chosen(), get_viewport())
 	App.show_title.call_deferred()
