@@ -9,6 +9,11 @@ extends Node
 const SCHEMA_PATH := "res://src/defs/schema.json"
 const CONTENT_ROOT := "res://content"
 const SAMPLE_ROOT := "res://content_sample"
+const UI_TABLE := "res://ui/i18n/ui.csv"
+const UI_SCENES := "res://ui"
+const KEY_PATTERN := "^[a-z0-9_]+(\\.[a-z0-9_]+)*$"
+## Collections whose entries name text: collection -> also needs "<key>.desc".
+const TEXT_KEYS := {"items": true, "pieces": true, "nodes": false, "trees": false}
 
 var root := ""
 var schema_path := SCHEMA_PATH
@@ -85,6 +90,60 @@ func load_root(path: String) -> bool:
 	_load_text(path + "/text")
 	Log.info("content", "loaded %d files from %s" % [_files.size(), path])
 	return true
+
+
+## Text table problems of the loaded tree (T-18-11 data part), read from
+## the source CSV files, so it runs in checks, not in exported builds: key
+## format, keys defined twice, name and description keys missing for
+## content entries, and scene texts that are not interface keys.
+func text_problems() -> PackedStringArray:
+	var out: PackedStringArray = []
+	var key_re := RegEx.create_from_string(KEY_PATTERN)
+	var ui := _csv_keys(UI_TABLE, key_re, {}, out)
+	var content := {}
+	var text_dir := root.path_join("text")
+	if DirAccess.dir_exists_absolute(text_dir):
+		for f in DirAccess.get_files_at(text_dir):
+			if f.ends_with(".csv"):
+				content.merge(_csv_keys(text_dir.path_join(f), key_re, ui, out))
+	for collection: String in TEXT_KEYS:
+		for id: String in ids(collection):
+			var key: String = entry(collection, id).name_key
+			for k: String in [key, key + ".desc"] if TEXT_KEYS[collection] else [key]:
+				if not content.has(k):
+					out.append("%s %s: text key '%s' is missing" % [collection, id, k])
+	var text_re := RegEx.create_from_string('(?m)^text = "([^"]*)"')
+	for f in DirAccess.get_files_at(UI_SCENES):
+		if f.ends_with(".tscn"):
+			var scene := FileAccess.get_file_as_string(UI_SCENES.path_join(f))
+			for m in text_re.search_all(scene):
+				if not ui.has(m.get_string(1)):
+					out.append("%s: text '%s' is not an interface key" % [f, m.get_string(1)])
+	return out
+
+
+## Keys of the table at `path`; reports bad keys and keys already in `seen`
+## or earlier in the same table.
+func _csv_keys(path: String, key_re: RegEx, seen: Dictionary, out: PackedStringArray) -> Dictionary:
+	var keys := {}
+	var csv := FileAccess.open(path, FileAccess.READ)
+	if csv == null:
+		out.append("%s: cannot be read" % path)
+		return keys
+	csv.get_csv_line()
+	var line := 1
+	while not csv.eof_reached():
+		var row := csv.get_csv_line()
+		line += 1
+		if row.size() == 0 or row[0] == "":
+			continue
+		var key := row[0]
+		if key_re.search(key) == null:
+			out.append("%s:%d: key '%s' is not lower case with dots" % [path.get_file(), line, key])
+		if keys.has(key) or seen.has(key):
+			out.append("%s:%d: key '%s' is defined twice" % [path.get_file(), line, key])
+		keys[key] = true
+	return keys
 
 
 ## The tuning group `group` (read-only), or an empty Dictionary.

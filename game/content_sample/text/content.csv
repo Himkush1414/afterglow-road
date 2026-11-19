@@ -9,3 +9,11 @@ piece.fire_pit,Fire pit,sample
 piece.wall,Wall,sample
 node.rock_pile,Rock pile,sample
 tree.small_tree,Small tree,sample
+item.twig.desc,A thin dry stick.,sample
+item.rock.desc,A fist-sized stone.,sample
+item.fiber.desc,Plant fibre for string.,sample
+item.string.desc,Twisted fibre.,sample
+item.hatchet.desc,A small chopping tool.,sample
+item.berry.desc,A small edible berry.,sample
+piece.fire_pit.desc,A ring of stones for a fire.,sample
+piece.wall.desc,A simple wall.,sample
