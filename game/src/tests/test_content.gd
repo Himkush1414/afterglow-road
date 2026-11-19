@@ -151,6 +151,14 @@ func test_typed_defs_match_the_data() -> void:
 	for id: String in ContentDB.ids("nodes"):
 		var n := ContentDB.node(StringName(id))
 		check(not n.drops.is_empty() and not n.biomes.is_empty(), id)
+	for id: String in ContentDB.ids("loot"):
+		var lt := ContentDB.loot(StringName(id))
+		check(lt.rolls >= 1 and not lt.entries.is_empty(), id)
+		for e: Dictionary in lt.entries:
+			var known: bool = (
+				e.item == LootTable.NOTHING or ContentDB.item(StringName(e.item)) != null
+			)
+			check(known, "%s entry %s" % [id, e.item])
 	for id: String in ContentDB.ids("pieces"):
 		var p := ContentDB.piece(StringName(id))
 		check_eq(p.size_m.x, float(ContentDB.entry("pieces", id).size_m[0]), id)

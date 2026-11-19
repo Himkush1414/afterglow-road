@@ -711,6 +711,49 @@
 					"type": "string"
 				}
 			}
+		},
+		"loot_entry": {
+			"type": "object",
+			"fields": {
+				"item": {
+					"type": "id",
+					"ref": "items",
+					"literals": [
+						"nothing"
+					]
+				},
+				"weight": {
+					"type": "number",
+					"min": 0
+				},
+				"min": {
+					"type": "int",
+					"min": 0
+				},
+				"max": {
+					"type": "int",
+					"min": 0
+				}
+			}
+		},
+		"loot_table": {
+			"type": "object",
+			"fields": {
+				"id": {
+					"type": "id"
+				},
+				"rolls": {
+					"type": "int",
+					"min": 1
+				},
+				"entries": {
+					"type": "list",
+					"of": {
+						"type": "loot_entry"
+					},
+					"min_len": 1
+				}
+			}
 		}
 	},
 	"files": {
@@ -839,6 +882,24 @@
 			},
 			"collections": {
 				"nodes": "nodes"
+			}
+		},
+		"loot.json": {
+			"required": false,
+			"spec": {
+				"type": "object",
+				"fields": {
+					"tables": {
+						"type": "list",
+						"of": {
+							"type": "loot_table"
+						},
+						"min_len": 1
+					}
+				}
+			},
+			"collections": {
+				"loot": "tables"
 			}
 		}
 	}

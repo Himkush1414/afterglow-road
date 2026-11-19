@@ -4,7 +4,7 @@
 Usage: csv_to_content.py <csv dir> <output data dir>
 
 Writes materials.json, items.json (with the pseudo-items of units.csv as
-`units`), build_pieces.json, recipes.json, trees.json and nodes.json; other files in the output folder are
+`units`), build_pieces.json, recipes.json, trees.json, nodes.json and loot.json; other files in the output folder are
 left alone. Columns map 1:1 to JSON fields except where a rule below says
 otherwise. Exit code 1 with one line per problem when a table is invalid.
 """
@@ -264,6 +264,32 @@ def nodes(rows, problems):
     return {"nodes": out}
 
 
+def loot(rows, problems):
+    """'item:weight:min-max|nothing:20:0-0' per table (04 §1.4)."""
+    out = []
+    for i, r in enumerate(rows, 2):
+        where = f"loot.csv:{i}"
+        entries = []
+        for part in r["entries"].split("|"):
+            fields = part.split(":")
+            span = fields[2].split("-") if len(fields) == 3 else []
+            if len(span) != 2:
+                problems.append(f"{where}: '{part}' is not item:weight:min-max")
+                continue
+            entries.append(
+                {
+                    "item": fields[0],
+                    "weight": number(fields[1], where, problems),
+                    "min": number(span[0], where, problems),
+                    "max": number(span[1], where, problems),
+                }
+            )
+            if entries[-1]["min"] > entries[-1]["max"]:
+                problems.append(f"{where}: '{part}' has min above max")
+        out.append({"id": r["table"], "rolls": number(r["rolls"], f"{where} rolls", problems), "entries": entries})
+    return {"tables": out}
+
+
 SLOTS_RAIN = {"cell_floor", "cell_roof", "cell_stairs"}
 SLOTS_WIND = {"edge", "door", "window", "corner"}
 
@@ -322,6 +348,7 @@ def main():
             "recipes.json": recipes(read(csv_dir, "recipes.csv"), problems),
             "trees.json": trees(read(csv_dir, "trees.csv"), problems),
             "nodes.json": nodes(read(csv_dir, "nodes.csv"), problems),
+            "loot.json": loot(read(csv_dir, "loot.csv"), problems),
         }
     except Problems as e:
         problems = e.args[0]
