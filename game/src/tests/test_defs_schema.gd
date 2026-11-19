@@ -85,3 +85,31 @@ func test_bad_schemas_are_reported() -> void:
 		s.errors,
 		PackedStringArray(["x: schema has unknown type 'nope'", "y: schema has unknown key 'mni'"])
 	)
+
+
+func test_literals_and_tagged_refs() -> void:
+	var s := Schema.new()
+	var spec := {
+		"type": "list",
+		"of":
+		{
+			"type": "string",
+			"tagged_ref": {"item": ["a", "b"], "station": "c"},
+			"literals": ["start"]
+		},
+	}
+	s.check(["start", "item:x", "station:y", "item", "tool:z"], spec, "u")
+	check_eq(s.refs, [[["a", "b"], "x", "u[1]"], ["c", "y", "u[2]"]] as Array[Array])
+	check_eq(
+		s.errors,
+		PackedStringArray(
+			["u[3]: 'item' is not <item|station>:<id>", "u[4]: 'tool:z' is not <item|station>:<id>"]
+		)
+	)
+	var r := Schema.new()
+	r.check(
+		["hand", "box"],
+		{"type": "list", "of": {"type": "id", "ref": "p", "literals": ["hand"]}},
+		"v"
+	)
+	check_eq(r.refs, [["p", "box", "v[1]"]] as Array[Array], "literal not collected")
