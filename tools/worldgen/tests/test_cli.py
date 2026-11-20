@@ -121,7 +121,7 @@ class GenerateCommandTest(unittest.TestCase):
                 with open(os.path.join(out, "meta.json"), encoding="utf-8") as f:
                     metas.append(json.load(f))
             self.assertEqual(metas[0]["sha256"], metas[1]["sha256"])
-            self.assertEqual(set(metas[0]["sha256"]), {"height.bin", "normal.bin", "biome.bin", "mask.bin", "minmax.bin", "water.json", "roads.json"})
+            self.assertEqual(set(metas[0]["sha256"]), {"height.bin", "normal.bin", "biome.bin", "mask.bin", "minmax.bin", "macro.png", "water.json", "roads.json"})
             with open(os.path.join(d, "a", "height.bin"), "rb") as f:
                 raw = files.decompress(f.read())
             n = sketch()["size_m"] // sketch()["sample_m"] + 1
