@@ -143,3 +143,57 @@ class HairpinTest(unittest.TestCase):
         k = int(np.argmin(np.hypot(pts[:, 0] - centre[0], pts[:, 1] - centre[1])))
         self.assertEqual(prof[k], height)
         self.assertEqual(roads.platforms(sk, sk["lines"][1], pts, prof)[0], [], "tracks have none")
+
+
+class CrossingTest(unittest.TestCase):
+    def test_intersections(self):
+        a = [(0, 0), (10, 0), (20, 0)]
+        b = [(5, -5), (5, 5), (15, 5), (15, -5)]
+        got = roads.intersections(a, b)
+        self.assertEqual([(i, j) for i, _, j, _, _, _ in got], [(0, 0), (1, 2)])
+        np.testing.assert_allclose([(x, z) for *_, x, z in got], [(5, 0), (15, 0)])
+        self.assertEqual(roads.intersections(a, [(0, 1), (20, 1)]), [])
+
+    @classmethod
+    def setUpClass(cls):
+        sk = sketch()
+        cls.result = (sk, run(sk, Grid.full(sk["size_m"], 2), sk["world_seed"], until="roads"))
+
+    def run_crossings(self):
+        return self.result
+
+    def test_types_and_named_bridge(self):
+        sk, ctx = self.run_crossings()
+        kinds = sorted((c["way"], c["water"], c["type"]) for c in ctx.crossings)
+        self.assertIn(("lane", "ditch", "bridge_small"), kinds)
+        self.assertIn(("path", "brook", "ford"), kinds)
+        sk = sketch()
+        sk["crossings"]["named_bridge"] = [1130.0, 1550.0]
+        pts, s = roads.resample_arc(roads.geometry.catmull_rom(sk["lines"][0]["points"]))
+        types = [c["type"] for c in roads.line_crossings(sk, sk["lines"][0], pts, s, roads.water_data(sk, 1, True))]
+        self.assertEqual(types, ["named"])
+
+    def test_bridge_keeps_the_channel_open(self):
+        sk, ctx = self.run_crossings()
+        c = next(c for c in ctx.crossings if c["type"] == "bridge_small")
+        g = Grid.full(sk["size_m"], 2)
+        h = ctx.layers["height"]
+        j, i = int(round(c["z"] / 2)), int(round(c["x"] / 2))
+        self.assertLessEqual(h[j, i], c["bed"] + 0.05, "bed stays under the deck")
+        lane = next(r for r in ctx.roads if r["id"] == "lane")
+        self.assertAlmostEqual(c["deck_y"], float(np.interp(c["arc"], lane["arc"], lane["profile"])), places=9)
+        self.assertAlmostEqual(c["clearance_m"], c["deck_y"] - c["level"], places=9)
+        self.assertGreaterEqual(c["span_m"], c["width_m"])
+        far = np.abs(lane["arc"] - c["arc"]) > c["span_m"] / 2 + 10
+        on = bilinear(h, g, *lane["points"][far & (lane["points"][:, 0] < 2040)].T)
+        self.assertLess(np.abs(on - lane["profile"][far & (lane["points"][:, 0] < 2040)]).max(), 0.6, "filled outside the span")
+
+    def test_ford_depth(self):
+        sk, ctx = self.run_crossings()
+        c = next(c for c in ctx.crossings if c["type"] == "ford")
+        self.assertAlmostEqual(c["deck_y"], c["level"] - sk["crossings"]["ford_max_depth_m"], places=6)
+        h = ctx.layers["height"]
+        j, i = int(round(c["z"] / 2)), int(round(c["x"] / 2))
+        self.assertLessEqual(c["level"] - h[j, i], sk["crossings"]["ford_max_depth_m"] + 0.15)
+        path = next(r for r in ctx.roads if r["id"] == "path")
+        self.assertLessEqual((np.abs(np.diff(path["profile"])) / np.diff(path["arc"])).max(), 0.18 + 1e-9)
