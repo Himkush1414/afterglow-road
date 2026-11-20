@@ -48,7 +48,7 @@ class CheckPoisTest(unittest.TestCase):
     def test_passes_when_heights_match(self):
         r = cli("check-pois", "--until", "scarp", "--sketch", self.sketch, "--pois", self.pois(), "--no-noise")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertIn("POI CHECK: PASS (2 places, until scarp, noise off", r.stdout)
+        self.assertIn("POI CHECK: PASS (3 places, until scarp, noise off", r.stdout)
 
     def test_fails_beyond_the_tolerance(self):
         r = cli("check-pois", "--until", "scarp", "--sketch", self.sketch, "--pois", self.pois(1.5), "--no-noise")

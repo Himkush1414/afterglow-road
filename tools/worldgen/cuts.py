@@ -1,0 +1,60 @@
+"""Stages 11-12: benches and trenches cut into slopes."""
+import math
+
+import numpy as np
+
+from . import lots, stages  # noqa: F401  (lots registers its stage before these)
+from .pipeline import bilinear, exact_patch, stage
+
+GRADIENT_STEP_M = 10.0  # inside the noise-free core around a place
+
+
+def downhill(sk, seed, with_noise, x, z):
+    """Unit downhill direction of the stage 1-6 terrain at a point."""
+    e = GRADIENT_STEP_M
+    pts = np.array([[x + e, z], [x - e, z], [x, z + e], [x, z - e]])
+    h = stages.centre_profile(sk, seed, with_noise, pts)
+    gx, gz = (h[0] - h[1]) / (2 * e), (h[2] - h[3]) / (2 * e)
+    n = math.hypot(gx, gz)
+    return (-gx / n, -gz / n) if n > 0 else (0.0, 1.0)
+
+
+def box_coords(x, z, cx, cz, ax, az):
+    """Coordinates along (ax, az) and across it, relative to (cx, cz)."""
+    dx, dz = x - cx, z - cz
+    return dx * ax + dz * az, -dx * az + dz * ax
+
+
+def rect_distance(along, across, half_along, half_across):
+    return np.hypot(np.maximum(np.abs(along) - half_along, 0.0), np.maximum(np.abs(across) - half_across, 0.0))
+
+
+@stage("mine")
+def _stage_mine(ctx):
+    """Bench along the contour at the place, floor = its lowest corner, cut
+    only; then a straight trench uphill from the middle of its back edge."""
+    sk, cfg = ctx.sketch, ctx.sketch.get("mine")
+    if not cfg:
+        return
+    poi = next(p for p in sk["pois"] if p["id"] == cfg["poi"])
+    dx, dz = downhill(sk, ctx.seed, ctx.noise, poi["x"], poi["z"])
+    long_m, deep_m = cfg["bench_m"]
+    ux, uz = -dz, dx  # along the contour
+    corners = [(poi["x"] + su * ux * long_m / 2 + sd * dx * deep_m / 2, poi["z"] + su * uz * long_m / 2 + sd * dz * deep_m / 2) for su in (-1, 1) for sd in (-1, 1)]
+    cx, cz = zip(*corners)
+    grid, h0 = exact_patch(ctx, min(cx), min(cz), max(cx), max(cz), "lots")
+    floor = float(np.min(bilinear(grid, h0, np.array(cx), np.array(cz))))
+    h = ctx.layers["height"]
+    along, across = box_coords(ctx.x, ctx.z, poi["x"], poi["z"], ux, uz)
+    blend = sk["lots"]["blend_m"]
+    w = stages.smoothstep(0.0, blend, rect_distance(along, across, long_m / 2, deep_m / 2))
+    h = np.minimum(h, floor) * (1.0 - w) + h * w
+    t = cfg["trench_m"]
+    sx, sz = poi["x"] - dx * deep_m / 2, poi["z"] - dz * deep_m / 2  # middle of the uphill edge
+    ta, tc = box_coords(ctx.x, ctx.z, sx - dx * t["l"] / 2, sz - dz * t["l"] / 2, -dx, -dz)
+    inside = (np.abs(ta) <= t["l"] / 2) & (np.abs(tc) <= t["w"] / 2)
+    h = np.where(inside, np.minimum(h, np.maximum(floor, h - t["depth_max"])), h)
+    ctx.layers["height"] = h
+    yaw = math.degrees(math.atan2(-dx, dz)) % 360.0
+    ctx.cuts.append({"type": "bench", "poi": poi["id"], "x": poi["x"], "z": poi["z"], "long_m": long_m, "deep_m": deep_m, "floor_y": floor, "downhill": [dx, dz], "yaw_deg": yaw})
+    ctx.cuts.append({"type": "trench", "poi": poi["id"], "start": [sx, sz], "dir": [-dx, -dz], "l_m": t["l"], "w_m": t["w"], "floor_y": floor})
