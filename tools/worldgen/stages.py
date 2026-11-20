@@ -176,3 +176,16 @@ def _stage_noise(ctx):
     add *= mask
     ctx.layers["noise"] = add
     ctx.layers["height"] += add
+
+
+def scarp(x, z, sc, size_m):
+    """Stage 5: height_m * smoothstep(band_m, full_at_m, d_edge), d_edge being
+    the distance to the nearest of the listed map edges."""
+    edge = {"north": z, "south": size_m - z, "west": x, "east": size_m - x}
+    d = np.minimum.reduce([np.broadcast_to(edge[e], np.broadcast(x, z).shape) for e in sc["edges"]])
+    return sc["height_m"] * smoothstep(sc["band_m"], sc["full_at_m"], d)
+
+
+@stage("scarp")
+def _stage_scarp(ctx):
+    ctx.layers["height"] += scarp(ctx.x, ctx.z, ctx.sketch["scarp"], ctx.sketch["size_m"])
