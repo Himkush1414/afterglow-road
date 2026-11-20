@@ -36,7 +36,7 @@ class SettleTest(unittest.TestCase):
         self.assertEqual((main, garden), (["shop", "village_house_a", "village_house_a"], ["shed", "shed"]))
 
     def test_handled_places_leave_nothing_pending(self):
-        self.assertEqual(self.plan["handled"], {"cove", "hamlet"})
+        self.assertEqual(self.plan["handled"], {"cove", "hamlet", "town"})
         self.assertEqual(self.ctx.lot_pending, [])
         self.assertEqual([lt["archetype"] for lt in self.of("cove")], ["shop", "village_house_a"])
 
@@ -63,7 +63,7 @@ class SettleTest(unittest.TestCase):
         self.assertEqual(len(set(sides)), 1)
 
     def test_cross_has_one_street_through_the_place(self):
-        (street,) = self.plan["streets"]
+        (street,) = [st for st in self.plan["streets"] if st["id"] == "street_hamlet"]
         lane0 = next(r for r in self.ctx.roads if r["id"] == "lane")
         reach = self.sk["lots"]["sizes_m"]["house"][1] + lane0["core_m"]
         for end in np.array(street["points"]):
@@ -121,3 +121,61 @@ class JunctionTest(unittest.TestCase):
             fixed, value = roads.junction_pins(rec["points"], [(lane["points"], lane["arc"], lane["profile"], lane["core_m"])])
             if fixed.any():
                 np.testing.assert_array_equal(rec["profile"][fixed], value[fixed], err_msg=rec["id"])
+
+
+class GridTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        sk = sketch()
+        cls.sk = sk
+        cls.ctx = run(sk, Grid.crop(1520, 1560, 420, 2), sk["world_seed"], until="lots")
+        cls.town = [lt for lt in cls.ctx.lots if lt.get("poi") == "town"]
+
+    def test_all_buildings_placed(self):
+        self.assertEqual(self.ctx.settlement["unplaced"], [])
+        self.assertEqual(sorted(lt["archetype"] for lt in self.town), sorted(["village_house_a"] * 4 + ["shop"] * 2 + ["warehouse"] + ["shed"] * 2))
+        self.assertIn("town", self.ctx.settlement["handled"])
+
+    def test_streets(self):
+        ids = [st["id"] for st in self.ctx.settlement["streets"] if st["id"].startswith("street_town")]
+        self.assertEqual(len(ids), 2 + 3, "one parallel street per side and three cross streets")
+        lane = next(r for r in self.ctx.roads if r["id"] == "lane")
+        par = next(r for r in self.ctx.roads if r["id"] == "street_town_l1")
+        d = [layout.nearest_way([lane], *p)[0] for p in par["points"][::10]]
+        np.testing.assert_allclose(d, lane["core_m"] + 40.0 + 2.5, atol=0.3, err_msg="an offset curve of the Road")
+
+    def test_shops_front_the_road_and_everything_faces_its_way(self):
+        cfg = self.sk["lots"]
+        for lt in self.town:
+            if lt["archetype"] == "shop":
+                self.assertEqual(lt["way"], "lane")
+            if lt["archetype"] == "shed":
+                continue
+            way = [r for r in self.ctx.roads if r["id"] == lt["way"]]
+            dist, (qx, qz), rec = layout.nearest_way(way, lt["x"], lt["z"])
+            self.assertAlmostEqual(dist, rec["core_m"] + cfg["setback_m"] + lt["d"] / 2.0, delta=0.3, msg=lt["id"])
+
+    def test_no_overlaps_and_flat(self):
+        ids = {lt["id"] for lt in self.town}
+        self.assertEqual([o for o in self.ctx.lot_way_overlaps if o[0] in ids], [])
+        x, z = self.ctx.grid.coords()
+        h = self.ctx.layers["height"]
+        cores = [lots.distance(x, z, lt) == 0 for lt in self.town]
+        for (i, a), (j, b) in itertools.combinations(enumerate(cores), 2):
+            self.assertFalse(np.any(a & b), (self.town[i]["id"], self.town[j]["id"]))
+        for lt, c in zip(self.town, cores):
+            np.testing.assert_allclose(h[c], lt["y"], rtol=0, atol=1e-9, err_msg=lt["id"])
+
+    def test_cross_streets_meet_the_parallel_streets_level(self):
+        recs = {r["id"]: r for r in self.ctx.roads}
+        par = recs["street_town_l1"]
+        for k in range(3):
+            cross_st = recs[f"street_town_c{k}"]
+            fixed, value = roads.junction_pins(cross_st["points"], [(par["points"], par["arc"], par["profile"], par["core_m"])])
+            self.assertTrue(fixed.any())
+            np.testing.assert_array_equal(cross_st["profile"][fixed], value[fixed])
+
+    def test_way_grades(self):
+        for r in roads.grade_report(self.ctx):
+            if r["id"].startswith("street_town"):
+                self.assertTrue(r["ok"], r)

@@ -142,19 +142,102 @@ def cross(sk, poi, names):
     return _finish(sk, poi, placed, garden), [street]
 
 
+def _normals(pts):
+    t = np.gradient(pts, axis=0)
+    t /= np.hypot(t[:, 0], t[:, 1])[:, None]
+    return np.stack([t[:, 1], -t[:, 0]], axis=1)  # left of the travel direction
+
+
+def grid(sk, poi, names):
+    """Blocks in Road coordinates around the place: rows along the Road,
+    columns across it, 5 m streets between and around them."""
+    cfg = sk["lots"]
+    g = cfg["grid"]
+    rows, cols = g["blocks"]
+    across_m, along_m = g["block_m"]
+    st = cfg["side_street_m"]
+    street_core = st / 2.0
+    line, pts, s = _road(sk)
+    rc = roads.half_width(sk, line)
+    sc = float(s[int(np.argmin(np.hypot(pts[:, 0] - poi["x"], pts[:, 1] - poi["z"])))])
+    total = rows * along_m + (rows + 1) * st
+    first = sc - total / 2.0
+    edges = [first + st + k * (along_m + st) for k in range(rows)]  # row start (after its cross street)
+    sel = (s >= first - 2.0) & (s <= first + total + 2.0)
+    rp, rs, rn = pts[sel], s[sel], _normals(pts)[sel]
+    per_side = cols // 2
+    streets, offsets = [], {}
+    for side in (1, -1):
+        for c in range(per_side):
+            n = rc + (c + 1) * across_m + c * st + street_core
+            spts = rp + rn * (side * n)
+            sarc = np.concatenate([[0.0], np.cumsum(np.hypot(*np.diff(spts, axis=0).T))])
+            sid = f"street_{poi['id']}_{'l' if side > 0 else 'r'}{c + 1}"
+            offsets[(side, c)] = (sid, spts, sarc)
+            streets.append({"id": sid, "kind": "street", "width_m": float(st), "points": spts[::4].tolist() + [spts[-1].tolist()]})
+    n_max = rc + per_side * (across_m + st)
+    for k in range(rows + 1):
+        cs = first + street_core + k * (along_m + st)
+        x, z = np.interp(cs, rs, rp[:, 0]), np.interp(cs, rs, rp[:, 1])
+        nx, nz = np.interp(cs, rs, rn[:, 0]), np.interp(cs, rs, rn[:, 1])
+        streets.append({"id": f"street_{poi['id']}_c{k}", "kind": "street", "width_m": float(st), "points": [[x - nx * n_max, z - nz * n_max], [x + nx * n_max, z + nz * n_max]]})
+    faces = []  # [arm, side, cursor, end, fronts_road, pair key]
+    for k, a in enumerate(edges):
+        for side in (1, -1):
+            for c in range(per_side):
+                if c == 0:
+                    inner = (RoadArm(pts, s, a, 1, rc, line["id"]), side, 0.0, along_m, True)
+                else:
+                    sid, spts, sarc = offsets[(side, c - 1)]
+                    q0 = float(np.interp(a, rs, sarc))
+                    inner = (RoadArm(spts, sarc, q0, 1, street_core, sid), side, 0.0, float(np.interp(a + along_m, rs, sarc)) - q0, False)
+                sid, spts, sarc = offsets[(side, c)]
+                q0 = float(np.interp(a, rs, sarc))
+                outer = (RoadArm(spts, sarc, q0, 1, street_core, sid), -side, 0.0, float(np.interp(a + along_m, rs, sarc)) - q0, False)
+                for f in (inner, outer):
+                    faces.append(list(f) + [(k, side, c), 0.0])
+    main, garden = ordered(sk, names)
+    placed, unplaced = [], []
+    for name in main:
+        front_m, depth_m = cfg["sizes_m"][cfg["plot_class"][name]]
+        best = None
+        for f in faces:
+            other = max((g2[6] for g2 in faces if g2[5] == f[5] and g2 is not f), default=0.0)
+            if f[2] + front_m > f[3] + 1e-9 or other + max(depth_m, f[6]) > across_m + 1e-9:
+                continue
+            x, z, _, _ = f[0].at(f[2] + front_m / 2.0)
+            key = (0 if f[4] else 1, math.hypot(x - poi["x"], z - poi["z"]))
+            if best is None or key < best[0]:
+                best = (key, f)
+        if best is None:
+            unplaced.append(name)
+            continue
+        f = best[1]
+        placed.append(place(sk, poi, f[0], f[1], f[2], name))
+        f[2] += front_m
+        f[6] = max(f[6], depth_m)
+    return _finish(sk, poi, placed, garden), streets, unplaced
+
+
 def plan(sk, seed, with_noise):
     """{"lots": [...], "streets": [...], "handled": {place ids}} for every
     settlement whose layout is implemented."""
     cfg = sk.get("lots", {})
     pois = {p["id"]: p for p in sk.get("pois", [])}
     size = sk.get("buildings", {})
-    out = {"lots": [], "streets": [], "handled": set()}
-    for key, fn in (("shore_row", "row"), ("street_cross", "cross")):
+    out = {"lots": [], "streets": [], "handled": set(), "unplaced": []}
+    for key in ("shore_row", "street_cross", "grid"):
         if key not in cfg or cfg[key]["poi"] not in pois:
             continue
         poi = pois[cfg[key]["poi"]]
         names = layout.buildings_of(poi.get("contents", ""), size)
-        lots, streets = row(sk, seed, with_noise, poi, names) if fn == "row" else cross(sk, poi, names)
+        if key == "shore_row":
+            lots, streets = row(sk, seed, with_noise, poi, names)
+        elif key == "street_cross":
+            lots, streets = cross(sk, poi, names)
+        else:
+            lots, streets, unplaced = grid(sk, poi, names)
+            out["unplaced"] += [(poi["id"], n) for n in unplaced]
         out["lots"] += lots
         out["streets"] += streets
         out["handled"].add(poi["id"])

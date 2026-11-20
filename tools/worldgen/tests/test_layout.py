@@ -99,10 +99,10 @@ class LayoutTest(unittest.TestCase):
     def test_fixed_layout_and_settlements(self):
         sk = sketch()
         sk["lots"]["fixed"] = {"village": [{"archetype": "cabin", "dx": 0.0, "dz": 0.0}, {"archetype": "shed", "dx": -14.0, "dz": -10.0}]}
-        sk["lots"]["settlements"] = ["farm", "cove", "hamlet"]
+        sk["lots"]["settlements"] = ["farm", "cove", "hamlet", "town"]
         gen, pending = layout.generate(sk, self.ctx.roads)
         self.assertEqual([(lt["archetype"], lt["x"], lt["z"], lt["yaw_deg"]) for lt in gen], [("cabin", 500.0, 500.0, 0.0), ("shed", 486.0, 490.0, 0.0)])
-        self.assertEqual(pending, ["farm", "cove", "hamlet"])
+        self.assertEqual(pending, ["farm", "cove", "hamlet", "town"])
 
 
 if __name__ == "__main__":
