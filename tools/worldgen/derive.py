@@ -3,7 +3,7 @@
 centre, matching the shader UV (xz + 4096) / 8192)."""
 import numpy as np
 
-from . import biome
+from . import biome, geometry, stages
 from .grid import Grid
 
 
@@ -56,3 +56,53 @@ def biome_bytes(ctx, cell_m=16.0):
     if ids.min() < 0 or ids.max() > 255:
         raise ValueError("a texel has no biome or an id beyond a byte")
     return ids.astype(np.uint8).tobytes()
+
+
+def mask_rgba(ctx, cell_m=4.0):
+    """RGBA8 per texel (rows, cols, 4): R way surface (255 inside a way's flat
+    cross-section, never inside a lot core), G wetness (255 in the wet biome,
+    else falling to 0 over `wet_distance_m` from water), B rock (255 where
+    the slope exceeds `rock_slope_deg`), A tree cover (0 until placement)."""
+    from . import lots, roads  # both import the stage modules
+
+    sk, cfg = ctx.sketch, ctx.sketch["derive"]
+    idx, count = texel_samples(ctx, cell_m)
+    g = Grid(cell_m / 2, cell_m / 2, cell_m, count, count)
+    x, z = g.coords()
+    out = np.zeros((count, count, 4), dtype=np.uint8)
+    way = np.zeros((count, count), dtype=bool)
+    for rec in ctx.roads:
+        way |= geometry.polyline_distance(g, rec["points"], rec["core_m"]) < rec["core_m"]
+    for lot in ctx.lots:
+        win = lots._window_on(g, x, z, lot)
+        if win is not None:
+            (rows, cols), d = win
+            way[rows, cols] &= d != 0.0
+    out[..., 0] = np.where(way, 255, 0)
+    reach = float(cfg["wet_distance_m"])
+    wet = np.full((count, count), reach)
+    for w in roads.water_data(sk, ctx.seed, ctx.noise):
+        d, seg, t = geometry.polyline_nearest(g, w["pts"], reach + w["width"].max())
+        near = seg >= 0
+        half = (w["width"][seg[near]] * (1 - t[near]) + w["width"][seg[near] + 1] * t[near]) / 2.0
+        wet[near] = np.minimum(wet[near], np.maximum(d[near] - half, 0.0))
+    lk = sk["lake"]
+    inside = geometry.ellipse_rho(x, z, lk["x"], lk["z"], lk["a"], lk["b"]) < 1.0
+    edge = geometry.ellipse_edge_distance(x, z, lk["x"], lk["z"], lk["a"], lk["b"])
+    wet = np.minimum(wet, np.where(inside, 0.0, edge))
+    gval = 255.0 * (1.0 - stages.smoothstep(0.0, reach, wet))
+    names = biome.names(sk)
+    wet_ids = [i for i, n in names.items() if n == cfg["wet_biome"]]
+    bcell = float(cfg.get("biome_cell_m", 16.0))
+    k = int(round(bcell / cell_m))  # each biome texel covers k x k mask texels
+    bio = np.repeat(np.repeat(biome_ids(ctx, bcell), k, axis=0), k, axis=1)
+    gval = np.where(np.isin(bio, wet_ids), 255.0, gval)
+    out[..., 1] = np.floor(gval + 0.5).astype(np.uint8)
+    nx, nz = normals(ctx, cell_m)
+    ny = np.sqrt(np.maximum(1.0 - nx * nx - nz * nz, 0.0))
+    out[..., 2] = np.where(np.degrees(np.arccos(np.clip(ny, -1, 1))) > cfg["rock_slope_deg"], 255, 0)
+    return out
+
+
+def mask_bytes(ctx, cell_m=4.0):
+    return mask_rgba(ctx, cell_m).tobytes()
