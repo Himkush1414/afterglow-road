@@ -106,3 +106,40 @@ class FlattenTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HairpinTest(unittest.TestCase):
+    def test_pin_keeps_values_and_limits(self):
+        s = np.arange(0.0, 200.0, 2.0)
+        prof = 0.05 * s  # climbing at 5 %: the flat platform is made up within about 25 m
+        limit, ds = np.full(len(s) - 1, 0.18), np.diff(s)
+        fixed = np.abs(s - 100.0) < 30.0
+        value = np.where(fixed, prof[50], 0.0)
+        out = roads.pin(prof, limit, ds, fixed, value)
+        np.testing.assert_array_equal(out[fixed], prof[50])
+        self.assertLessEqual((np.abs(np.diff(out)) / ds).max(), 0.18 + 1e-12)
+        np.testing.assert_array_equal(out[:5], prof[:5])  # far away: untouched
+        np.testing.assert_array_equal(roads.pin(prof, limit, ds, np.zeros(len(s), bool), value), prof)
+
+    def test_platform_is_level_and_the_road_enters_it_smoothly(self):
+        sk = sketch()
+        hp = sk["hairpins"]
+        g = Grid.crop(1300, 1540, 160, 1)
+        ctx = run(sk, g, sk["world_seed"], until="roads")
+        (plat,) = ctx.platforms
+        x, z = g.coords()
+        d = np.hypot(x - 1300.0, z - 1540.0)
+        h = ctx.layers["height"]
+        np.testing.assert_allclose(h[d < hp["radius_m"]], plat["height"], atol=1e-9)
+        lane = [r for r in ctx.roads if r["id"] == "lane"][0]
+        on = bilinear(h, g, *lane["points"][(np.abs(lane["points"][:, 0] - 1300) < 70)].T)
+        self.assertLess(np.abs(np.diff(on)).max() / 2.0, 0.18 * 1.5, "no step where the road meets the platform")
+
+    def test_platform_height_is_on_the_profile(self):
+        sk = sketch()
+        line = sk["lines"][0]
+        pts, s, prof = roads.profile(sk, sk["world_seed"], True, line)
+        (centre, height), = roads.platforms(sk, line, pts, prof)[0]
+        k = int(np.argmin(np.hypot(pts[:, 0] - centre[0], pts[:, 1] - centre[1])))
+        self.assertEqual(prof[k], height)
+        self.assertEqual(roads.platforms(sk, sk["lines"][1], pts, prof)[0], [], "tracks have none")

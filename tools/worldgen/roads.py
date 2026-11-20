@@ -41,6 +41,37 @@ def clamp_grade(h, limit, ds):
     return 0.5 * (f + b)
 
 
+def pin(prof, limit, ds, fixed, value):
+    """Clips a profile into the slope-limited envelope of fixed samples, so
+    those samples take `value` and the limits still hold everywhere."""
+    if not np.any(fixed):
+        return prof
+    g = np.concatenate([[0.0], np.cumsum(np.asarray(limit) * np.asarray(ds))])
+    gf, vf = g[fixed], np.asarray(value)[fixed]
+    gap = np.abs(g[:, None] - gf[None, :])
+    upper = np.min(vf[None, :] + gap, axis=1)
+    lower = np.max(vf[None, :] - gap, axis=1)
+    return np.clip(prof, lower, upper)
+
+
+def platforms(sk, line, pts, prof):
+    """(centre, height) of every turning platform on a road, and the mask of
+    profile samples inside one; the height is the profile at the nearest
+    sample to the platform centre."""
+    hp = sk.get("hairpins") if line["kind"] == "road" else None
+    fixed = np.zeros(len(pts), dtype=bool)
+    value = np.zeros(len(pts))
+    out = []
+    for cx, cz in (hp or {}).get("points", []):
+        d = np.hypot(pts[:, 0] - cx, pts[:, 1] - cz)
+        height = float(prof[int(np.argmin(d))])
+        inside = d < hp["radius_m"]
+        fixed |= inside
+        value[inside] = height
+        out.append(((float(cx), float(cz)), height))
+    return out, fixed, value
+
+
 def grade_limits(sk, line, pts):
     """Grade limit per interval: tracks one value; the road a low limit up to
     the vertex nearest the split point and a high one after it."""
@@ -60,7 +91,10 @@ def profile(sk, seed, with_noise, line):
     pts, s = resample_arc(geometry.catmull_rom(line["points"]))
     h = stages.centre_profile(sk, seed, with_noise, pts)
     h = smooth(h, sk["routing"]["profile_smooth_m"])
-    return pts, s, clamp_grade(h, grade_limits(sk, line, pts), np.diff(s))
+    limit, ds = grade_limits(sk, line, pts), np.diff(s)
+    h = clamp_grade(h, limit, ds)
+    _, fixed, value = platforms(sk, line, pts, h)
+    return pts, s, pin(h, limit, ds, fixed, value)
 
 
 def half_width(sk, line):
@@ -87,6 +121,12 @@ def ways(sk):
     return [ln for kind in WAY_KINDS for ln in sk.get("lines", []) if ln["kind"] == kind]
 
 
+def flatten_disc(h, x, z, centre, radius, blend, height):
+    """Level disc at `height`, blended back to the terrain over `blend`."""
+    w = stages.smoothstep(radius, radius + blend, np.hypot(x - centre[0], z - centre[1]))
+    return height * (1.0 - w) + h * w
+
+
 @stage("roads")
 def _stage_roads(ctx):
     sk = ctx.sketch
@@ -95,6 +135,12 @@ def _stage_roads(ctx):
         ctx.layers["height"] = flatten(
             ctx.layers["height"], ctx.grid, pts, prof, half_width(sk, line), sk["routing"]["blend_m"]
         )
+        hp = sk.get("hairpins", {})
+        for centre, height in platforms(sk, line, pts, prof)[0]:
+            ctx.layers["height"] = flatten_disc(
+                ctx.layers["height"], ctx.x, ctx.z, centre, hp["radius_m"], hp["blend_m"], height
+            )
+            ctx.platforms.append({"centre": list(centre), "radius_m": float(hp["radius_m"]), "height": height})
         terrain = stages.centre_profile(sk, ctx.seed, ctx.noise, pts)
         ctx.roads.append(
             {
