@@ -31,7 +31,9 @@ SAMPLE = {
     "pois": [
         {"id": "village", "x": 500.0, "z": 500.0, "y": 0.0, "contents": "cabin; 2 sheds; well"},
         {"id": "farm", "x": 1700.0, "z": 1200.0, "y": 0.0, "contents": "farmhouse; barn; 2 sheds"},
+        {"id": "pit", "x": 1250.0, "z": 450.0, "y": 0.0, "contents": ""},
     ],
+    "mine": {"poi": "pit", "bench_m": [120.0, 40.0], "trench_m": {"w": 4.0, "l": 30.0, "depth_max": 6.0}},
     "buildings": {
         "cabin": {"w": 6.0, "d": 4.0},
         "shed": {"w": 4.0, "d": 3.0},

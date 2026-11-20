@@ -5,8 +5,7 @@ import math
 import numpy as np
 
 from . import layout, roads, stages  # noqa: F401  (roads registers its stage before this one)
-from .grid import Grid
-from .pipeline import run, stage
+from .pipeline import exact_patch, stage
 
 
 def all_lots(sk, generated=()):
@@ -49,42 +48,27 @@ def _core_box(lot):
     return lot["x"] - e, lot["z"] - e, lot["x"] + e, lot["z"] + e
 
 
-def mean_height(ctx, lot, before):
-    """Mean of the pre-lot terrain over the lot's core samples. Taken from the
-    run's own grid when the core plus the erosion reach lies inside it, else
-    from a map-aligned sub-run around the lot (same samples, same mean)."""
-    g, sk = ctx.grid, ctx.sketch
-    s = g.sample_m
-    reach = sk.get("erosion", {}).get("iterations", 0) * s
+def mean_height(ctx, lot):
+    """Mean of the pre-lot terrain over the lot's core samples (exact, also
+    when the run's grid cuts the lot)."""
     x0, z0, x1, z1 = _core_box(lot)
-    gx1, gz1 = g.x0 + (g.nx - 1) * s, g.z0 + (g.nz - 1) * s
-    if x0 - reach >= g.x0 and z0 - reach >= g.z0 and x1 + reach <= gx1 and z1 + reach <= gz1:
-        grid, h = g, before
-    else:
-        sx0 = math.floor((x0 - reach) / s) * s
-        sz0 = math.floor((z0 - reach) / s) * s
-        nx = int(math.ceil((x1 + reach - sx0) / s)) + 1
-        nz = int(math.ceil((z1 + reach - sz0) / s)) + 1
-        grid = Grid(sx0, sz0, s, nx, nz)
-        h = run(sk, grid, ctx.seed, until="roads", noise=ctx.noise).layers["height"]
+    grid, h = exact_patch(ctx, x0, z0, x1, z1, "roads")
+    s = grid.sample_m
     i0 = max(int(math.floor((x0 - grid.x0) / s)), 0)
     j0 = max(int(math.floor((z0 - grid.z0) / s)), 0)
     i1 = min(int(math.ceil((x1 - grid.x0) / s)) + 1, grid.nx)
     j1 = min(int(math.ceil((z1 - grid.z0) / s)) + 1, grid.nz)
-    xs = grid.x0 + np.arange(i0, i1) * s
-    zs = grid.z0 + np.arange(j0, j1) * s
-    x, z = np.meshgrid(xs, zs)
+    x, z = np.meshgrid(grid.x0 + np.arange(i0, i1) * s, grid.z0 + np.arange(j0, j1) * s)
     core = distance(x, z, lot) == 0.0
     return float(h[j0:j1, i0:i1][core].mean())
 
 
 @stage("lots")
 def _stage_lots(ctx):
-    before = ctx.layers["height"].copy()
     generated, ctx.lot_pending = layout.generate(ctx.sketch, ctx.roads)
     lots = all_lots(ctx.sketch, generated)
     ctx.lot_way_overlaps = layout.way_overlaps(lots, ctx.roads)
-    means = [mean_height(ctx, lot, before) for lot in lots]
+    means = [mean_height(ctx, lot) for lot in lots]
     h = ctx.layers["height"]
     dist = [distance(ctx.x, ctx.z, lot) for lot in lots]
     for lot, m, d in zip(lots, means, dist):
