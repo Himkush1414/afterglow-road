@@ -15,9 +15,10 @@ import sys
 
 from . import sketch as sketch_io
 from . import water as water_io
-from . import stages as _stages  # noqa: F401  (registers the terrain stages)
 from .grid import Grid
-from .pipeline import STAGES, run, sha256
+from .pipeline import STAGES, load_stages, run, sha256
+
+load_stages()
 
 
 def check_pois(args):
