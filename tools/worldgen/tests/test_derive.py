@@ -67,3 +67,50 @@ class BiomeFileTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MaskTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        sk = sketch()
+        cls.sk = sk
+        cls.ctx = run(sk, Grid.full(sk["size_m"], 2), sk["world_seed"])
+        cls.m = derive.mask_rgba(cls.ctx)
+        cls.g = Grid(2.0, 2.0, 4.0, 512, 512)
+
+    def at(self, x, z):
+        return self.m[int(z // 4), int(x // 4)]
+
+    def test_shape_and_alpha(self):
+        self.assertEqual(self.m.shape, (512, 512, 4))
+        self.assertEqual(len(derive.mask_bytes(self.ctx)), 512 * 512 * 4)
+        self.assertTrue(np.all(self.m[..., 3] == 0), "tree cover comes with placement")
+
+    def test_way_surface_and_lot_cores(self):
+        from tools.worldgen import geometry, lots
+
+        lane = next(r for r in self.ctx.roads if r["id"] == "lane")
+        x, z = self.g.coords()
+        d = geometry.polyline_distance(self.g, lane["points"], 20.0)
+        free = np.ones(x.shape, dtype=bool)
+        for lot in self.ctx.lots:
+            free &= lots.distance(x, z, lot) > 0.0
+        self.assertTrue(np.all(self.m[..., 0][(d < lane["core_m"] - 0.01) & free] == 255))
+        any_way = np.zeros(x.shape, dtype=bool)
+        for rec in self.ctx.roads:
+            any_way |= geometry.polyline_distance(self.g, rec["points"], rec["core_m"]) < rec["core_m"]
+        self.assertTrue(np.all(self.m[..., 0][~any_way] == 0))
+        self.assertTrue(np.all(self.m[..., 0][~free] == 0), "never inside a lot core")
+
+    def test_wetness(self):
+        lk = self.sk["lake"]
+        self.assertEqual(int(self.at(lk["x"], lk["z"])[1]), 255, "in the lake")
+        self.assertEqual(int(self.at(1400, 1000)[1]), 255, "on the brook")
+        far = self.at(700, 900)
+        self.assertEqual(int(far[1]), 0, "far from water, not wet biome")
+
+    def test_rock_where_steep(self):
+        nx, nz = derive.normals(self.ctx)
+        slope = np.degrees(np.arccos(np.sqrt(np.maximum(1 - nx * nx - nz * nz, 0))))
+        np.testing.assert_array_equal(self.m[..., 2] == 255, slope > 38.0)
+        self.assertTrue((self.m[..., 2] == 255).any(), "the scarp is rock")

@@ -82,19 +82,25 @@ def mean_height(ctx, lot):
     return float(h[j0:j1, i0:i1][core].mean())
 
 
-def _window(ctx, lot, grow):
-    """(slices, distance to the core) over the grid samples within `grow` of
-    the lot's core box; (None, None) when that box misses the grid."""
-    g = ctx.grid
+def _window_on(g, x, z, lot, grow=0.0):
+    """((row slice, column slice), distance to the core) on any grid with
+    coordinates x, z, over the samples within `grow` of the core box."""
     x0, z0, x1, z1 = _core_box(lot)
     i0 = max(int(math.floor((x0 - grow - g.x0) / g.sample_m)), 0)
     j0 = max(int(math.floor((z0 - grow - g.z0) / g.sample_m)), 0)
     i1 = min(int(math.ceil((x1 + grow - g.x0) / g.sample_m)) + 1, g.nx)
     j1 = min(int(math.ceil((z1 + grow - g.z0) / g.sample_m)) + 1, g.nz)
     if i0 >= i1 or j0 >= j1:
-        return None, None
+        return None
     win = (slice(j0, j1), slice(i0, i1))
-    return win, distance(ctx.x[win], ctx.z[win], lot)
+    return win, distance(x[win], z[win], lot)
+
+
+def _window(ctx, lot, grow):
+    """(slices, distance to the core) on the run's grid; (None, None) when
+    the lot's box misses it."""
+    win = _window_on(ctx.grid, ctx.x, ctx.z, lot, grow)
+    return win if win is not None else (None, None)
 
 
 def core_spread(ctx, lot):

@@ -119,6 +119,7 @@ def generate(args):
         "height.bin": files.compress(files.encode_height(ctx.layers["height"], sk).tobytes()),
         "normal.bin": files.compress(derive.normal_bytes(ctx)),
         "biome.bin": files.compress(derive.biome_bytes(ctx)),
+        "mask.bin": files.compress(derive.mask_bytes(ctx)),
         "water.json": water_io.dumps(water_io.document(sk)).encode("ascii"),
         "roads.json": water_io.dumps(roads_io.document(ctx)).encode("ascii"),
     }
