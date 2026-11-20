@@ -123,3 +123,43 @@ class ScarpTest(unittest.TestCase):
         r, c = crop.offset_in(full)
         hf = run(sk, full, 1, until="scarp").layers["height"][r : r + crop.nz, c : c + crop.nx]
         np.testing.assert_array_equal(run(sk, crop, 1, until="scarp").layers["height"], hf)
+
+
+class LakeTest(unittest.TestCase):
+    def test_order(self):
+        self.assertEqual([n for n, _ in STAGES][:6], ["ramp", "bumps", "coast", "noise", "scarp", "lake"])
+
+    def test_bed_profile_shore_blend_and_outside(self):
+        sk = sketch()
+        lk = sk["lake"]
+        x = lk["x"] + np.array([0.0, 0.5 * lk["a"], lk["a"], lk["a"] + 15.0, lk["a"] + 30.0, lk["a"] + 80.0])
+        z = np.full_like(x, lk["z"])
+        h = np.full_like(x, 70.0)
+        got = stages.lake_basin(h, x, z, lk)
+        lv, dep = lk["level"], lk["max_depth"]
+        np.testing.assert_allclose(got, [lv - dep, lv - dep * 0.75, lv, 0.5 * (lv + 70.0), 70.0, 70.0])
+
+    def test_continuous_at_the_outline(self):
+        sk = sketch()
+        lk = sk["lake"]
+        g = Grid(lk["x"] - 260.0, lk["z"] - 160.0, 1.0, 521, 321)
+        h = run(sk, g, 1, until="lake", noise=False).layers["height"]
+        jump = max(np.abs(np.diff(h, axis=0)).max(), np.abs(np.diff(h, axis=1)).max())
+        self.assertLess(jump, 1.0)
+
+    def test_water_record(self):
+        sk = sketch()
+        c = run(sk, Grid.crop(1000, 1000, 64, 8), 1, until="lake", noise=False)
+        (lake,) = c.water["lakes"]
+        self.assertEqual((lake["id"], lake["level"], len(lake["polygon"])), ("pond", 50.0, 64))
+        lk = sk["lake"]
+        rho = [np.hypot((px - lk["x"]) / lk["a"], (pz - lk["z"]) / lk["b"]) for px, pz in lake["polygon"]]
+        np.testing.assert_allclose(rho, 1.0, atol=1e-5)
+
+    def test_crop_equals_full_window(self):
+        sk = sketch()
+        full = Grid.full(sk["size_m"], 4)
+        crop = Grid.crop(1100, 1000, 512, 4)
+        r, c = crop.offset_in(full)
+        hf = run(sk, full, 1, until="lake").layers["height"][r : r + crop.nz, c : c + crop.nx]
+        np.testing.assert_array_equal(run(sk, crop, 1, until="lake").layers["height"], hf)

@@ -74,3 +74,23 @@ def strip_distance(x, z, start, bearing_deg, length, width):
 def disc_distance(x, z, cx, cz, r):
     """Distance to a disc; 0 inside."""
     return np.maximum(np.hypot(x - cx, z - cz) - r, 0.0)
+
+
+def ellipse_rho(x, z, cx, cz, a, b):
+    """Normalised elliptic radius: 0 at the centre, 1 on the outline."""
+    return np.hypot((x - cx) / a, (z - cz) / b)
+
+
+def ellipse_edge_distance(x, z, cx, cz, a, b):
+    """First-order distance to the ellipse outline, |rho - 1| / |grad rho|
+    (exact on the axes, close to it everywhere near the outline)."""
+    rho = np.maximum(ellipse_rho(x, z, cx, cz, a, b), 1e-9)
+    gx = (x - cx) / (a * a * rho)
+    gz = (z - cz) / (b * b * rho)
+    return np.abs(rho - 1.0) / np.maximum(np.hypot(gx, gz), 1e-12)
+
+
+def ellipse_outline(cx, cz, a, b, n):
+    """n outline vertices, counter-clockwise from east, as [[x, z], ...]."""
+    t = np.arange(n) * (2.0 * np.pi / n)
+    return np.stack([cx + a * np.cos(t), cz + b * np.sin(t)], axis=1)

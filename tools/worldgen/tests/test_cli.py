@@ -46,24 +46,24 @@ class CheckPoisTest(unittest.TestCase):
         return path
 
     def test_passes_when_heights_match(self):
-        r = cli("check-pois", "--sketch", self.sketch, "--pois", self.pois(), "--no-noise")
+        r = cli("check-pois", "--until", "scarp", "--sketch", self.sketch, "--pois", self.pois(), "--no-noise")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("POI CHECK: PASS (2 places, until scarp, noise off", r.stdout)
 
     def test_fails_beyond_the_tolerance(self):
-        r = cli("check-pois", "--sketch", self.sketch, "--pois", self.pois(1.5), "--no-noise")
+        r = cli("check-pois", "--until", "scarp", "--sketch", self.sketch, "--pois", self.pois(1.5), "--no-noise")
         self.assertEqual(r.returncode, 1)
         self.assertIn("FAIL", r.stdout.splitlines()[0])
-        r = cli("check-pois", "--sketch", self.sketch, "--pois", self.pois(1.5), "--no-noise", "--tolerance", "2")
+        r = cli("check-pois", "--until", "scarp", "--sketch", self.sketch, "--pois", self.pois(1.5), "--no-noise", "--tolerance", "2")
         self.assertEqual(r.returncode, 0)
 
     def test_noise_is_masked_at_named_places(self):
-        r = cli("check-pois", "--sketch", self.sketch, "--pois", self.pois())
+        r = cli("check-pois", "--until", "scarp", "--sketch", self.sketch, "--pois", self.pois())
         self.assertEqual(r.returncode, 0, r.stdout)
         self.assertIn("noise on", r.stdout)
 
     def test_unknown_stage(self):
-        r = cli("check-pois", "--sketch", self.sketch, "--pois", self.pois(), "--until", "nope")
+        r = cli("check-pois", "--until", "scarp", "--sketch", self.sketch, "--pois", self.pois(), "--until", "nope")
         self.assertEqual(r.returncode, 2)
 
 

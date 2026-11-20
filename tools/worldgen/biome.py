@@ -48,19 +48,13 @@ class Inputs:
     def lake_rho(self):
         """Normalised elliptic radius of the lake (1 on the outline)."""
         lk = self.sketch["lake"]
-        return self.get("rho", lambda: np.hypot((self.x - lk["x"]) / lk["a"], (self.z - lk["z"]) / lk["b"]))
+        return self.get("rho", lambda: geometry.ellipse_rho(self.x, self.z, lk["x"], lk["z"], lk["a"], lk["b"]))
 
     def lake_edge_d(self):
-        """First-order distance to the lake outline: |rho - 1| / |grad rho|."""
-
-        def f():
-            lk = self.sketch["lake"]
-            rho = np.maximum(self.lake_rho(), 1e-9)
-            gx = (self.x - lk["x"]) / (lk["a"] ** 2 * rho)
-            gz = (self.z - lk["z"]) / (lk["b"] ** 2 * rho)
-            return np.abs(rho - 1.0) / np.maximum(np.hypot(gx, gz), 1e-12)
-
-        return self.get("lake_edge", f)
+        lk = self.sketch["lake"]
+        return self.get(
+            "lake_edge", lambda: geometry.ellipse_edge_distance(self.x, self.z, lk["x"], lk["z"], lk["a"], lk["b"])
+        )
 
     def water_line_d(self, cap):
         def f():
