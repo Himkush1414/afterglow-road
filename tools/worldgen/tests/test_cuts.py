@@ -75,3 +75,47 @@ class MineTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class QuarryTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        sk = sketch()
+        cls.sk = sk
+        cls.grid = Grid.crop(500, 500, 600, 2)
+        cls.before = run(sk, cls.grid, sk["world_seed"], until="mine").layers["height"]
+        cls.ctx = run(sk, cls.grid, sk["world_seed"], until="quarry")
+        cls.q = next(c for c in cls.ctx.cuts if c["type"] == "quarry")
+
+    def test_order(self):
+        self.assertEqual([n for n, _ in STAGES][10:12], ["mine", "quarry"])
+
+    def box(self):
+        dx, dz = self.q["downhill"]
+        return cuts.box_coords(*self.grid.coords(), self.q["x"], self.q["z"], -dz, dx)
+
+    def test_level_floor_with_the_face_height(self):
+        along, across = self.box()
+        inside = (np.abs(along) <= 100) & (np.abs(across) <= 40)
+        h = self.ctx.layers["height"]
+        np.testing.assert_allclose(h[inside], self.q["floor_y"], rtol=0, atol=1e-9)
+        back = float(bilinear(self.grid, self.before, *self.q["back"]))
+        self.assertAlmostEqual(back - self.q["floor_y"], 25.0, places=9)
+
+    def test_face_is_a_two_sample_step_behind_the_bench(self):
+        along, across = self.box()
+        h, h0 = self.ctx.layers["height"], self.before
+        # with the contour as first axis, "across" grows uphill
+        behind = (np.abs(along) <= 90) & (across > 40 + 2 * 2.0 + 1e-9) & (across < 60)
+        self.assertGreater(behind.sum(), 100)
+        np.testing.assert_array_equal(h[behind], h0[behind])
+        step = (np.abs(along) <= 90) & (across > 40) & (across <= 44)
+        self.assertGreater((h[step] - self.q["floor_y"]).max(), 10.0, "the face rises within two samples")
+
+    def test_uphill_of_the_place_lots(self):
+        village_lots = [lt for lt in self.ctx.lots if lt.get("poi") == "village"]
+        dx, dz = self.q["downhill"]
+        for lt in village_lots:
+            for cx, cz in cuts._core_corners(lt):
+                along, across = cuts.box_coords(np.array(cx), np.array(cz), self.q["x"], self.q["z"], -dz, dx)
+                self.assertLess(float(across), -40.0 - self.sk["lots"]["blend_m"] + 1e-9, "downhill of the bench and its blend")

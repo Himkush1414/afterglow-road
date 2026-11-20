@@ -58,3 +58,44 @@ def _stage_mine(ctx):
     yaw = math.degrees(math.atan2(-dx, dz)) % 360.0
     ctx.cuts.append({"type": "bench", "poi": poi["id"], "x": poi["x"], "z": poi["z"], "long_m": long_m, "deep_m": deep_m, "floor_y": floor, "downhill": [dx, dz], "yaw_deg": yaw})
     ctx.cuts.append({"type": "trench", "poi": poi["id"], "start": [sx, sz], "dir": [-dx, -dz], "l_m": t["l"], "w_m": t["w"], "floor_y": floor})
+
+
+def _core_corners(lot):
+    a = math.radians(lot.get("yaw_deg", 0.0))
+    ux, uz, vx, vz = math.cos(a), math.sin(a), -math.sin(a), math.cos(a)
+    hw, hd = lot["w"] / 2 + lot["margin_m"], lot["d"] / 2 + lot["margin_m"]
+    return [(lot["x"] + su * hw * ux + sv * hd * vx, lot["z"] + su * hw * uz + sv * hd * vz) for su in (-1, 1) for sv in (-1, 1)]
+
+
+@stage("quarry")
+def _stage_quarry(ctx):
+    """Bench uphill of the place's lots, floor = ground at the middle of its
+    back edge minus the face height, levelled (cut and fill); where the ground
+    stands above the floor it meets it within the face samples, else it
+    blends over the lot blend."""
+    sk, cfg = ctx.sketch, ctx.sketch.get("quarry")
+    if not cfg:
+        return
+    poi = next(p for p in sk["pois"] if p["id"] == cfg["poi"])
+    dx, dz = downhill(sk, ctx.seed, ctx.noise, poi["x"], poi["z"])
+    upx, upz = -dx, -dz
+    blend = sk["lots"]["blend_m"]
+    reach = 0.0
+    for lot in ctx.lots:
+        if lot.get("poi") == poi["id"] and "w" in lot:
+            for cx, cz in _core_corners(lot):
+                reach = max(reach, (cx - poi["x"]) * upx + (cz - poi["z"]) * upz)
+    long_m, deep_m = cfg["bench_m"]
+    front = reach + blend
+    mx, mz = poi["x"] + upx * (front + deep_m / 2), poi["z"] + upz * (front + deep_m / 2)
+    bx, bz = poi["x"] + upx * (front + deep_m), poi["z"] + upz * (front + deep_m)
+    grid, h0 = exact_patch(ctx, bx - 1, bz - 1, bx + 1, bz + 1, "mine")
+    floor = float(bilinear(grid, h0, bx, bz)) - cfg["face_m"]
+    h = ctx.layers["height"]
+    along, across = box_coords(ctx.x, ctx.z, mx, mz, -dz, dx)
+    d = rect_distance(along, across, long_m / 2, deep_m / 2)
+    ramp = np.where(h > floor, cfg["face_samples"] * ctx.grid.sample_m, blend)
+    w = stages.smoothstep(0.0, ramp, d)
+    ctx.layers["height"] = floor * (1.0 - w) + h * w
+    yaw = math.degrees(math.atan2(-dx, dz)) % 360.0
+    ctx.cuts.append({"type": "quarry", "poi": poi["id"], "x": mx, "z": mz, "long_m": long_m, "deep_m": deep_m, "floor_y": floor, "back": [bx, bz], "downhill": [dx, dz], "yaw_deg": yaw})
