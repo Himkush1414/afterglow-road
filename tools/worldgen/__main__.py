@@ -5,14 +5,19 @@
       Heights at every named place after the stages up to STAGE (default:
       the last registered one) against the place table's y column. Exit 1
       if any differs by more than the tolerance (default 1 m).
+
+  python3 -m tools.worldgen water --sketch S.json --pois P.csv --out water.json
+      Writes the water file, prints its SHA-256 and checks its rules (river
+      levels never rise, lake levels as in the sketch). Exit 1 on a rule error.
 """
 import argparse
 import sys
 
 from . import sketch as sketch_io
+from . import water as water_io
 from . import stages as _stages  # noqa: F401  (registers the terrain stages)
 from .grid import Grid
-from .pipeline import STAGES, run
+from .pipeline import STAGES, run, sha256
 
 
 def check_pois(args):
@@ -38,6 +43,20 @@ def check_pois(args):
     return 1 if bad else 0
 
 
+def write_water(args):
+    sk = sketch_io.load(args.sketch, args.pois)
+    doc = water_io.document(sk)
+    text = water_io.dumps(doc).encode("ascii")
+    with open(args.out, "wb") as f:
+        f.write(text)
+    print(f"wrote {args.out}: {len(doc['lakes'])} lakes, {len(doc['rivers'])} rivers, sha256 {sha256(text)}")
+    errors = water_io.check(doc, sk)
+    for e in errors:
+        print(f"  ERROR {e}")
+    print(f"WATER CHECK: {'FAIL' if errors else 'PASS'}")
+    return 1 if errors else 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="python3 -m tools.worldgen")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -47,8 +66,12 @@ def main(argv=None):
     c.add_argument("--until")
     c.add_argument("--no-noise", action="store_true")
     c.add_argument("--tolerance", type=float, default=1.0)
+    w = sub.add_parser("water", help="write and check the water file")
+    w.add_argument("--sketch", required=True)
+    w.add_argument("--pois", required=True)
+    w.add_argument("--out", required=True)
     args = ap.parse_args(argv)
-    return check_pois(args)
+    return {"check-pois": check_pois, "water": write_water}[args.cmd](args)
 
 
 if __name__ == "__main__":
