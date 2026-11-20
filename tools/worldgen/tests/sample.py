@@ -6,6 +6,7 @@ SAMPLE = {
     "world_seed": 11,
     "size_m": 2048,
     "sample_m": 2,
+    "height_encoding": {"scale": 0.02, "offset_m": 64.0},
     "ramp": {"h0": 10.0, "kx": 0.01, "kz": 0.02, "z_ref": 2048.0},
     "bumps": [
         {"id": "big", "x": 1500.0, "z": 400.0, "r": 600.0, "h": 300.0},

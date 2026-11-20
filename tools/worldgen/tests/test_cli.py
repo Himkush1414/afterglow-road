@@ -100,3 +100,29 @@ class RoadsCommandTest(unittest.TestCase):
             r = cli("roads", "--sketch", s, "--pois", p, "--out", out)
             self.assertEqual(r.returncode, 1, r.stdout)
             self.assertIn("hamlet: no settlement layout  FAIL", r.stdout)
+
+
+class GenerateCommandTest(unittest.TestCase):
+    def test_T_05_1(self):
+        """Generator run twice gives identical SHA-256 for every output file (sample sketch)."""
+        from tools.worldgen import files
+
+        with tempfile.TemporaryDirectory() as d:
+            s, p = os.path.join(d, "s.json"), os.path.join(d, "p.csv")
+            with open(s, "w", encoding="utf-8") as f:
+                json.dump(sketch(), f)
+            with open(p, "w", encoding="utf-8") as f:
+                f.write("id,x,z,y,contents\nvillage,500,500,0,cabin; shed\nfarm,1700,1200,0,farmhouse; barn\n")
+            metas = []
+            for run_dir in ("a", "b"):
+                out = os.path.join(d, run_dir)
+                r = cli("generate", "--sketch", s, "--pois", p, "--out", out)
+                self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+                with open(os.path.join(out, "meta.json"), encoding="utf-8") as f:
+                    metas.append(json.load(f))
+            self.assertEqual(metas[0]["sha256"], metas[1]["sha256"])
+            self.assertEqual(set(metas[0]["sha256"]), {"height.bin", "water.json", "roads.json"})
+            with open(os.path.join(d, "a", "height.bin"), "rb") as f:
+                raw = files.decompress(f.read())
+            n = sketch()["size_m"] // sketch()["sample_m"] + 1
+            self.assertEqual(len(raw), n * n * 2, "4097-style square of u16 for this map")

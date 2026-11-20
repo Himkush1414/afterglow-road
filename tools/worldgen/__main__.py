@@ -16,8 +16,13 @@
       the worst window grade (road and track part of T-05-10), whether every
       lot is flat, and buildings left unplaced, on a way, or without a layout.
       Exit 1 on any failure or a place without a track.
+
+  python3 -m tools.worldgen generate --sketch S.json --pois P.csv --buildings B.csv --out DIR
+      Runs every stage on the full map and writes the world files of 04 §2
+      into DIR (those implemented so far) plus meta.json with their SHA-256.
 """
 import argparse
+import os
 import sys
 
 from . import sketch as sketch_io
@@ -102,6 +107,25 @@ def write_roads(args):
     return 1 if bad else 0
 
 
+def generate(args):
+    from . import files
+
+    sk = sketch_io.load(args.sketch, args.pois, args.buildings)
+    ctx = run(sk, Grid.full(sk["size_m"], float(sk["sample_m"])), sk["world_seed"])
+    os.makedirs(args.out, exist_ok=True)
+    out = {
+        "height.bin": files.compress(files.encode_height(ctx.layers["height"], sk).tobytes()),
+        "water.json": water_io.dumps(water_io.document(sk)).encode("ascii"),
+        "roads.json": water_io.dumps(roads_io.document(ctx)).encode("ascii"),
+    }
+    hashes = {name: files.write(os.path.join(args.out, name), data) for name, data in out.items()}
+    files.write(os.path.join(args.out, "meta.json"), files.meta_text(files.meta(sk, hashes)).encode("ascii"))
+    for name in sorted(hashes):
+        print(f"  {name:<12} {len(out[name]):>10} bytes  sha256 {hashes[name]}")
+    print(f"GENERATE: wrote {len(hashes) + 1} files to {args.out}")
+    return 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="python3 -m tools.worldgen")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -120,8 +144,14 @@ def main(argv=None):
     rd.add_argument("--pois", required=True)
     rd.add_argument("--buildings")
     rd.add_argument("--out", required=True)
+    gen = sub.add_parser("generate", help="write the world files")
+    gen.add_argument("--sketch", required=True)
+    gen.add_argument("--pois", required=True)
+    gen.add_argument("--buildings")
+    gen.add_argument("--out", required=True)
     args = ap.parse_args(argv)
-    return {"check-pois": check_pois, "water": write_water, "roads": write_roads}[args.cmd](args)
+    commands = {"check-pois": check_pois, "water": write_water, "roads": write_roads, "generate": generate}
+    return commands[args.cmd](args)
 
 
 if __name__ == "__main__":
