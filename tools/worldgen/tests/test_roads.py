@@ -1,4 +1,5 @@
 """Stage 9 tests: way profiles and the cross-section flatten."""
+import copy
 import unittest
 
 import numpy as np
@@ -56,7 +57,7 @@ class ProfileTest(unittest.TestCase):
         for line in roads.ways(sk):
             pts, s, prof = roads.profile(sk, sk["world_seed"], True, line)
             g = roads.grade_limits(sk, line, pts)
-            self.assertLessEqual((np.abs(np.diff(prof)) / np.diff(s) - g).max(), 1e-9, line["id"])
+            self.assertLessEqual((np.abs(np.diff(prof)) / np.diff(s) - roads.CLAMP_MARGIN * g).max(), 1e-9, line["id"])
 
 
 class FlattenTest(unittest.TestCase):
@@ -197,3 +198,42 @@ class CrossingTest(unittest.TestCase):
         self.assertLessEqual(c["level"] - h[j, i], sk["crossings"]["ford_max_depth_m"] + 0.15)
         path = next(r for r in ctx.roads if r["id"] == "path")
         self.assertLessEqual((np.abs(np.diff(path["profile"])) / np.diff(path["arc"])).max(), 0.18 + 1e-9)
+
+
+class RoadsFileTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        sk = sketch()
+        cls.sk, cls.ctx = sk, run(sk, Grid.full(sk["size_m"], 2), sk["world_seed"], until="roads")
+
+    def test_document(self):
+        doc = roads.document(self.ctx)
+        self.assertEqual([w["id"] for w in doc["ways"]], [r["id"] for r in self.ctx.roads])
+        self.assertEqual(set(doc["ways"][0]), {"id", "type", "width_m", "points"})
+        self.assertEqual({w["type"] for w in doc["ways"]}, {"road", "track"})
+
+    def test_T_05_10_ways(self):
+        """Road and track part of T-05-10 on the sample: every way within its limit over any window."""
+        rows = roads.grade_report(self.ctx)
+        self.assertEqual({r["id"] for r in rows}, {r["id"] for r in self.ctx.roads})
+        self.assertEqual(sorted(r["limit"] for r in rows if r["id"] == "lane"), [0.12, 0.18], "one row per limit")
+        for r in rows:
+            self.assertTrue(r["ok"], r)
+
+    def test_report_sees_a_planted_step(self):
+        ctx = copy.copy(self.ctx)
+        ctx.layers = {"height": self.ctx.layers["height"].copy()}
+        lane = next(r for r in ctx.roads if r["id"] == "lane")
+        g = ctx.grid
+        x, z = lane["points"][len(lane["points"]) // 3]
+        j, k = int(round((z - g.z0) / g.sample_m)), int(round((x - g.x0) / g.sample_m))
+        ctx.layers["height"][j - 3 : j + 4, k - 3 : k + 4] += 40.0
+        bad = next(r for r in roads.grade_report(ctx) if r["id"] == "lane")
+        self.assertFalse(bad["ok"])
+
+    def test_bridge_span_uses_the_deck(self):
+        rec = next(r for r in self.ctx.roads if r["id"] == "lane")
+        c = next(c for c in self.ctx.crossings if c["way"] == "lane")
+        y = roads.surface_along(self.ctx, rec)
+        on = np.abs(rec["arc"] - c["arc"]) <= c["span_m"] / 2.0
+        np.testing.assert_array_equal(y[on], rec["profile"][on])

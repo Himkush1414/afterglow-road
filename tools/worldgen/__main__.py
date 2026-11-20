@@ -9,11 +9,18 @@
   python3 -m tools.worldgen water --sketch S.json --pois P.csv --out water.json
       Writes the water file, prints its SHA-256 and checks its rules (river
       levels never rise, lake levels as in the sketch). Exit 1 on a rule error.
+
+  python3 -m tools.worldgen roads --sketch S.json --pois P.csv --out roads.json
+      Runs the stages up to the roads on the full map at the sketch's sample
+      spacing, writes the way file and reports, per way and grade limit, the
+      worst window grade on the final surface (road and track part of
+      T-05-10). Exit 1 if one fails or a place got no track.
 """
 import argparse
 import sys
 
 from . import sketch as sketch_io
+from . import roads as roads_io
 from . import water as water_io
 from .grid import Grid
 from .pipeline import STAGES, load_stages, run, sha256
@@ -58,6 +65,26 @@ def write_water(args):
     return 1 if errors else 0
 
 
+def write_roads(args):
+    sk = sketch_io.load(args.sketch, args.pois)
+    s = float(sk.get("sample_m", 2.0))
+    ctx = run(sk, Grid.full(sk["size_m"], s), sk["world_seed"], until="roads")
+    text = water_io.dumps(roads_io.document(ctx)).encode("ascii")
+    with open(args.out, "wb") as f:
+        f.write(text)
+    print(f"wrote {args.out}: {len(ctx.roads)} ways, sha256 {sha256(text)}")
+    bad = 0
+    for r in roads_io.grade_report(ctx):
+        bad += not r["ok"]
+        flag = "" if r["ok"] else "  FAIL"
+        print(f"  {r['id']:<28} {r['type']:<6} limit {r['limit']:4.0%} worst {r['worst']:6.2%} at {r['at']}{flag}")
+    for pid in ctx.route_failures:
+        bad += 1
+        print(f"  no track route under the limit to {pid}  FAIL")
+    print(f"WAY CHECK: {'FAIL' if bad else 'PASS'} (sample {s:g} m)")
+    return 1 if bad else 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="python3 -m tools.worldgen")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -71,8 +98,12 @@ def main(argv=None):
     w.add_argument("--sketch", required=True)
     w.add_argument("--pois", required=True)
     w.add_argument("--out", required=True)
+    rd = sub.add_parser("roads", help="write the way file and check way grades")
+    rd.add_argument("--sketch", required=True)
+    rd.add_argument("--pois", required=True)
+    rd.add_argument("--out", required=True)
     args = ap.parse_args(argv)
-    return {"check-pois": check_pois, "water": write_water}[args.cmd](args)
+    return {"check-pois": check_pois, "water": write_water, "roads": write_roads}[args.cmd](args)
 
 
 if __name__ == "__main__":

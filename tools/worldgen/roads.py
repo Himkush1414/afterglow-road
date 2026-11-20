@@ -7,6 +7,9 @@ from . import geometry, route, stages
 from .pipeline import stage
 
 PROFILE_STEP_M = 2.0  # arc spacing of the profile samples
+# Profiles are clamped a little under the limit, so the stored field, read
+# back by bilinear interpolation between samples, stays within the limit.
+CLAMP_MARGIN = 0.995
 WAY_KINDS = ("track", "road")  # flatten order: the road wins at junctions
 
 
@@ -160,7 +163,7 @@ def profile(sk, seed, with_noise, line, water=()):
     pts, s = resample_arc(geometry.catmull_rom(line["points"]))
     h = stages.centre_profile(sk, seed, with_noise, pts)
     h = smooth(h, sk["routing"]["profile_smooth_m"])
-    limit, ds = grade_limits(sk, line, pts), np.diff(s)
+    limit, ds = CLAMP_MARGIN * grade_limits(sk, line, pts), np.diff(s)
     h = clamp_grade(h, limit, ds)
     _, fixed, value = platforms(sk, line, pts, h)
     ford = sk.get("crossings", {}).get("track_river", "ford")
@@ -259,3 +262,64 @@ def _stage_roads(ctx):
                 "max_cut_fill_m": float(np.abs(prof - terrain).max()),
             }
         )
+
+
+def document(ctx):
+    """The way file: every way as a polyline with its type and width."""
+    return {
+        "ways": [
+            {"id": r["id"], "type": r["type"], "width_m": r["width_m"], "points": np.round(r["points"], 2).tolist()}
+            for r in ctx.roads
+        ]
+    }
+
+
+def surface_along(ctx, rec):
+    """Height of the travelled surface at every profile sample: the final
+    field (bilinear), or the deck over bridge spans."""
+    g, h = ctx.grid, ctx.layers["height"]
+    p = rec["points"]
+    fx = np.clip((p[:, 0] - g.x0) / g.sample_m, 0.0, g.nx - 1.000001)
+    fz = np.clip((p[:, 1] - g.z0) / g.sample_m, 0.0, g.nz - 1.000001)
+    i, j = np.floor(fx).astype(int), np.floor(fz).astype(int)
+    tx, tz = fx - i, fz - j
+    y = (h[j, i] * (1 - tx) + h[j, i + 1] * tx) * (1 - tz) + (h[j + 1, i] * (1 - tx) + h[j + 1, i + 1] * tx) * tz
+    for c in ctx.crossings:
+        if c["way"] == rec["id"] and "span_m" in c:
+            on = np.abs(rec["arc"] - c["arc"]) <= c["span_m"] / 2.0
+            y[on] = rec["profile"][on]
+    return y
+
+
+def grade_report(ctx):
+    """Per way and grade limit: the window (of `road_grade.window_m` arc)
+    whose grade on the final surface is furthest above (or least below) the
+    limit, skipping windows that touch a turning platform or its blend. A
+    window belongs to the highest limit among its intervals."""
+    sk = ctx.sketch
+    window = float(sk["road_grade"]["window_m"])
+    hp = sk.get("hairpins", {})
+    reach = hp.get("radius_m", 0.0) + hp.get("blend_m", 0.0)
+    rows = []
+    for rec in ctx.roads:
+        p, s = rec["points"], rec["arc"]
+        limit = grade_limits(sk, {"kind": rec["type"]}, p)
+        y = surface_along(ctx, rec)
+        skip = np.zeros(len(p), dtype=bool)
+        for pl in ctx.platforms:
+            skip |= np.hypot(p[:, 0] - pl["centre"][0], p[:, 1] - pl["centre"][1]) < reach
+        skipped = np.concatenate([[0], np.cumsum(skip)])
+        best = {}
+        for i, j in enumerate(np.searchsorted(s, s + window)):
+            if j >= len(p):
+                break
+            if skipped[j + 1] - skipped[i]:
+                continue
+            grade = abs(y[j] - y[i]) / (s[j] - s[i])
+            lim = float(limit[i:j].max())
+            if lim not in best or grade > best[lim][0]:
+                best[lim] = (grade, (round(float(p[i, 0])), round(float(p[i, 1]))))
+        for lim in sorted(best) or [float(limit.max(initial=0.0))]:
+            grade, at = best.get(lim, (0.0, None))
+            rows.append({"id": rec["id"], "type": rec["type"], "worst": grade, "limit": lim, "at": at, "ok": grade <= lim + 1e-9})
+    return rows

@@ -69,3 +69,18 @@ class CheckPoisTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RoadsCommandTest(unittest.TestCase):
+    def test_writes_and_passes(self):
+        with tempfile.TemporaryDirectory() as d:
+            s, p, out = os.path.join(d, "s.json"), os.path.join(d, "p.csv"), os.path.join(d, "roads.json")
+            with open(s, "w", encoding="utf-8") as f:
+                json.dump(sketch(), f)
+            with open(p, "w", encoding="utf-8") as f:
+                f.write("id,x,z,y\nvillage,500,500,0\nfarm,1700,1200,0\n")
+            r = cli("roads", "--sketch", s, "--pois", p, "--out", out)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertIn("WAY CHECK: PASS", r.stdout)
+            with open(out, encoding="utf-8") as f:
+                self.assertIn("track_farm", [w["id"] for w in json.load(f)["ways"]])
