@@ -63,6 +63,21 @@ def mean_height(ctx, lot):
     return float(h[j0:j1, i0:i1][core].mean())
 
 
+def _window(ctx, lot, grow):
+    """(slices, distance to the core) over the grid samples within `grow` of
+    the lot's core box; (None, None) when that box misses the grid."""
+    g = ctx.grid
+    x0, z0, x1, z1 = _core_box(lot)
+    i0 = max(int(math.floor((x0 - grow - g.x0) / g.sample_m)), 0)
+    j0 = max(int(math.floor((z0 - grow - g.z0) / g.sample_m)), 0)
+    i1 = min(int(math.ceil((x1 + grow - g.x0) / g.sample_m)) + 1, g.nx)
+    j1 = min(int(math.ceil((z1 + grow - g.z0) / g.sample_m)) + 1, g.nz)
+    if i0 >= i1 or j0 >= j1:
+        return None, None
+    win = (slice(j0, j1), slice(i0, i1))
+    return win, distance(ctx.x[win], ctx.z[win], lot)
+
+
 @stage("lots")
 def _stage_lots(ctx):
     plan = getattr(ctx, "settlement", None) or {"lots": [], "handled": set()}
@@ -72,11 +87,16 @@ def _stage_lots(ctx):
     ctx.lot_way_overlaps = layout.way_overlaps(lots, ctx.roads)
     means = [mean_height(ctx, lot) for lot in lots]
     h = ctx.layers["height"]
-    dist = [distance(ctx.x, ctx.z, lot) for lot in lots]
-    for lot, m, d in zip(lots, means, dist):
-        w = stages.smoothstep(0.0, lot["blend_m"], d)
-        h = m * (1.0 - w) + h * w
+    h = h.copy()
+    for lot, m in zip(lots, means):
+        win, d = _window(ctx, lot, lot["blend_m"])
+        if d is not None:
+            w = stages.smoothstep(0.0, lot["blend_m"], d)
+            h[win] = m * (1.0 - w) + h[win] * w
         ctx.lots.append(dict(lot, y=m))
-    for m, d in zip(means, dist):  # a neighbour's blend must not tilt a core
-        h = np.where(d == 0.0, m, h)
+    for lot, m in zip(lots, means):  # a neighbour's blend must not tilt a core
+        win, d = _window(ctx, lot, 0.0)
+        if d is not None:
+            sub = h[win]
+            sub[d == 0.0] = m
     ctx.layers["height"] = h
