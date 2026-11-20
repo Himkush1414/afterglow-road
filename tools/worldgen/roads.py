@@ -256,7 +256,11 @@ def _stage_roads(ctx):
     done = {ln["id"]: profile(sk, ctx.seed, ctx.noise, ln, water) for ln in lines if ln["kind"] == "road"}
     joins = [done[ln["id"]] + (half_width(sk, ln),) for ln in lines if ln["kind"] == "road"]
     for line in lines:
-        pts, s, prof = done.get(line["id"]) or profile(sk, ctx.seed, ctx.noise, line, water, joins)
+        if line["id"] in done:
+            pts, s, prof = done[line["id"]]
+        else:
+            pts, s, prof = profile(sk, ctx.seed, ctx.noise, line, water, joins)
+            joins.append((pts, s, prof, half_width(sk, line)))  # later ways meet this one level
         before = ctx.layers["height"]
         core, blend = half_width(sk, line), sk["routing"]["blend_m"]
         after = flatten(before, ctx.grid, pts, prof, core, blend)
