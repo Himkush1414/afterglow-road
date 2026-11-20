@@ -135,8 +135,9 @@ def fixed(sk, poi, items):
     ]
 
 
-def generate(sk, ways):
-    """(lots, ids of places left for the settlement layouts)."""
+def generate(sk, ways, handled=()):
+    """(lots, ids of settlement places without a layout yet). Places in
+    `handled` were laid out by the settlement layouts."""
     cfg = sk.get("lots", {})
     size = sk.get("buildings", {})
     settled = set(cfg.get("settlements", []))
@@ -144,6 +145,8 @@ def generate(sk, ways):
     lots, pending = [], []
     for poi in sk.get("pois", []):
         names = buildings_of(poi.get("contents", ""), size)
+        if poi["id"] in handled:
+            continue
         if poi["id"] in fixed_layouts:
             lots += fixed(sk, poi, fixed_layouts[poi["id"]])
         elif not names:

@@ -210,7 +210,7 @@ class RoadsFileTest(unittest.TestCase):
         doc = roads.document(self.ctx)
         self.assertEqual([w["id"] for w in doc["ways"]], [r["id"] for r in self.ctx.roads])
         self.assertEqual(set(doc["ways"][0]), {"id", "type", "width_m", "points"})
-        self.assertEqual({w["type"] for w in doc["ways"]}, {"road", "track"})
+        self.assertEqual({w["type"] for w in doc["ways"]}, {"road", "street", "track"})
 
     def test_T_05_10_ways(self):
         """Road and track part of T-05-10 on the sample: every way within its limit over any window."""
