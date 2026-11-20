@@ -126,7 +126,7 @@ install_python() {
 	[[ -x "${venv}/bin/python" ]] || python3 -m venv "${venv}"
 	"${venv}/bin/python" -m pip install --quiet --disable-pip-version-check --require-hashes -r "${root}/tools/requirements.txt"
 	printf 'python %s; ' "$("${venv}/bin/python" -c 'import sys; print(sys.version.split()[0])')"
-	"${venv}/bin/python" -c 'import numpy, PIL; print("numpy", numpy.__version__, "pillow", PIL.__version__, end="; ")'
+	"${venv}/bin/python" -c 'import numpy, PIL, zstandard; print("numpy", numpy.__version__, "pillow", PIL.__version__, "zstandard", zstandard.__version__, end="; ")'
 	"${venv}/bin/gdlint" --version
 }
 
