@@ -1,4 +1,6 @@
 """Stage 9: road and track profiles and the cross-section flatten."""
+import math
+
 import numpy as np
 
 from . import geometry, stages
@@ -72,6 +74,72 @@ def platforms(sk, line, pts, prof):
     return out, fixed, value
 
 
+def intersections(a, b):
+    """Crossings of polylines a and b: list of (i, ta, j, tb, x, z) with
+    segment indices and positions along them."""
+    a, b = np.asarray(a, dtype=np.float64), np.asarray(b, dtype=np.float64)
+    p, r = a[:-1, None, :], (a[1:] - a[:-1])[:, None, :]
+    q, sv = b[None, :-1, :], (b[1:] - b[:-1])[None, :, :]
+    den = r[..., 0] * sv[..., 1] - r[..., 1] * sv[..., 0]
+    qp = q - p
+    with np.errstate(divide="ignore", invalid="ignore"):
+        ta = (qp[..., 0] * sv[..., 1] - qp[..., 1] * sv[..., 0]) / den
+        tb = (qp[..., 0] * r[..., 1] - qp[..., 1] * r[..., 0]) / den
+    hit = (den != 0) & (ta >= 0) & (ta < 1) & (tb >= 0) & (tb < 1)
+    out = []
+    for i, j in zip(*np.nonzero(hit)):
+        x, z = a[i] + ta[i, j] * (a[i + 1] - a[i])
+        out.append((int(i), float(ta[i, j]), int(j), float(tb[i, j]), float(x), float(z)))
+    return out
+
+
+def water_data(sk, seed, with_noise):
+    """Water lines with bed and level per vertex (as the river stage computes them)."""
+    out = []
+    for wl in stages.water_lines(sk):
+        terrain = stages.centre_profile(sk, seed, with_noise, wl["pts"])
+        bed = stages.river_bed(sk, terrain, wl["depth"], wl["line"].get("start"))
+        out.append(dict(wl, bed=bed, level=stages.water_level(bed, wl["depth"])))
+    return out
+
+
+def line_crossings(sk, line, pts, s, water):
+    """Where a way crosses water: type, point, arc on the way, yaw (degrees,
+    compass bearing of the way), and width, bed and level of the water."""
+    cr = sk.get("crossings", {})
+    out = []
+    for w in water:
+        for i, ta, j, tb, x, z in intersections(pts, w["pts"]):
+            def at(v, j=j, tb=tb):
+                return float(v[j] * (1.0 - tb) + v[j + 1] * tb)
+
+            if line["kind"] == "road":
+                kind = cr.get("road", "bridge")
+            else:
+                kind = cr.get("track_stream", "footbridge") if w["line"]["kind"] == "stream" else cr.get("track_river", "ford")
+            dx, dz = pts[i + 1] - pts[i]
+            out.append(
+                {
+                    "type": kind,
+                    "way": line["id"],
+                    "water": w["line"]["id"],
+                    "x": x,
+                    "z": z,
+                    "arc": float(s[i] + ta * (s[i + 1] - s[i])),
+                    "yaw_deg": float(math.degrees(math.atan2(dx, -dz)) % 360.0),
+                    "width_m": at(w["width"]),
+                    "bed": at(w["bed"]),
+                    "level": at(w["level"]),
+                    "water_pts": w["pts"],
+                }
+            )
+    named = cr.get("named_bridge")
+    bridges = [c for c in out if c["type"] == cr.get("road", "bridge")]
+    if named and bridges:
+        min(bridges, key=lambda c: math.hypot(c["x"] - named[0], c["z"] - named[1]))["type"] = "named"
+    return out
+
+
 def grade_limits(sk, line, pts):
     """Grade limit per interval: tracks one value; the road a low limit up to
     the vertex nearest the split point and a high one after it."""
@@ -85,15 +153,22 @@ def grade_limits(sk, line, pts):
     return g
 
 
-def profile(sk, seed, with_noise, line):
+def profile(sk, seed, with_noise, line, water=()):
     """(points, arc, height) of a way: stage 1-6 terrain on the centre line,
-    smoothed, then clamped to its grade limits."""
+    smoothed, clamped to its grade limits, pinned level on turning platforms
+    and down to the ford height where a track fords a river."""
     pts, s = resample_arc(geometry.catmull_rom(line["points"]))
     h = stages.centre_profile(sk, seed, with_noise, pts)
     h = smooth(h, sk["routing"]["profile_smooth_m"])
     limit, ds = grade_limits(sk, line, pts), np.diff(s)
     h = clamp_grade(h, limit, ds)
     _, fixed, value = platforms(sk, line, pts, h)
+    ford = sk.get("crossings", {}).get("track_river", "ford")
+    for c in line_crossings(sk, line, pts, s, water):
+        if c["type"] == ford:
+            inside = np.abs(s - c["arc"]) <= c["width_m"] / 2.0
+            fixed |= inside
+            value[inside] = c["level"] - float(sk["crossings"]["ford_max_depth_m"])
     return pts, s, pin(h, limit, ds, fixed, value)
 
 
@@ -127,14 +202,42 @@ def flatten_disc(h, x, z, centre, radius, blend, height):
     return height * (1.0 - w) + h * w
 
 
+def open_channels(before, after, grid, crossings, prof, s, core, blend, bank_deg):
+    """Under bridges the flatten may cut but not fill: within the span strip
+    along the water line near each bridged crossing keep the lower height."""
+    out = after
+    x, z = grid.coords()
+    tan_b = math.tan(math.radians(bank_deg))
+    for c in crossings:
+        deck = float(np.interp(c["arc"], s, prof))
+        half = c["width_m"] / 2.0 + max(deck - c["bed"], 0.0) / tan_b
+        c["deck_y"], c["span_m"] = deck, 2.0 * half
+        near = np.hypot(x - c["x"], z - c["z"]) < half + core + blend
+        if not near.any():
+            continue
+        strip = near & (geometry.polyline_distance(grid, c["water_pts"], half) < half)
+        out = np.where(strip, np.minimum(before, after), out)
+    return out
+
+
 @stage("roads")
 def _stage_roads(ctx):
     sk = ctx.sketch
+    water = water_data(sk, ctx.seed, ctx.noise)
+    ford = sk.get("crossings", {}).get("track_river", "ford")
     for line in ways(sk):
-        pts, s, prof = profile(sk, ctx.seed, ctx.noise, line)
-        ctx.layers["height"] = flatten(
-            ctx.layers["height"], ctx.grid, pts, prof, half_width(sk, line), sk["routing"]["blend_m"]
-        )
+        pts, s, prof = profile(sk, ctx.seed, ctx.noise, line, water)
+        before = ctx.layers["height"]
+        core, blend = half_width(sk, line), sk["routing"]["blend_m"]
+        after = flatten(before, ctx.grid, pts, prof, core, blend)
+        xs = line_crossings(sk, line, pts, s, water)
+        bridged = [c for c in xs if c["type"] != ford]
+        ctx.layers["height"] = open_channels(before, after, ctx.grid, bridged, prof, s, core, blend, sk["rivers"]["bank_deg"])
+        for c in xs:
+            c.pop("water_pts")
+            c.setdefault("deck_y", float(np.interp(c["arc"], s, prof)))
+            c["clearance_m"] = c["deck_y"] - c["level"]
+            ctx.crossings.append(c)
         hp = sk.get("hairpins", {})
         for centre, height in platforms(sk, line, pts, prof)[0]:
             ctx.layers["height"] = flatten_disc(

@@ -19,7 +19,7 @@ class WaterFileTest(unittest.TestCase):
         sk = sketch()
         doc = water.document(sk)
         self.assertEqual(water.check(doc, sk), [])
-        self.assertEqual([r["id"] for r in doc["rivers"]], ["brook", "brook_low", "rill"])
+        self.assertEqual([r["id"] for r in doc["rivers"]], ["brook", "brook_low", "ditch", "rill"])
         for r in doc["rivers"]:
             self.assertTrue(all(b <= a for a, b in zip(r["level"], r["level"][1:])), r["id"])
         self.assertEqual([lk["level"] for lk in doc["lakes"]], [sk["lake"]["level"]])

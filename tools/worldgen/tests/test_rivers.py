@@ -75,7 +75,7 @@ class RiverTest(unittest.TestCase):
         sk = sketch()
         c = run(sk, Grid.crop(1000, 1000, 512, 4), sk["world_seed"], until="rivers")
         rec = {r["id"]: r for r in c.water["rivers"]}
-        self.assertEqual(set(rec), {"brook", "brook_low", "rill"})
+        self.assertEqual(set(rec), {"brook", "brook_low", "ditch", "rill"})
         for r in rec.values():
             lv = np.array(r["level"])
             self.assertTrue(np.all(np.diff(lv) <= 1e-9), f"{r['id']} level rises")

@@ -35,6 +35,7 @@ class Context:
         self.water = {}  # water bodies for water.json, filled by the water stages
         self.roads = []  # way records for roads.json, filled by the road stage
         self.platforms = []  # levelled turning platforms on the roads
+        self.crossings = []  # bridges, footbridges and fords
 
 
 def load_stages():
