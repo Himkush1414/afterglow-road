@@ -37,11 +37,13 @@ class Context:
         self.platforms = []  # levelled turning platforms on the roads
         self.crossings = []  # bridges, footbridges and fords
         self.route_failures = []  # places without a track route under the grade limit
+        self.lots = []  # flattened lots with their height
 
 
 def load_stages():
     """Imports the stage modules in run order (importing registers them)."""
     from . import roads, stages  # noqa: F401  (stages registers first: roads imports it)
+    from . import lots  # noqa: F401  (after the roads)
 
 
 def run(sketch, grid, seed, stages=None, until=None, noise=True):

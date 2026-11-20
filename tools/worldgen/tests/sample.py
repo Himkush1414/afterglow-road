@@ -57,6 +57,12 @@ SAMPLE = {
     "crossings": {"road": "bridge_small", "track_stream": "footbridge", "track_river": "ford", "ford_max_depth_m": 0.3},
     "hairpins": {"radius_m": 30.0, "blend_m": 12.0, "points": [[1300.0, 1540.0]]},
     "routing": {"cell_m": 16.0, "turn_cost_m": 150.0, "profile_smooth_m": 60.0, "road_shoulder_m": 3.0, "blend_m": 6.0},
+    "lots": {
+        "margin_m": 3.0,
+        "blend_m": 6.0,
+        "list": [{"id": "hut", "x": 1700.0, "z": 1200.0, "w": 6.0, "d": 4.0, "yaw_deg": 30.0}],
+        "extra": [{"id": "ring", "x": 1700.0, "z": 300.0, "r": 40.0, "blend_m": 12.0}, {"id": "pad", "poi": "village", "w": 6.0, "d": 6.0, "blend_m": 12.0}],
+    },
     "erosion": {"iterations": 30, "talus_deg": 38.0},
     "scarp": {"edges": ["north", "east"], "band_m": 200.0, "height_m": 160.0, "full_at_m": 110.0, "noise_free_m": 64.0},
 }
