@@ -86,3 +86,17 @@ class RoadsCommandTest(unittest.TestCase):
             self.assertIn("WAY CHECK: PASS", r.stdout)
             with open(out, encoding="utf-8") as f:
                 self.assertIn("track_farm", [w["id"] for w in json.load(f)["ways"]])
+            self.assertIn("flat: ", r.stdout)
+
+    def test_reports_a_settlement_without_layout(self):
+        with tempfile.TemporaryDirectory() as d:
+            sk = sketch()
+            del sk["lots"]["street_cross"]
+            s, p, out = os.path.join(d, "s.json"), os.path.join(d, "p.csv"), os.path.join(d, "roads.json")
+            with open(s, "w", encoding="utf-8") as f:
+                json.dump(sk, f)
+            with open(p, "w", encoding="utf-8") as f:
+                f.write("id,x,z,y,contents\nhamlet,650,1590,0,2 village_house_a\nfarm,1700,1200,0,\n")
+            r = cli("roads", "--sketch", s, "--pois", p, "--out", out)
+            self.assertEqual(r.returncode, 1, r.stdout)
+            self.assertIn("hamlet: no settlement layout  FAIL", r.stdout)

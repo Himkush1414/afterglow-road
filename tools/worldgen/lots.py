@@ -78,6 +78,16 @@ def _window(ctx, lot, grow):
     return win, distance(ctx.x[win], ctx.z[win], lot)
 
 
+def core_spread(ctx, lot):
+    """Highest minus lowest height of the run's layer over a lot's core
+    samples inside the grid (0 when none are)."""
+    win, d = _window(ctx, lot, 0.0)
+    if d is None or not np.any(d == 0.0):
+        return 0.0
+    v = ctx.layers["height"][win][d == 0.0]
+    return float(v.max() - v.min())
+
+
 @stage("lots")
 def _stage_lots(ctx):
     plan = getattr(ctx, "settlement", None) or {"lots": [], "handled": set()}

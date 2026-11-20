@@ -34,9 +34,9 @@ def _stage_mine(ctx):
     """Bench along the contour at the place, floor = its lowest corner, cut
     only; then a straight trench uphill from the middle of its back edge."""
     sk, cfg = ctx.sketch, ctx.sketch.get("mine")
-    if not cfg:
+    poi = next((p for p in sk.get("pois", []) if cfg and p["id"] == cfg["poi"]), None)
+    if poi is None:
         return
-    poi = next(p for p in sk["pois"] if p["id"] == cfg["poi"])
     dx, dz = downhill(sk, ctx.seed, ctx.noise, poi["x"], poi["z"])
     long_m, deep_m = cfg["bench_m"]
     ux, uz = -dz, dx  # along the contour
@@ -74,9 +74,9 @@ def _stage_quarry(ctx):
     stands above the floor it meets it within the face samples, else it
     blends over the lot blend."""
     sk, cfg = ctx.sketch, ctx.sketch.get("quarry")
-    if not cfg:
+    poi = next((p for p in sk.get("pois", []) if cfg and p["id"] == cfg["poi"]), None)
+    if poi is None:
         return
-    poi = next(p for p in sk["pois"] if p["id"] == cfg["poi"])
     dx, dz = downhill(sk, ctx.seed, ctx.noise, poi["x"], poi["z"])
     upx, upz = -dx, -dz
     blend = sk["lots"]["blend_m"]
