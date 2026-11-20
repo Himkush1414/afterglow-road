@@ -22,20 +22,22 @@ def stage(name):
 
 class Context:
     """Inputs and layers of one run. Stages read ctx.sketch and ctx.seed,
-    and write numpy arrays into ctx.layers (all shaped like the grid)."""
+    and write numpy arrays into ctx.layers (all shaped like the grid).
+    With noise=False every noise term is zero (the smooth macro terrain)."""
 
-    def __init__(self, sketch, grid, seed):
+    def __init__(self, sketch, grid, seed, noise=True):
         self.sketch = sketch
         self.grid = grid
         self.seed = int(seed)
+        self.noise = bool(noise)
         self.x, self.z = grid.coords()
         self.layers = {"height": np.zeros((grid.nz, grid.nx), dtype=np.float64)}
 
 
-def run(sketch, grid, seed, stages=None, until=None):
+def run(sketch, grid, seed, stages=None, until=None, noise=True):
     """Runs the stages in order (all registered ones by default) and stops
     after the stage named `until` if given. Returns the context."""
-    ctx = Context(sketch, grid, seed)
+    ctx = Context(sketch, grid, seed, noise)
     for name, fn in stages if stages is not None else STAGES:
         fn(ctx)
         if name == until:

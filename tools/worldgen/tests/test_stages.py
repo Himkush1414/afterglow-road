@@ -13,13 +13,13 @@ from tools.worldgen.pipeline import STAGES, run
 from tools.worldgen.tests.sample import sketch
 
 
-def height(sk, grid, until):
-    return run(sk, grid, sk["world_seed"], until=until).layers["height"]
+def height(sk, grid, until, noise=True):
+    return run(sk, grid, sk["world_seed"], until=until, noise=noise).layers["height"]
 
 
 class RampBumpTest(unittest.TestCase):
     def test_stage_order(self):
-        self.assertEqual([n for n, _ in STAGES][:2], ["ramp", "bumps"])
+        self.assertEqual([n for n, _ in STAGES][:3], ["ramp", "bumps", "coast"])
 
     def test_ramp_values(self):
         r = sketch()["ramp"]
@@ -57,6 +57,55 @@ class RampBumpTest(unittest.TestCase):
         hf = height(sk, full, "bumps")
         hc = height(sk, crop, "bumps")
         np.testing.assert_array_equal(hc, hf[r : r + crop.nz, c : c + crop.nx])
+
+
+class CoastTest(unittest.TestCase):
+    def test_profile_without_noise(self):
+        sk = sketch()
+        c = sk["coast"]
+        z = np.full(6, 1000.0)
+        x = np.array([200.0, 350.0, 500.0, 900.0, 150.0, 0.0])  # coast, inland x3, sea x2
+        before = stages.ramp(x, z, sk["ramp"]) + stages.bumps(x, z, sk["bumps"])
+        d = stages.coast_distance(x, z, c, sk["world_seed"], False)
+        np.testing.assert_allclose(d, [0.0, 150.0, 300.0, 700.0, -50.0, -200.0])
+        h = stages.coast(before, d, c)
+        self.assertEqual(h[0], -6.0, "shore height on the coast line")
+        self.assertAlmostEqual(h[1], 0.5 * before[1] - 3.0, "half way through the blend")
+        np.testing.assert_array_equal(h[2:4], before[2:4], "unchanged beyond the blend")
+        np.testing.assert_allclose(h[4:], [-7.0, -10.0], err_msg="sea floor slopes down")
+        far = stages.coast(np.zeros(1), np.array([-5000.0]), c)
+        self.assertEqual(far[0], -40.0, "never below the minimum")
+
+    def test_nearer_coast_wins(self):
+        c = sketch()["coast"]
+        d = stages.coast_distance(np.array([1000.0, 250.0]), np.array([1800.0, 1800.0]), c, 0, False)
+        np.testing.assert_allclose(d, [50.0, 50.0])
+
+    def test_noise_moves_the_coast_within_its_amplitude(self):
+        sk = sketch()
+        c = sk["coast"]
+        t = np.arange(0.0, 2048.0, 4.0)
+        on = stages.coast_distance(np.full_like(t, 1000.0), t, c, sk["world_seed"], True)
+        off = stages.coast_distance(np.full_like(t, 1000.0), t, c, sk["world_seed"], False)
+        shift = off - on  # west coast line moved east by this much (south line is far)
+        self.assertLessEqual(np.abs(shift[t < 1500]).max(), c["west"]["amp"])
+        self.assertGreater(shift[t < 1500].std(), 5.0, "the coast line is not straight")
+
+    def test_continuous_across_the_coast(self):
+        sk = sketch()
+        g = Grid.crop(200, 1000, 512, 1)
+        h = height(sk, g, "coast")
+        self.assertLess(np.abs(np.diff(h, axis=1)).max(), 1.0, "no step at the coast line")
+
+    def test_crop_equals_full_window(self):
+        sk = sketch()
+        full = Grid.full(sk["size_m"], sk["sample_m"])
+        crop = Grid.crop(400, 1700, 512, sk["sample_m"])
+        r, c = crop.offset_in(full)
+        hc = height(sk, crop, "coast")
+        np.testing.assert_array_equal(hc, height(sk, full, "coast")[r : r + crop.nz, c : c + crop.nx])
+        self.assertLess(hc.min(), 0.0)
+        self.assertGreater(hc.max(), 0.0)
 
 
 class SketchIoTest(unittest.TestCase):
