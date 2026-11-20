@@ -36,6 +36,7 @@ class Context:
         self.roads = []  # way records for roads.json, filled by the road stage
         self.platforms = []  # levelled turning platforms on the roads
         self.crossings = []  # bridges, footbridges and fords
+        self.route_failures = []  # places without a track route under the grade limit
 
 
 def load_stages():

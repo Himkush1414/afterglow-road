@@ -3,7 +3,7 @@ import math
 
 import numpy as np
 
-from . import geometry, stages
+from . import geometry, route, stages
 from .pipeline import stage
 
 PROFILE_STEP_M = 2.0  # arc spacing of the profile samples
@@ -192,8 +192,10 @@ def flatten(h, grid, pts, prof, core, blend):
     return out
 
 
-def ways(sk):
-    return [ln for kind in WAY_KINDS for ln in sk.get("lines", []) if ln["kind"] == kind]
+def ways(sk, extra=()):
+    """Way lines in flatten order (tracks, including routed ones, then roads)."""
+    lines = list(sk.get("lines", [])) + list(extra)
+    return [ln for kind in WAY_KINDS for ln in lines if ln["kind"] == kind]
 
 
 def flatten_disc(h, x, z, centre, radius, blend, height):
@@ -225,7 +227,8 @@ def _stage_roads(ctx):
     sk = ctx.sketch
     water = water_data(sk, ctx.seed, ctx.noise)
     ford = sk.get("crossings", {}).get("track_river", "ford")
-    for line in ways(sk):
+    routed, ctx.route_failures = route.routed_tracks(sk, ctx.seed, ctx.noise)
+    for line in ways(sk, routed):
         pts, s, prof = profile(sk, ctx.seed, ctx.noise, line, water)
         before = ctx.layers["height"]
         core, blend = half_width(sk, line), sk["routing"]["blend_m"]

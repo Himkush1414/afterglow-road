@@ -21,7 +21,7 @@ SAMPLE = {
     },
     "lake": {"id": "pond", "x": 1000.0, "z": 1000.0, "level": 50.0, "a": 200.0, "b": 120.0, "max_depth": 5.0, "shore_blend_m": 30.0},
     "lines": [
-        {"id": "lane", "kind": "road", "width_m": 7, "shoulder_m": 3, "points": [[300.0, 1700.0], [900.0, 1500.0], [1900.0, 1600.0]]},
+        {"id": "lane", "kind": "road", "width_m": 7, "shoulder_m": 3, "points": [[300.0, 1700.0], [900.0, 1500.0], [1800.0, 1600.0]]},
         {"id": "path", "kind": "track", "width_m": 3, "points": [[900.0, 1500.0], [1300.0, 1250.0], [1500.0, 900.0]]},
         {"id": "brook", "kind": "river", "chain": "b", "width_m": [4, 8], "depth_m": [0.3, 1.0], "points": [[1600.0, 1000.0], [1200.0, 1000.0]]},
         {"id": "brook_low", "kind": "river", "chain": "b", "start": "lake", "width_m": [4, 8], "depth_m": [0.3, 1.0], "points": [[800.0, 1000.0], [500.0, 1300.0], [150.0, 1400.0]]},
@@ -53,7 +53,7 @@ SAMPLE = {
     "vista": {"from": [1200.0, 1300.0], "bearing_deg": 43.0, "width_m": 60.0, "length_m": 400.0},
     "rivers": {"bank_deg": 30.0, "valley_m": 150.0, "valley_depth_m": 12.0, "max_incision_m": 14.0},
     "road_grade": {"low": 0.12, "high": 0.18, "split_at": [900.0, 1500.0], "window_m": 100.0},
-    "tracks": {"width_m": 3, "max_grade": 0.18},
+    "tracks": {"width_m": 3, "max_grade": 0.18, "route_to": ["farm"]},
     "crossings": {"road": "bridge_small", "track_stream": "footbridge", "track_river": "ford", "ford_max_depth_m": 0.3},
     "hairpins": {"radius_m": 30.0, "blend_m": 12.0, "points": [[1300.0, 1540.0]]},
     "routing": {"cell_m": 16.0, "turn_cost_m": 150.0, "profile_smooth_m": 60.0, "road_shoulder_m": 3.0, "blend_m": 6.0},
