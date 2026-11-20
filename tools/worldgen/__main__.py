@@ -20,6 +20,10 @@
   python3 -m tools.worldgen generate --sketch S.json --pois P.csv --buildings B.csv --out DIR
       Runs every stage on the full map and writes the world files of 04 §2
       into DIR (those implemented so far) plus meta.json with their SHA-256.
+
+  python3 -m tools.worldgen check-files --sketch S.json --dir DIR
+      Checks every world file in DIR against its format and its hash in
+      meta.json. Exit 1 on any error.
 """
 import argparse
 import os
@@ -135,6 +139,16 @@ def generate(args):
     return 0
 
 
+def check_files(args):
+    from . import formats
+
+    errors = formats.check_dir(args.dir, sketch_io.load(args.sketch))
+    for e in errors:
+        print(f"  ERROR {e}")
+    print(f"FILE CHECK: {'FAIL' if errors else 'PASS'} ({args.dir})")
+    return 1 if errors else 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="python3 -m tools.worldgen")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -158,8 +172,11 @@ def main(argv=None):
     gen.add_argument("--pois", required=True)
     gen.add_argument("--buildings")
     gen.add_argument("--out", required=True)
+    cf = sub.add_parser("check-files", help="check written world files against their formats")
+    cf.add_argument("--sketch", required=True)
+    cf.add_argument("--dir", required=True)
     args = ap.parse_args(argv)
-    commands = {"check-pois": check_pois, "water": write_water, "roads": write_roads, "generate": generate}
+    commands = {"check-pois": check_pois, "water": write_water, "roads": write_roads, "generate": generate, "check-files": check_files}
     return commands[args.cmd](args)
 
 

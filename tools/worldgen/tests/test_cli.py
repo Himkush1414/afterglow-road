@@ -122,6 +122,14 @@ class GenerateCommandTest(unittest.TestCase):
                     metas.append(json.load(f))
             self.assertEqual(metas[0]["sha256"], metas[1]["sha256"])
             self.assertEqual(set(metas[0]["sha256"]), {"height.bin", "normal.bin", "biome.bin", "mask.bin", "minmax.bin", "macro.png", "water.json", "roads.json"})
+            r = cli("check-files", "--sketch", s, "--dir", os.path.join(d, "a"))
+            self.assertEqual(r.returncode, 0, r.stdout)
+            self.assertIn("FILE CHECK: PASS", r.stdout)
+            with open(os.path.join(d, "a", "minmax.bin"), "ab") as f:
+                f.write(b"x")
+            r = cli("check-files", "--sketch", s, "--dir", os.path.join(d, "a"))
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("minmax.bin: SHA-256 differs", r.stdout)
             with open(os.path.join(d, "a", "height.bin"), "rb") as f:
                 raw = files.decompress(f.read())
             n = sketch()["size_m"] // sketch()["sample_m"] + 1
