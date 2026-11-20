@@ -33,13 +33,19 @@ class Context:
         self.x, self.z = grid.coords()
         self.layers = {"height": np.zeros((grid.nz, grid.nx), dtype=np.float64)}
         self.water = {}  # water bodies for water.json, filled by the water stages
+        self.roads = []  # way records for roads.json, filled by the road stage
+
+
+def load_stages():
+    """Imports the stage modules in run order (importing registers them)."""
+    from . import roads, stages  # noqa: F401  (stages registers first: roads imports it)
 
 
 def run(sketch, grid, seed, stages=None, until=None, noise=True):
     """Runs the stages in order (all registered ones by default) and stops
     after the stage named `until` if given. Returns the context."""
     if stages is None:
-        from . import stages as _registered  # noqa: F401  (registers the terrain stages)
+        load_stages()
     ctx = Context(sketch, grid, seed, noise)
     for name, fn in stages if stages is not None else STAGES:
         fn(ctx)
