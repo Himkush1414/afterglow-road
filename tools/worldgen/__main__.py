@@ -26,6 +26,7 @@
       meta.json. Exit 1 on any error.
 """
 import argparse
+import json
 import os
 import sys
 
@@ -133,6 +134,9 @@ def generate(args):
     }
     hashes = {name: files.write(os.path.join(args.out, name), data) for name, data in out.items()}
     files.write(os.path.join(args.out, "meta.json"), files.meta_text(files.meta(sk, hashes)).encode("ascii"))
+    # check fixture for the engine (T-05-2), not a world file
+    points = files.height_points(ctx.layers["height"], sk)
+    files.write(os.path.join(args.out, "height_points.json"), (json.dumps(points) + "\n").encode("ascii"))
     for name in sorted(hashes):
         print(f"  {name:<12} {len(out[name]):>10} bytes  sha256 {hashes[name]}")
     print(f"GENERATE: wrote {len(hashes) + 1} files to {args.out}")
