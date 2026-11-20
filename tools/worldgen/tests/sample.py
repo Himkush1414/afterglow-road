@@ -33,6 +33,7 @@ SAMPLE = {
         {"id": "farm", "x": 1700.0, "z": 1200.0, "y": 0.0, "contents": "farmhouse; barn; 2 sheds"},
         {"id": "pit", "x": 1250.0, "z": 450.0, "y": 0.0, "contents": ""},
     ],
+    "quarry": {"poi": "village", "bench_m": [200.0, 80.0], "face_m": 25.0, "face_samples": 2},
     "mine": {"poi": "pit", "bench_m": [120.0, 40.0], "trench_m": {"w": 4.0, "l": 30.0, "depth_max": 6.0}},
     "buildings": {
         "cabin": {"w": 6.0, "d": 4.0},
