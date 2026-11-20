@@ -35,6 +35,19 @@ SAMPLE = {
         {"id": 3, "name": "field", "rule": {"rects": [[100, 1500, 600, 1800]]}},
         {"id": 2, "name": "forest", "rule": {}},
     ],
+    "noise": {
+        "octaves": 5,
+        "wavelength": 300.0,
+        "gain": 0.5,
+        "lacunarity": 2.0,
+        "blend_m": 100.0,
+        "amplitude": {"forest": 14.0, "field": 6.0, "wet": 2.0, "town": 3.0, "hills": 45.0, "high": 70.0, "beach": 1.0},
+        "ridged": {"wavelength": 150.0, "amplitude": {"hills": 40.0, "high": 80.0}},
+        "worst_case_m": 150.0,
+    },
+    "corridor": {"d0": 20.0, "d1": 160.0, "poi_r_m": {"default": 0.0, "village": 100.0}, "discs": [{"x": 1700.0, "z": 300.0, "r": 40.0}]},
+    "vista": {"from": [1200.0, 1300.0], "bearing_deg": 43.0, "width_m": 60.0, "length_m": 400.0},
+    "scarp": {"edges": ["north", "east"], "band_m": 200.0, "height_m": 160.0, "full_at_m": 110.0, "noise_free_m": 64.0},
 }
 
 
