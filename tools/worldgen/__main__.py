@@ -113,8 +113,12 @@ def generate(args):
     sk = sketch_io.load(args.sketch, args.pois, args.buildings)
     ctx = run(sk, Grid.full(sk["size_m"], float(sk["sample_m"])), sk["world_seed"])
     os.makedirs(args.out, exist_ok=True)
+    from . import derive
+
     out = {
         "height.bin": files.compress(files.encode_height(ctx.layers["height"], sk).tobytes()),
+        "normal.bin": files.compress(derive.normal_bytes(ctx)),
+        "biome.bin": files.compress(derive.biome_bytes(ctx)),
         "water.json": water_io.dumps(water_io.document(sk)).encode("ascii"),
         "roads.json": water_io.dumps(roads_io.document(ctx)).encode("ascii"),
     }
