@@ -65,7 +65,9 @@ def mean_height(ctx, lot):
 
 @stage("lots")
 def _stage_lots(ctx):
-    generated, ctx.lot_pending = layout.generate(ctx.sketch, ctx.roads)
+    plan = getattr(ctx, "settlement", None) or {"lots": [], "handled": set()}
+    generated, ctx.lot_pending = layout.generate(ctx.sketch, ctx.roads, plan["handled"])
+    generated = generated + plan["lots"]
     lots = all_lots(ctx.sketch, generated)
     ctx.lot_way_overlaps = layout.way_overlaps(lots, ctx.roads)
     means = [mean_height(ctx, lot) for lot in lots]

@@ -3,14 +3,14 @@ import math
 
 import numpy as np
 
-from . import geometry, route, stages
+from . import geometry, route, settle, stages
 from .pipeline import stage
 
 PROFILE_STEP_M = 2.0  # arc spacing of the profile samples
 # Profiles are clamped a little under the limit, so the stored field, read
 # back by bilinear interpolation between samples, stays within the limit.
 CLAMP_MARGIN = 0.995
-WAY_KINDS = ("track", "road")  # flatten order: the road wins at junctions
+WAY_KINDS = ("track", "street", "road")  # flatten order: the road wins at junctions
 
 
 def resample_arc(pts, step=PROFILE_STEP_M):
@@ -116,7 +116,7 @@ def line_crossings(sk, line, pts, s, water):
             def at(v, j=j, tb=tb):
                 return float(v[j] * (1.0 - tb) + v[j + 1] * tb)
 
-            if line["kind"] == "road":
+            if line["kind"] in ("road", "street"):
                 kind = cr.get("road", "bridge")
             else:
                 kind = cr.get("track_stream", "footbridge") if w["line"]["kind"] == "stream" else cr.get("track_river", "ford")
@@ -147,7 +147,7 @@ def grade_limits(sk, line, pts):
     """Grade limit per interval: tracks one value; the road a low limit up to
     the vertex nearest the split point and a high one after it."""
     n = len(pts) - 1
-    if line["kind"] == "track":
+    if line["kind"] in ("track", "street"):
         return np.full(n, float(sk["tracks"]["max_grade"]))
     rg = sk["road_grade"]
     k = int(np.argmin(np.hypot(pts[:, 0] - rg["split_at"][0], pts[:, 1] - rg["split_at"][1])))
@@ -156,10 +156,28 @@ def grade_limits(sk, line, pts):
     return g
 
 
-def profile(sk, seed, with_noise, line, water=()):
+def junction_pins(pts, joins):
+    """Samples of a way inside the flat cross-section of a road it joins,
+    and the road's profile height at the nearest road sample."""
+    fixed = np.zeros(len(pts), dtype=bool)
+    value = np.zeros(len(pts))
+    for rpts, _, rprof, core in joins:
+        lo, hi = rpts.min(axis=0) - core, rpts.max(axis=0) + core
+        cand = np.nonzero(np.all((pts >= lo) & (pts <= hi), axis=1))[0]
+        for i in cand:
+            d = np.hypot(rpts[:, 0] - pts[i, 0], rpts[:, 1] - pts[i, 1])
+            k = int(np.argmin(d))
+            if d[k] < core:
+                fixed[i], value[i] = True, rprof[k]
+    return fixed, value
+
+
+def profile(sk, seed, with_noise, line, water=(), joins=()):
     """(points, arc, height) of a way: stage 1-6 terrain on the centre line,
-    smoothed, clamped to its grade limits, pinned level on turning platforms
-    and down to the ford height where a track fords a river."""
+    smoothed, clamped to its grade limits, pinned level on turning platforms,
+    down to the ford height where a track fords a river, and to the road's
+    height inside the cross-section of a road it joins (`joins`: (points,
+    arc, profile, half width) of already profiled roads)."""
     pts, s = resample_arc(geometry.catmull_rom(line["points"]))
     h = stages.centre_profile(sk, seed, with_noise, pts)
     h = smooth(h, sk["routing"]["profile_smooth_m"])
@@ -172,7 +190,9 @@ def profile(sk, seed, with_noise, line, water=()):
             inside = np.abs(s - c["arc"]) <= c["width_m"] / 2.0
             fixed |= inside
             value[inside] = c["level"] - float(sk["crossings"]["ford_max_depth_m"])
-    return pts, s, pin(h, limit, ds, fixed, value)
+    jf, jv = junction_pins(pts, joins)
+    value = np.where(jf, jv, value)
+    return pts, s, pin(h, limit, ds, fixed | jf, value)
 
 
 def half_width(sk, line):
@@ -231,8 +251,12 @@ def _stage_roads(ctx):
     water = water_data(sk, ctx.seed, ctx.noise)
     ford = sk.get("crossings", {}).get("track_river", "ford")
     routed, ctx.route_failures = route.routed_tracks(sk, ctx.seed, ctx.noise)
-    for line in ways(sk, routed):
-        pts, s, prof = profile(sk, ctx.seed, ctx.noise, line, water)
+    ctx.settlement = settle.plan(sk, ctx.seed, ctx.noise)
+    lines = ways(sk, routed + ctx.settlement["streets"])
+    done = {ln["id"]: profile(sk, ctx.seed, ctx.noise, ln, water) for ln in lines if ln["kind"] == "road"}
+    joins = [done[ln["id"]] + (half_width(sk, ln),) for ln in lines if ln["kind"] == "road"]
+    for line in lines:
+        pts, s, prof = done.get(line["id"]) or profile(sk, ctx.seed, ctx.noise, line, water, joins)
         before = ctx.layers["height"]
         core, blend = half_width(sk, line), sk["routing"]["blend_m"]
         after = flatten(before, ctx.grid, pts, prof, core, blend)

@@ -41,6 +41,7 @@ class Context:
         self.lot_pending = []  # places whose buildings wait for a settlement layout
         self.lot_way_overlaps = []  # (lot, way) pairs whose footprint meets a way
         self.cuts = []  # benches and trenches cut into the ground
+        self.settlement = None  # settlement plan: lots, streets, handled places
 
 
 def load_stages():
