@@ -15,6 +15,7 @@ var slot := ""
 var play_seconds := 0.0
 
 @onready var clock: GameClock = $Clock
+@onready var world: WorldData = $WorldData
 
 
 func _enter_tree() -> void:
@@ -31,6 +32,8 @@ func _exit_tree() -> void:
 
 
 func _ready() -> void:
+	if not world.load_dir(WorldData.default_dir()):
+		Log.error("world", "; ".join(world.errors))
 	if App.is_dev():
 		var console: DebugConsole = (load(CONSOLE_SCENE) as PackedScene).instantiate()
 		var perf: PerfOverlay = (load(PERF_SCENE) as PackedScene).instantiate()
@@ -58,6 +61,10 @@ func _process(delta: float) -> void:
 
 static func clock_of() -> GameClock:
 	return current.clock if current else null
+
+
+static func world_of() -> WorldData:
+	return current.world if current else null
 
 
 ## Prepares the systems for a new game in `slot` and saves it at once.
