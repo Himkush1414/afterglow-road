@@ -143,3 +143,38 @@ def minmax_bytes(ctx, encoded):
     for mins, maxs in minmax_levels(ctx, encoded):
         parts.append(np.stack([mins, maxs], axis=-1).astype("<u2").tobytes())
     return b"".join(parts)
+
+
+def macro_rgb(ctx, mask, cell_m=4.0):
+    """Far-distance ground colour per texel (rows, cols, 3) by the shader's
+    layer rules: the biome's layer, scree/rock by slope, wetness blending to
+    the wet layer, the way layer on way surfaces. Tree tint comes with
+    placement (mask A)."""
+    cfg = ctx.sketch["derive"]["macro"]
+    colour = {k: np.asarray(v, dtype=np.float64) for k, v in cfg["layers"].items()}
+    names = biome.names(ctx.sketch)
+    bcell = float(ctx.sketch["derive"].get("biome_cell_m", 16.0))
+    k = int(round(bcell / cell_m))
+    bio = np.repeat(np.repeat(biome_ids(ctx, bcell), k, axis=0), k, axis=1)
+    out = np.zeros(bio.shape + (3,))
+    for bid, name in names.items():
+        out[bio == bid] = colour[cfg["biome_layer"][name]]
+    nx, nz = normals(ctx, cell_m)
+    slope = np.degrees(np.arccos(np.sqrt(np.maximum(1.0 - nx * nx - nz * nz, 0.0))))
+    for limit, layer in sorted(cfg["slope_layers"]):
+        out[slope > limit] = colour[layer]
+    g = mask[..., 1:2].astype(np.float64) / 255.0
+    out = out * (1.0 - g) + colour[cfg["wet_layer"]] * g
+    out[mask[..., 0] == 255] = colour[cfg["way_layer"]]
+    return np.clip(np.floor(out + 0.5), 0, 255).astype(np.uint8)
+
+
+def macro_png(ctx, mask, cell_m=4.0):
+    """PNG bytes (8-bit RGB, sRGB values) of the macro colour map."""
+    import io
+
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.fromarray(macro_rgb(ctx, mask, cell_m), "RGB").save(buf, format="PNG", compress_level=9)
+    return buf.getvalue()

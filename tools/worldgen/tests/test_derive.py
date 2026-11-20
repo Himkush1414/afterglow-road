@@ -150,3 +150,44 @@ class MinMaxTest(unittest.TestCase):
         first = np.frombuffer(raw[:8], dtype="<u2")
         block = enc[0:33, 0:33]
         self.assertEqual(first[:2].tolist(), [int(block.min()), int(block.max())])
+
+
+class MacroTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        sk = sketch()
+        cls.sk = sk
+        cls.ctx = run(sk, Grid.full(sk["size_m"], 2), sk["world_seed"])
+        cls.mask = derive.mask_rgba(cls.ctx)
+        cls.rgb = derive.macro_rgb(cls.ctx, cls.mask)
+
+    def test_rules(self):
+        cfg = self.sk["derive"]["macro"]
+        layers = cfg["layers"]
+        rgb, m = self.rgb, self.mask
+        self.assertEqual(rgb.shape, (512, 512, 3))
+        way = m[..., 0] == 255
+        np.testing.assert_array_equal(rgb[way], np.tile(layers["dirt"], (int(way.sum()), 1)))
+        nx, nz = derive.normals(self.ctx)
+        slope = np.degrees(np.arccos(np.sqrt(np.maximum(1 - nx * nx - nz * nz, 0))))
+        rock = (slope > 38.0) & ~way & (m[..., 1] == 0)
+        self.assertTrue(rock.any())
+        np.testing.assert_array_equal(rgb[rock], np.tile(layers["rock"], (int(rock.sum()), 1)))
+        ids = np.repeat(np.repeat(derive.biome_ids(self.ctx), 4, 0), 4, 1)
+        names = biome.names(self.sk)
+        plain = ~way & (m[..., 1] == 0) & (slope <= 30.0)
+        for bid, name in names.items():
+            sel = plain & (ids == bid)
+            if sel.any():
+                np.testing.assert_array_equal(rgb[sel], np.tile(layers[cfg["biome_layer"][name]], (int(sel.sum()), 1)), name)
+
+    def test_png(self):
+        import io
+
+        from PIL import Image
+
+        raw = derive.macro_png(self.ctx, self.mask)
+        img = Image.open(io.BytesIO(raw))
+        self.assertEqual((img.size, img.mode), ((512, 512), "RGB"))
+        np.testing.assert_array_equal(np.asarray(img), self.rgb)
+        self.assertEqual(raw, derive.macro_png(self.ctx, self.mask), "deterministic")

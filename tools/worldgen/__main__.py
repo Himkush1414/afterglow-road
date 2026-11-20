@@ -116,12 +116,14 @@ def generate(args):
     from . import derive
 
     encoded = files.encode_height(ctx.layers["height"], sk)
+    mask = derive.mask_rgba(ctx)
     out = {
         "height.bin": files.compress(encoded.tobytes()),
         "minmax.bin": files.compress(derive.minmax_bytes(ctx, encoded)),
         "normal.bin": files.compress(derive.normal_bytes(ctx)),
         "biome.bin": files.compress(derive.biome_bytes(ctx)),
-        "mask.bin": files.compress(derive.mask_bytes(ctx)),
+        "mask.bin": files.compress(mask.tobytes()),
+        "macro.png": derive.macro_png(ctx, mask),
         "water.json": water_io.dumps(water_io.document(sk)).encode("ascii"),
         "roads.json": water_io.dumps(roads_io.document(ctx)).encode("ascii"),
     }
