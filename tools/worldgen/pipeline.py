@@ -32,6 +32,7 @@ class Context:
         self.noise = bool(noise)
         self.x, self.z = grid.coords()
         self.layers = {"height": np.zeros((grid.nz, grid.nx), dtype=np.float64)}
+        self.water = {}  # water bodies for water.json, filled by the water stages
 
 
 def run(sketch, grid, seed, stages=None, until=None, noise=True):

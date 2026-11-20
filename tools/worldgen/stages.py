@@ -19,6 +19,7 @@ SEED_RIDGED = 301
 # interpolated, so a crop gets exactly the values of the full map.
 AMP_CELL_M = 8.0
 RIDGED_OCTAVES = 4
+LAKE_OUTLINE_VERTICES = 64
 
 
 def smoothstep(e0, e1, v):
@@ -189,3 +190,24 @@ def scarp(x, z, sc, size_m):
 @stage("scarp")
 def _stage_scarp(ctx):
     ctx.layers["height"] += scarp(ctx.x, ctx.z, ctx.sketch["scarp"], ctx.sketch["size_m"])
+
+
+def lake_basin(h, x, z, lk):
+    """Stage 6: inside the outline the bed is level - max_depth*(1 - rho^2);
+    outside, the terrain blends from the water level over shore_blend_m."""
+    rho = geometry.ellipse_rho(x, z, lk["x"], lk["z"], lk["a"], lk["b"])
+    d = geometry.ellipse_edge_distance(x, z, lk["x"], lk["z"], lk["a"], lk["b"])
+    t = smoothstep(0.0, lk["shore_blend_m"], d)
+    shore = lk["level"] * (1.0 - t) + h * t
+    bed = lk["level"] - lk["max_depth"] * (1.0 - rho * rho)
+    return np.where(rho < 1.0, bed, shore)
+
+
+@stage("lake")
+def _stage_lake(ctx):
+    lk = ctx.sketch["lake"]
+    ctx.layers["height"] = lake_basin(ctx.layers["height"], ctx.x, ctx.z, lk)
+    outline = geometry.ellipse_outline(lk["x"], lk["z"], lk["a"], lk["b"], LAKE_OUTLINE_VERTICES)
+    ctx.water.setdefault("lakes", []).append(
+        {"id": lk["id"], "level": float(lk["level"]), "polygon": [[round(float(px), 3), round(float(pz), 3)] for px, pz in outline]}
+    )
