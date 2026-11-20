@@ -10,16 +10,18 @@
       Writes the water file, prints its SHA-256 and checks its rules (river
       levels never rise, lake levels as in the sketch). Exit 1 on a rule error.
 
-  python3 -m tools.worldgen roads --sketch S.json --pois P.csv --out roads.json
-      Runs the stages up to the roads on the full map at the sketch's sample
-      spacing, writes the way file and reports, per way and grade limit, the
-      worst window grade on the final surface (road and track part of
-      T-05-10). Exit 1 if one fails or a place got no track.
+  python3 -m tools.worldgen roads --sketch S.json --pois P.csv --buildings B.csv --out roads.json
+      Runs every stage on the full map at the sketch's sample spacing, writes
+      the way file and reports, on the final field: per way and grade limit
+      the worst window grade (road and track part of T-05-10), whether every
+      lot is flat, and buildings left unplaced, on a way, or without a layout.
+      Exit 1 on any failure or a place without a track.
 """
 import argparse
 import sys
 
 from . import sketch as sketch_io
+from . import lots as lots_io
 from . import roads as roads_io
 from . import water as water_io
 from .grid import Grid
@@ -66,9 +68,9 @@ def write_water(args):
 
 
 def write_roads(args):
-    sk = sketch_io.load(args.sketch, args.pois)
+    sk = sketch_io.load(args.sketch, args.pois, args.buildings)
     s = float(sk.get("sample_m", 2.0))
-    ctx = run(sk, Grid.full(sk["size_m"], s), sk["world_seed"], until="roads")
+    ctx = run(sk, Grid.full(sk["size_m"], s), sk["world_seed"])
     text = water_io.dumps(roads_io.document(ctx)).encode("ascii")
     with open(args.out, "wb") as f:
         f.write(text)
@@ -81,6 +83,21 @@ def write_roads(args):
     for pid in ctx.route_failures:
         bad += 1
         print(f"  no track route under the limit to {pid}  FAIL")
+    tilted = [(lot["id"], lots_io.core_spread(ctx, lot)) for lot in ctx.lots]
+    tilted = [(i, v) for i, v in tilted if v > 1e-6]
+    buildings = {lot["id"] for lot in ctx.lots if "archetype" in lot}
+    on_way = [o for o in ctx.lot_way_overlaps if o[0] in buildings]
+    unplaced = (ctx.settlement or {}).get("unplaced", [])
+    for lid, v in tilted:
+        print(f"  lot {lid} not flat (spread {v:.3f} m)  FAIL")
+    for lid, wid in on_way:
+        print(f"  lot {lid} on way {wid}  FAIL")
+    for pid, name in unplaced:
+        print(f"  {pid}: {name} did not fit  FAIL")
+    for pid in ctx.lot_pending:
+        print(f"  {pid}: no settlement layout  FAIL")
+    bad += len(tilted) + len(on_way) + len(unplaced) + len(ctx.lot_pending)
+    print(f"  lots: {len(ctx.lots)} ({len(buildings)} buildings), flat: {len(ctx.lots) - len(tilted)}")
     print(f"WAY CHECK: {'FAIL' if bad else 'PASS'} (sample {s:g} m)")
     return 1 if bad else 0
 
@@ -101,6 +118,7 @@ def main(argv=None):
     rd = sub.add_parser("roads", help="write the way file and check way grades")
     rd.add_argument("--sketch", required=True)
     rd.add_argument("--pois", required=True)
+    rd.add_argument("--buildings")
     rd.add_argument("--out", required=True)
     args = ap.parse_args(argv)
     return {"check-pois": check_pois, "water": write_water, "roads": write_roads}[args.cmd](args)
