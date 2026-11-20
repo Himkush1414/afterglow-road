@@ -172,12 +172,13 @@ def junction_pins(pts, joins):
     return fixed, value
 
 
-def profile(sk, seed, with_noise, line, water=(), joins=()):
+def profile(sk, seed, with_noise, line, water=(), joins=(), levels=()):
     """(points, arc, height) of a way: stage 1-6 terrain on the centre line,
     smoothed, clamped to its grade limits, pinned level on turning platforms,
     down to the ford height where a track fords a river, and to the road's
     height inside the cross-section of a road it joins (`joins`: (points,
-    arc, profile, half width) of already profiled roads)."""
+    arc, profile, half width) of already profiled roads), and to the height
+    of every level area it crosses (`levels`: (lot, height))."""
     pts, s = resample_arc(geometry.catmull_rom(line["points"]))
     h = stages.centre_profile(sk, seed, with_noise, pts)
     h = smooth(h, sk["routing"]["profile_smooth_m"])
@@ -192,7 +193,13 @@ def profile(sk, seed, with_noise, line, water=(), joins=()):
             value[inside] = c["level"] - float(sk["crossings"]["ford_max_depth_m"])
     jf, jv = junction_pins(pts, joins)
     value = np.where(jf, jv, value)
-    return pts, s, pin(h, limit, ds, fixed | jf, value)
+    fixed = fixed | jf
+    for lot, height in levels:
+        # level through the blend ring too, so the lot's blend mixes equal heights
+        inside = _lots().distance(pts[:, 0], pts[:, 1], lot) < lot["blend_m"]
+        fixed |= inside
+        value[inside] = height
+    return pts, s, pin(h, limit, ds, fixed, value)
 
 
 def half_width(sk, line):
@@ -245,6 +252,12 @@ def open_channels(before, after, grid, crossings, prof, s, core, blend, bank_deg
     return out
 
 
+def _lots():
+    from . import lots  # the lot module imports this one
+
+    return lots
+
+
 @stage("roads")
 def _stage_roads(ctx):
     sk = ctx.sketch
@@ -253,13 +266,14 @@ def _stage_roads(ctx):
     routed, ctx.route_failures = route.routed_tracks(sk, ctx.seed, ctx.noise)
     ctx.settlement = settle.plan(sk, ctx.seed, ctx.noise)
     lines = ways(sk, routed + ctx.settlement["streets"])
-    done = {ln["id"]: profile(sk, ctx.seed, ctx.noise, ln, water) for ln in lines if ln["kind"] == "road"}
+    levels = _lots().level_areas(sk, ctx.seed, ctx.noise)
+    done = {ln["id"]: profile(sk, ctx.seed, ctx.noise, ln, water, levels=levels) for ln in lines if ln["kind"] == "road"}
     joins = [done[ln["id"]] + (half_width(sk, ln),) for ln in lines if ln["kind"] == "road"]
     for line in lines:
         if line["id"] in done:
             pts, s, prof = done[line["id"]]
         else:
-            pts, s, prof = profile(sk, ctx.seed, ctx.noise, line, water, joins)
+            pts, s, prof = profile(sk, ctx.seed, ctx.noise, line, water, joins, levels)
             joins.append((pts, s, prof, half_width(sk, line)))  # later ways meet this one level
         before = ctx.layers["height"]
         core, blend = half_width(sk, line), sk["routing"]["blend_m"]

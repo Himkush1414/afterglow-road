@@ -31,7 +31,10 @@ class LotTest(unittest.TestCase):
             core = lots.distance(x, z, lot) == 0.0
             self.assertGreater(core.sum(), 4, lot["id"])
             np.testing.assert_allclose(h[core], lot["y"], rtol=0, atol=1e-9, err_msg=lot["id"])
-            self.assertAlmostEqual(lot["y"], float(self.before[core].mean()), places=9)
+            if lot.get("level_area"):
+                self.assertEqual(lot["y"], lots.level_height(self.sk, self.sk["world_seed"], True, lot))
+            else:
+                self.assertAlmostEqual(lot["y"], float(self.before[core].mean()), places=9)
 
     def test_blend_edge_and_outside(self):
         x, z = self.grid.coords()
@@ -72,3 +75,20 @@ class LotTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LevelAreaTest(unittest.TestCase):
+    def test_a_way_crossing_a_level_area_arrives_level(self):
+        sk = sketch()
+        # a level disc across the road, away from the platform
+        sk["lots"]["extra"].append({"id": "summit", "x": 1050.0, "z": 1510.0, "r": 30.0, "blend_m": 12.0})
+        ctx = run(sk, Grid.crop(1050, 1510, 300, 2), sk["world_seed"], until="lots")
+        summit = next(lt for lt in ctx.lots if lt["id"] == "summit")
+        self.assertEqual(summit["y"], lots.level_height(sk, sk["world_seed"], True, summit))
+        lane = next(r for r in ctx.roads if r["id"] == "lane")
+        inside = lots.distance(lane["points"][:, 0], lane["points"][:, 1], summit) < summit["blend_m"]
+        self.assertTrue(inside.any())
+        np.testing.assert_array_equal(lane["profile"][inside], summit["y"])
+        self.assertLessEqual((np.abs(np.diff(lane["profile"])) / np.diff(lane["arc"])).max(), 0.18 + 1e-9)
+        x, z = ctx.grid.coords()
+        self.assertEqual(lots.core_spread(ctx, summit), 0.0)

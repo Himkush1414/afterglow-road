@@ -18,7 +18,7 @@ def all_lots(sk, generated=()):
     for lot in list(cfg.get("list", [])) + list(generated):
         out.append(dict({"margin_m": cfg["margin_m"], "blend_m": cfg["blend_m"], "yaw_deg": 0.0}, **lot))
     for lot in cfg.get("extra", []):
-        lot = dict({"margin_m": 0.0, "yaw_deg": 0.0}, **lot)
+        lot = dict({"margin_m": 0.0, "yaw_deg": 0.0, "level_area": True}, **lot)
         if "poi" in lot:
             lot.setdefault("x", pois[lot["poi"]]["x"])
             lot.setdefault("z", pois[lot["poi"]]["z"])
@@ -46,6 +46,25 @@ def _core_box(lot):
     else:
         e = math.hypot(lot["w"] / 2.0 + lot["margin_m"], lot["d"] / 2.0 + lot["margin_m"])
     return lot["x"] - e, lot["z"] - e, lot["x"] + e, lot["z"] + e
+
+
+def level_height(sk, seed, with_noise, lot):
+    """Height of a level area: mean of the stage 1-6 terrain over its core
+    samples on the map's sample lattice (independent of the ways, so ways
+    can be pinned to it before the lots exist)."""
+    s = float(sk.get("sample_m", 2.0))
+    x0, z0, x1, z1 = _core_box(lot)
+    xs = np.arange(math.floor(x0 / s), math.ceil(x1 / s) + 1) * s
+    zs = np.arange(math.floor(z0 / s), math.ceil(z1 / s) + 1) * s
+    x, z = np.meshgrid(xs, zs)
+    core = distance(x, z, lot) == 0.0
+    pts = np.stack([x[core], z[core]], axis=1)
+    return float(stages.centre_profile(sk, seed, with_noise, pts).mean())
+
+
+def level_areas(sk, seed, with_noise):
+    """(lot, height) of every level area."""
+    return [(lot, level_height(sk, seed, with_noise, lot)) for lot in all_lots(sk) if lot.get("level_area")]
 
 
 def mean_height(ctx, lot):
@@ -95,7 +114,7 @@ def _stage_lots(ctx):
     generated = generated + plan["lots"]
     lots = all_lots(ctx.sketch, generated)
     ctx.lot_way_overlaps = layout.way_overlaps(lots, ctx.roads)
-    means = [mean_height(ctx, lot) for lot in lots]
+    means = [level_height(ctx.sketch, ctx.seed, ctx.noise, lot) if lot.get("level_area") else mean_height(ctx, lot) for lot in lots]
     h = ctx.layers["height"]
     h = h.copy()
     for lot, m in zip(lots, means):
