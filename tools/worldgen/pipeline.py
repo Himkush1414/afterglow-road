@@ -37,6 +37,8 @@ class Context:
 def run(sketch, grid, seed, stages=None, until=None, noise=True):
     """Runs the stages in order (all registered ones by default) and stops
     after the stage named `until` if given. Returns the context."""
+    if stages is None:
+        from . import stages as _registered  # noqa: F401  (registers the terrain stages)
     ctx = Context(sketch, grid, seed, noise)
     for name, fn in stages if stages is not None else STAGES:
         fn(ctx)
