@@ -106,3 +106,40 @@ def mask_rgba(ctx, cell_m=4.0):
 
 def mask_bytes(ctx, cell_m=4.0):
     return mask_rgba(ctx, cell_m).tobytes()
+
+
+def minmax_levels(ctx, encoded):
+    """Per level L (lods[0]..lods[1]) the (min, max) arrays of the encoded
+    heights over every node of node_m * 2^L metres, rows north to south,
+    each over its samples including its far edge."""
+    _require_full_map(ctx)
+    cfg = ctx.sketch["derive"]
+    lo_l, hi_l = cfg["minmax_lods"]
+    n = int(round(cfg["minmax_node_m"] / ctx.grid.sample_m))  # samples per level-0 node edge
+    h = np.asarray(encoded)
+    count = (h.shape[0] - 1) // n
+
+    def reduce(fn):
+        body = fn(h[: count * n].reshape(count, n, -1), axis=1)
+        rows = fn(np.stack([body, h[n :: n][:count]]), axis=0)  # add each node's far row
+        body = fn(rows[:, : count * n].reshape(count, count, n), axis=2)
+        return fn(np.stack([body, rows[:, n :: n][:, :count]]), axis=0)  # and far column
+
+    mins, maxs = reduce(np.min), reduce(np.max)
+    out = []
+    for level in range(hi_l + 1):
+        if level >= lo_l:
+            out.append((mins, maxs))
+        if level < hi_l:
+            k = mins.shape[0] // 2
+            mins = mins.reshape(k, 2, k, 2).min(axis=(1, 3))
+            maxs = maxs.reshape(k, 2, k, 2).max(axis=(1, 3))
+    return out
+
+
+def minmax_bytes(ctx, encoded):
+    """Levels in order; per node (row-major) min u16 then max u16."""
+    parts = []
+    for mins, maxs in minmax_levels(ctx, encoded):
+        parts.append(np.stack([mins, maxs], axis=-1).astype("<u2").tobytes())
+    return b"".join(parts)

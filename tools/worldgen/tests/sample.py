@@ -93,7 +93,7 @@ SAMPLE = {
         "list": [{"id": "hut", "x": 1650.0, "z": 1300.0, "w": 6.0, "d": 4.0, "yaw_deg": 30.0}],
         "extra": [{"id": "ring", "x": 1700.0, "z": 300.0, "r": 40.0, "blend_m": 12.0}, {"id": "pad", "poi": "farm", "w": 6.0, "d": 6.0, "blend_m": 12.0}],
     },
-    "derive": {"rock_slope_deg": 38.0, "wet_biome": "wet", "wet_distance_m": 40.0},
+    "derive": {"rock_slope_deg": 38.0, "wet_biome": "wet", "wet_distance_m": 40.0, "minmax_lods": [0, 5], "minmax_node_m": 64.0},
     "erosion": {"iterations": 30, "talus_deg": 38.0},
     "scarp": {"edges": ["north", "east"], "band_m": 200.0, "height_m": 160.0, "full_at_m": 110.0, "noise_free_m": 64.0},
 }

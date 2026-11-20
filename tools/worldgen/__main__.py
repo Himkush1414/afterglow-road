@@ -115,8 +115,10 @@ def generate(args):
     os.makedirs(args.out, exist_ok=True)
     from . import derive
 
+    encoded = files.encode_height(ctx.layers["height"], sk)
     out = {
-        "height.bin": files.compress(files.encode_height(ctx.layers["height"], sk).tobytes()),
+        "height.bin": files.compress(encoded.tobytes()),
+        "minmax.bin": files.compress(derive.minmax_bytes(ctx, encoded)),
         "normal.bin": files.compress(derive.normal_bytes(ctx)),
         "biome.bin": files.compress(derive.biome_bytes(ctx)),
         "mask.bin": files.compress(derive.mask_bytes(ctx)),

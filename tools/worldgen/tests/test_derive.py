@@ -114,3 +114,39 @@ class MaskTest(unittest.TestCase):
         slope = np.degrees(np.arccos(np.sqrt(np.maximum(1 - nx * nx - nz * nz, 0))))
         np.testing.assert_array_equal(self.m[..., 2] == 255, slope > 38.0)
         self.assertTrue((self.m[..., 2] == 255).any(), "the scarp is rock")
+
+
+class MinMaxTest(unittest.TestCase):
+    def test_matches_brute_force_including_far_edges(self):
+        sk = sketch()
+        g = Grid.full(sk["size_m"], sk["sample_m"])
+        ctx = Context(sk, g, 1)
+        rng = np.random.default_rng(3)
+        enc = rng.integers(0, 65536, size=(g.nz, g.nx)).astype("<u2")
+        levels = derive.minmax_levels(ctx, enc)
+        self.assertEqual([m.shape[0] for m, _ in levels], [32, 16, 8, 4, 2, 1])
+        for level, (mins, maxs) in enumerate(levels):
+            n = 32 * 2**level
+            for r in range(mins.shape[0]):
+                for c in range(mins.shape[0]):
+                    block = enc[r * n : r * n + n + 1, c * n : c * n + n + 1]
+                    self.assertEqual((int(mins[r, c]), int(maxs[r, c])), (int(block.min()), int(block.max())), (level, r, c))
+
+    def test_far_edge_counts(self):
+        sk = sketch()
+        g = Grid.full(sk["size_m"], sk["sample_m"])
+        enc = np.full((g.nz, g.nx), 100, dtype="<u2")
+        enc[32, 32] = 5  # corner shared by four level-0 nodes
+        mins, _ = derive.minmax_levels(Context(sk, g, 1), enc)[0]
+        self.assertEqual(int((mins == 5).sum()), 4)
+
+    def test_byte_layout(self):
+        sk = sketch()
+        g = Grid.full(sk["size_m"], sk["sample_m"])
+        enc = np.arange(g.nz * g.nx, dtype=np.int64).reshape(g.nz, g.nx) % 60000
+        enc = enc.astype("<u2")
+        raw = derive.minmax_bytes(Context(sk, g, 1), enc)
+        self.assertEqual(len(raw), 4 * sum(4**k for k in range(6)))
+        first = np.frombuffer(raw[:8], dtype="<u2")
+        block = enc[0:33, 0:33]
+        self.assertEqual(first[:2].tolist(), [int(block.min()), int(block.max())])
