@@ -211,3 +211,88 @@ def _stage_lake(ctx):
     ctx.water.setdefault("lakes", []).append(
         {"id": lk["id"], "level": float(lk["level"]), "polygon": [[round(float(px), 3), round(float(pz), 3)] for px, pz in outline]}
     )
+
+
+WATER_KINDS = ("river", "stream")
+
+
+def water_lines(sk):
+    """Resampled water centre lines with width and depth per vertex. Lines
+    that share a `chain` id ramp width and depth over their joint length."""
+    lines = [ln for ln in sk.get("lines", []) if ln["kind"] in WATER_KINDS]
+    pts = {ln["id"]: geometry.catmull_rom(ln["points"]) for ln in lines}
+    arc = {k: np.concatenate([[0.0], np.cumsum(np.hypot(*np.diff(v, axis=0).T))]) for k, v in pts.items()}
+    offset, total = {}, {}
+    for ln in lines:
+        ch = ln.get("chain", ln["id"])
+        offset[ln["id"]] = total.get(ch, 0.0)
+        total[ch] = total.get(ch, 0.0) + arc[ln["id"]][-1]
+    out = []
+    for ln in lines:
+        f = (offset[ln["id"]] + arc[ln["id"]]) / max(total[ln.get("chain", ln["id"])], 1e-9)
+        (w0, w1), (d0, d1) = ln["width_m"], ln["depth_m"]
+        out.append({"line": ln, "pts": pts[ln["id"]], "width": w0 + (w1 - w0) * f, "depth": d0 + (d1 - d0) * f})
+    return out
+
+
+def centre_profile(sk, seed, with_noise, pts):
+    """Terrain of stages 1-6 at centre-line points (stage-4 noise is zero
+    there by the corridor rule)."""
+    x, z = pts[:, 0], pts[:, 1]
+    h = macro(x, z, sk, seed, with_noise) + scarp(x, z, sk["scarp"], sk["size_m"])
+    return lake_basin(h, x, z, sk["lake"])
+
+
+def river_bed(sk, terrain, depth, start):
+    """Running minimum of terrain - depth, so the water never flows uphill."""
+    first = sk["lake"]["level"] - depth[0] if start == "lake" else terrain[0] - depth[0]
+    return np.minimum.accumulate(np.concatenate([[first], terrain - depth]))[1:]
+
+
+def water_level(bed, depth):
+    """Water surface: running minimum of bed + depth, so it never rises
+    downstream even where the bed is flat and the depth grows."""
+    return np.minimum.accumulate(bed + depth)
+
+
+def carve(h, d, bed, width, surface, cfg, valley):
+    """Valley (rivers), then a flat bed to half the width and banks at bank_deg."""
+    if valley:
+        low = cfg["valley_depth_m"] * smoothstep(cfg["valley_m"], width / 2.0, d)
+        h = np.maximum(h - low, np.minimum(h, surface))
+    chan = bed + np.maximum(d - width / 2.0, 0.0) * math.tan(math.radians(cfg["bank_deg"]))
+    return np.minimum(h, chan)
+
+
+@stage("rivers")
+def _stage_rivers(ctx):
+    sk, cfg = ctx.sketch, ctx.sketch["rivers"]
+    tan_b = math.tan(math.radians(cfg["bank_deg"]))
+    for wl in water_lines(sk):
+        ln, pts = wl["line"], wl["pts"]
+        terrain = centre_profile(sk, ctx.seed, ctx.noise, pts)
+        bed = river_bed(sk, terrain, wl["depth"], ln.get("start"))
+        level = water_level(bed, wl["depth"])
+        valley = ln["kind"] == "river"
+        reach = max(cfg["valley_m"] if valley else 0.0, wl["width"].max() / 2.0 + cfg["max_incision_m"] / tan_b)
+        d, seg, t = geometry.polyline_nearest(ctx.grid, pts, reach)
+        near = seg >= 0
+        if near.any():
+            k, tt = seg[near], t[near]
+
+            def at(v, k=k, tt=tt):
+                return v[k] * (1.0 - tt) + v[k + 1] * tt
+
+            h = ctx.layers["height"]
+            h[near] = carve(h[near], d[near], at(bed), at(wl["width"]), at(level), cfg, valley)
+        ctx.water.setdefault("rivers", []).append(
+            {
+                "id": ln["id"],
+                "kind": ln["kind"],
+                "centre": np.round(pts, 3).tolist(),
+                "width": np.round(wl["width"], 3).tolist(),
+                "level": np.round(level, 3).tolist(),
+                "max_incision_m": round(float((terrain - wl["depth"] - bed).max()), 3),
+                "end_terrain_m": round(float(terrain[-1]), 3),
+            }
+        )

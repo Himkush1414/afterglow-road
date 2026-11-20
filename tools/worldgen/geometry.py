@@ -58,6 +58,33 @@ def polyline_distance(grid, poly, max_d):
     return out
 
 
+def polyline_nearest(grid, poly, max_d):
+    """Like polyline_distance, plus the nearest segment index (int, -1 where
+    nothing is within max_d) and the position t (0..1) along it."""
+    xs, zs = _axes(grid)
+    out = np.full((grid.nz, grid.nx), float(max_d))
+    seg = np.full((grid.nz, grid.nx), -1, dtype=np.int64)
+    pos = np.zeros((grid.nz, grid.nx))
+    poly = np.asarray(poly, dtype=np.float64)
+    for k, ((ax, az), (bx, bz)) in enumerate(zip(poly[:-1], poly[1:])):
+        i0 = np.searchsorted(xs, min(ax, bx) - max_d)
+        i1 = np.searchsorted(xs, max(ax, bx) + max_d, side="right")
+        j0 = np.searchsorted(zs, min(az, bz) - max_d)
+        j1 = np.searchsorted(zs, max(az, bz) + max_d, side="right")
+        if i0 >= i1 or j0 >= j1:
+            continue
+        px, pz = xs[None, i0:i1], zs[j0:j1, None]
+        dx, dz = bx - ax, bz - az
+        ll = dx * dx + dz * dz
+        t = np.clip(((px - ax) * dx + (pz - az) * dz) / ll, 0.0, 1.0) if ll > 0 else np.zeros((j1 - j0, i1 - i0))
+        d = np.hypot(px - (ax + t * dx), pz - (az + t * dz))
+        win = d < out[j0:j1, i0:i1]
+        out[j0:j1, i0:i1][win] = d[win]
+        seg[j0:j1, i0:i1][win] = k
+        pos[j0:j1, i0:i1][win] = np.broadcast_to(t, d.shape)[win]
+    return out, seg, pos
+
+
 def strip_distance(x, z, start, bearing_deg, length, width):
     """Distance to a straight strip that starts at `start` and runs `length`
     metres on a compass bearing (0 = north = -z, 90 = east); 0 inside."""
