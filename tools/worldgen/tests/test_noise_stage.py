@@ -85,3 +85,41 @@ class NoiseStageTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ScarpTest(unittest.TestCase):
+    def test_order(self):
+        self.assertEqual([n for n, _ in STAGES][:5], ["ramp", "bumps", "coast", "noise", "scarp"])
+
+    def test_profile(self):
+        sk = sketch()
+        sc, size = sk["scarp"], sk["size_m"]
+        z = np.array([0.0, 110.0, 155.0, 200.0, 600.0])
+        v = stages.scarp(np.full(5, 900.0), z, sc, size)
+        np.testing.assert_allclose(v, [160.0, 160.0, 80.0, 0.0, 0.0])
+        e = stages.scarp(size - z, np.full(5, 900.0), sc, size)
+        np.testing.assert_allclose(e, v, err_msg="east edge like the north edge")
+
+    def test_only_listed_edges_and_nearest_wins(self):
+        sk = sketch()
+        sc, size = sk["scarp"], sk["size_m"]
+        v = stages.scarp(np.array([10.0, 900.0, size - 150.0]), np.array([900.0, size - 10.0, 100.0]), sc, size)
+        self.assertEqual(float(v[0]), 0.0, "west edge not listed")
+        self.assertEqual(float(v[1]), 0.0, "south edge not listed")
+        self.assertEqual(float(v[2]), 160.0, "corner: the nearer (north) edge sets the height")
+
+    def test_steepest_slope(self):
+        sk = sketch()
+        sc = sk["scarp"]
+        z = np.arange(0.0, 300.0, 0.25)
+        v = stages.scarp(np.full_like(z, 900.0), z, sc, sk["size_m"])
+        steep = np.abs(np.diff(v)).max() / 0.25
+        self.assertAlmostEqual(steep, 1.5 * sc["height_m"] / (sc["band_m"] - sc["full_at_m"]), delta=0.01)
+
+    def test_crop_equals_full_window(self):
+        sk = sketch()
+        full = Grid.full(sk["size_m"], 4)
+        crop = Grid.crop(1792, 256, 512, 4)  # touches the north and east edges
+        r, c = crop.offset_in(full)
+        hf = run(sk, full, 1, until="scarp").layers["height"][r : r + crop.nz, c : c + crop.nx]
+        np.testing.assert_array_equal(run(sk, crop, 1, until="scarp").layers["height"], hf)
