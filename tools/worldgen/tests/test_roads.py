@@ -237,3 +237,23 @@ class RoadsFileTest(unittest.TestCase):
         y = roads.surface_along(self.ctx, rec)
         on = np.abs(rec["arc"] - c["arc"]) <= c["span_m"] / 2.0
         np.testing.assert_array_equal(y[on], rec["profile"][on])
+
+
+class TrimTest(unittest.TestCase):
+    def test_a_way_ending_in_a_fixed_building_stops_at_its_lot(self):
+        sk = sketch()
+        sk["lots"]["fixed"] = {"farm": [{"archetype": "cabin", "dx": 0.0, "dz": 0.0}]}
+        ctx = run(sk, Grid.crop(1700, 1300, 400, 2), sk["world_seed"], until="lots")
+        track = next(r for r in ctx.roads if r["id"] == "track_farm")
+        cabin = next(lt for lt in ctx.lots if lt.get("poi") == "farm")
+        from tools.worldgen import lots
+
+        d = lots.distance(track["points"][:, 0], track["points"][:, 1], cabin)
+        self.assertTrue(np.all(d > 0.0), "no track sample inside the lot core")
+        self.assertLess(d[-1], 2.5, "stops at the lot edge")
+        self.assertEqual([o for o in ctx.lot_way_overlaps if o[0] == cabin["id"]], [])
+
+    def test_untouched_lines_are_returned_as_they_are(self):
+        sk = sketch()
+        line = sk["lines"][0]
+        self.assertIs(roads.trim_ends(line, [], 3.0), line)

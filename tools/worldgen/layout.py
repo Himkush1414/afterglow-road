@@ -135,6 +135,16 @@ def fixed(sk, poi, items):
     ]
 
 
+def fixed_lots(sk):
+    """Lots of the fixed layouts (known before any way is flattened)."""
+    pois = {p["id"]: p for p in sk.get("pois", [])}
+    out = []
+    for pid, items in sk.get("lots", {}).get("fixed", {}).items():
+        if pid in pois:
+            out += fixed(sk, pois[pid], items)
+    return out
+
+
 def generate(sk, ways, handled=()):
     """(lots, ids of settlement places without a layout yet). Places in
     `handled` were laid out by the settlement layouts."""

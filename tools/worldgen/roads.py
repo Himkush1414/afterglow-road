@@ -3,7 +3,7 @@ import math
 
 import numpy as np
 
-from . import geometry, route, settle, stages
+from . import geometry, layout, route, settle, stages
 from .pipeline import stage
 
 PROFILE_STEP_M = 2.0  # arc spacing of the profile samples
@@ -222,6 +222,26 @@ def flatten(h, grid, pts, prof, core, blend):
     return out
 
 
+def trim_ends(line, lots, margin):
+    """The line resampled (2 m), with any end that runs into one of `lots`
+    (footprint grown by `margin`) cut back to the last sample outside it."""
+    pts, _ = resample_arc(geometry.catmull_rom(line["points"]))
+    out = []
+    for lot in lots:
+        lot = dict(lot, margin_m=margin)
+        inside = _lots().distance(pts[:, 0], pts[:, 1], lot) == 0.0
+        if inside[-1]:
+            keep = len(inside) - int(np.argmin(inside[::-1]))  # drop the trailing run inside
+            pts = pts[:keep]
+            out.append(lot["id"])
+        if len(pts) and _lots().distance(pts[:1, 0], pts[:1, 1], lot)[0] == 0.0:
+            pts = pts[int(np.argmin(_lots().distance(pts[:, 0], pts[:, 1], lot) == 0.0)) :]
+            out.append(lot["id"])
+    if not out:
+        return line
+    return dict(line, points=pts.tolist(), trimmed_at=out)
+
+
 def ways(sk, extra=()):
     """Way lines in flatten order (tracks, including routed ones, then roads)."""
     lines = list(sk.get("lines", [])) + list(extra)
@@ -265,7 +285,9 @@ def _stage_roads(ctx):
     ford = sk.get("crossings", {}).get("track_river", "ford")
     routed, ctx.route_failures = route.routed_tracks(sk, ctx.seed, ctx.noise)
     ctx.settlement = settle.plan(sk, ctx.seed, ctx.noise)
-    lines = ways(sk, routed + ctx.settlement["streets"])
+    fixed = layout.fixed_lots(sk)
+    margin = sk.get("lots", {}).get("margin_m", 0.0)
+    lines = [trim_ends(ln, fixed, margin) for ln in ways(sk, routed + ctx.settlement["streets"])]
     levels = _lots().level_areas(sk, ctx.seed, ctx.noise)
     done = {ln["id"]: profile(sk, ctx.seed, ctx.noise, ln, water, levels=levels) for ln in lines if ln["kind"] == "road"}
     joins = [done[ln["id"]] + (half_width(sk, ln),) for ln in lines if ln["kind"] == "road"]
