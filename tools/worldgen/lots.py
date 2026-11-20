@@ -4,18 +4,19 @@ import math
 
 import numpy as np
 
-from . import roads, stages  # noqa: F401  (roads registers its stage before this one)
+from . import layout, roads, stages  # noqa: F401  (roads registers its stage before this one)
 from .grid import Grid
 from .pipeline import run, stage
 
 
-def all_lots(sk):
-    """Lots in flatten order: the sketch's lot list (building footprints with
-    the lot margin and blend), then the extra lots (no margin, own blend)."""
+def all_lots(sk, generated=()):
+    """Lots in flatten order: the sketch's lot list and the generated lots
+    (building footprints with the lot margin and blend), then the extra lots
+    (no margin, own blend)."""
     cfg = sk.get("lots", {})
     pois = {p["id"]: p for p in sk.get("pois", [])}
     out = []
-    for lot in cfg.get("list", []):
+    for lot in list(cfg.get("list", [])) + list(generated):
         out.append(dict({"margin_m": cfg["margin_m"], "blend_m": cfg["blend_m"], "yaw_deg": 0.0}, **lot))
     for lot in cfg.get("extra", []):
         lot = dict({"margin_m": 0.0, "yaw_deg": 0.0}, **lot)
@@ -80,11 +81,16 @@ def mean_height(ctx, lot, before):
 @stage("lots")
 def _stage_lots(ctx):
     before = ctx.layers["height"].copy()
-    lots = all_lots(ctx.sketch)
+    generated, ctx.lot_pending = layout.generate(ctx.sketch, ctx.roads)
+    lots = all_lots(ctx.sketch, generated)
+    ctx.lot_way_overlaps = layout.way_overlaps(lots, ctx.roads)
     means = [mean_height(ctx, lot, before) for lot in lots]
     h = ctx.layers["height"]
-    for lot, m in zip(lots, means):
-        w = stages.smoothstep(0.0, lot["blend_m"], distance(ctx.x, ctx.z, lot))
+    dist = [distance(ctx.x, ctx.z, lot) for lot in lots]
+    for lot, m, d in zip(lots, means, dist):
+        w = stages.smoothstep(0.0, lot["blend_m"], d)
         h = m * (1.0 - w) + h * w
         ctx.lots.append(dict(lot, y=m))
+    for m, d in zip(means, dist):  # a neighbour's blend must not tilt a core
+        h = np.where(d == 0.0, m, h)
     ctx.layers["height"] = h

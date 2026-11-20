@@ -38,6 +38,8 @@ class Context:
         self.crossings = []  # bridges, footbridges and fords
         self.route_failures = []  # places without a track route under the grade limit
         self.lots = []  # flattened lots with their height
+        self.lot_pending = []  # places whose buildings wait for a settlement layout
+        self.lot_way_overlaps = []  # (lot, way) pairs whose footprint meets a way
 
 
 def load_stages():

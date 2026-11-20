@@ -28,7 +28,16 @@ SAMPLE = {
         {"id": "ditch", "kind": "stream", "width_m": [2, 2], "depth_m": [0.3, 0.3], "points": [[1100.0, 1350.0], [1150.0, 1750.0]]},
         {"id": "rill", "kind": "stream", "width_m": [2, 2], "depth_m": [0.3, 0.3], "points": [[1500.0, 300.0], [1450.0, 900.0]]},
     ],
-    "pois": [{"id": "village", "x": 500.0, "z": 500.0, "y": 0.0}, {"id": "farm", "x": 1700.0, "z": 1200.0, "y": 0.0}],
+    "pois": [
+        {"id": "village", "x": 500.0, "z": 500.0, "y": 0.0, "contents": "cabin; 2 sheds; well"},
+        {"id": "farm", "x": 1700.0, "z": 1200.0, "y": 0.0, "contents": "farmhouse; barn; 2 sheds"},
+    ],
+    "buildings": {
+        "cabin": {"w": 6.0, "d": 4.0},
+        "shed": {"w": 4.0, "d": 3.0},
+        "farmhouse": {"w": 10.0, "d": 8.0},
+        "barn": {"w": 12.0, "d": 18.0},
+    },
     "biomes": [
         {"id": 0, "name": "sea", "rule": {"height_below": 0, "not_water": True}},
         {"id": 1, "name": "beach", "rule": {"any": [{"height_between": [0, 2.5], "near_sea_m": 60}, {"near_lake_edge_m": 12}]}},
@@ -60,8 +69,12 @@ SAMPLE = {
     "lots": {
         "margin_m": 3.0,
         "blend_m": 6.0,
-        "list": [{"id": "hut", "x": 1700.0, "z": 1200.0, "w": 6.0, "d": 4.0, "yaw_deg": 30.0}],
-        "extra": [{"id": "ring", "x": 1700.0, "z": 300.0, "r": 40.0, "blend_m": 12.0}, {"id": "pad", "poi": "village", "w": 6.0, "d": 6.0, "blend_m": 12.0}],
+        "setback_m": 6.0,
+        "yard_m": 30.0,
+        "farmstead": {"key": "farmhouse", "left": "barn"},
+        "settlements": [],
+        "list": [{"id": "hut", "x": 1650.0, "z": 1300.0, "w": 6.0, "d": 4.0, "yaw_deg": 30.0}],
+        "extra": [{"id": "ring", "x": 1700.0, "z": 300.0, "r": 40.0, "blend_m": 12.0}, {"id": "pad", "poi": "farm", "w": 6.0, "d": 6.0, "blend_m": 12.0}],
     },
     "erosion": {"iterations": 30, "talus_deg": 38.0},
     "scarp": {"edges": ["north", "east"], "band_m": 200.0, "height_m": 160.0, "full_at_m": 110.0, "noise_free_m": 64.0},

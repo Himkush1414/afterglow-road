@@ -118,6 +118,10 @@ class SketchIoTest(unittest.TestCase):
                 f.write("id,name,x,z,y\na,A,10,20,3.5\n")
             sk = sketch_io.load(p, q)
             self.assertEqual(sk["pois"], [{"id": "a", "name": "A", "x": 10.0, "z": 20.0, "y": 3.5}])
+            b = os.path.join(d, "b.csv")
+            with open(b, "w", encoding="utf-8") as f:
+                f.write("id,name,footprint_m,storeys\nhut,Hut,6x4,1\n")
+            self.assertEqual(sketch_io.load(p, q, b)["buildings"], {"hut": {"w": 6.0, "d": 4.0}})
             bad = sketch()
             bad["version"] = 2
             with open(p, "w", encoding="utf-8") as f:

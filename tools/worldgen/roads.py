@@ -256,6 +256,7 @@ def _stage_roads(ctx):
                 "id": line["id"],
                 "type": line["kind"],
                 "width_m": float(line["width_m"]),
+                "core_m": core,
                 "points": pts,
                 "arc": s,
                 "profile": prof,
