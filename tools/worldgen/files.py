@@ -55,3 +55,30 @@ def meta(sk, hashes):
 
 def meta_text(doc):
     return json.dumps(doc, sort_keys=True, indent=1) + "\n"
+
+
+def height_tri(h, sample_m, x, z):
+    """Height at map points from a sample field, on the triangles the
+    engine's heightmap collision uses: each cell is split along the diagonal
+    from (1, 0) to (0, 1). Points are clamped to the field."""
+    h = np.asarray(h, dtype=np.float64)
+    nz, nx = h.shape
+    fx = np.clip(np.asarray(x, dtype=np.float64) / sample_m, 0.0, nx - 1.0)
+    fz = np.clip(np.asarray(z, dtype=np.float64) / sample_m, 0.0, nz - 1.0)
+    i = np.minimum(np.floor(fx).astype(int), nx - 2)
+    j = np.minimum(np.floor(fz).astype(int), nz - 2)
+    tx, tz = fx - i, fz - j
+    h00, h10, h01, h11 = h[j, i], h[j, i + 1], h[j + 1, i], h[j + 1, i + 1]
+    lower = h00 + (h10 - h00) * tx + (h01 - h00) * tz
+    upper = h11 + (h01 - h11) * (1.0 - tx) + (h10 - h11) * (1.0 - tz)
+    return np.where(tx + tz <= 1.0, lower, upper)
+
+
+def height_points(h, sk, count=1000):
+    """Seeded random map points with the generator's height there (its float
+    field on the collision triangles), for the engine's T-05-2 check."""
+    rng = np.random.default_rng(sk["world_seed"])
+    size = float(sk["size_m"])
+    x, z = rng.uniform(0.0, size, count), rng.uniform(0.0, size, count)
+    y = height_tri(h, float(sk["sample_m"]), x, z)
+    return {"points": [[round(float(a), 4), round(float(b), 4), round(float(c), 4)] for a, b, c in zip(x, z, y)]}

@@ -1,0 +1,14 @@
+{
+ "height_offset_m": 64.0,
+ "height_scale": 0.02,
+ "origin_offset_m": 128,
+ "sample_m": 2,
+ "sea_level_y": 0,
+ "sha256": {
+  "biome.bin": "6691c415a12ed764d3f85b7c98a13177205fdd1d64178b648ed8690f535a3053",
+  "height.bin": "96bcb9a7b1f91d1e9c737aa7198c0e15472ee622a3258a224476268bc1ed10df"
+ },
+ "size_m": 256,
+ "version": 1,
+ "world_seed": 5
+}
