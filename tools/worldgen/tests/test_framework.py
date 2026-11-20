@@ -1,4 +1,6 @@
 """Framework tests: deterministic noise, crop alignment, stage order, hashes."""
+import subprocess
+import sys
 import unittest
 
 import numpy as np
@@ -66,6 +68,18 @@ class PipelineTest(unittest.TestCase):
         stages = [(n, lambda ctx, n=n: order.append(n)) for n in ("a", "b", "c")]
         run({}, Grid.full(64, 32), 1, stages, until="b")
         self.assertEqual(order, ["a", "b"])
+
+    def test_default_run_loads_the_terrain_stages(self):
+        # A fresh interpreter that never imports the stages module itself.
+        code = (
+            "from tools.worldgen.grid import Grid\n"
+            "from tools.worldgen.pipeline import STAGES, run\n"
+            "from tools.worldgen.tests.sample import sketch\n"
+            "sk = sketch()\n"
+            "h = run(sk, Grid.full(64, 32), 1, until='bumps').layers['height']\n"
+            "assert STAGES and h.min() > 0, h\n"
+        )
+        subprocess.run([sys.executable, "-c", code], check=True)
 
     def test_full_grid_shape_and_orientation(self):
         g = Grid.full(8192, 2)
