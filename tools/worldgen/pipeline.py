@@ -34,6 +34,7 @@ class Context:
         self.layers = {"height": np.zeros((grid.nz, grid.nx), dtype=np.float64)}
         self.water = {}  # water bodies for water.json, filled by the water stages
         self.roads = []  # way records for roads.json, filled by the road stage
+        self.platforms = []  # levelled turning platforms on the roads
 
 
 def load_stages():
