@@ -208,7 +208,7 @@ func _sample(n: int) -> Dictionary:
 	return {
 		"n": n,
 		"name": &"probe",
-		"pos": Vector3(1.5, -2.25, 4096.125),
+		"pos": Vector3(1.5, -2.25, 4095.125),
 		"xform": Transform3D(Basis.from_euler(Vector3(0.1, 0.2, 0.3)), Vector3(9, 8, 7)),
 		"ids": PackedInt64Array([1 << 40, (1 << 40) + n]),
 		"flags": PackedStringArray(["a", "b"]),
