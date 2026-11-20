@@ -20,6 +20,7 @@ SEED_RIDGED = 301
 AMP_CELL_M = 8.0
 RIDGED_OCTAVES = 4
 LAKE_OUTLINE_VERTICES = 64
+EROSION_RATE = 0.5  # share of the largest excess moved per iteration
 
 
 def smoothstep(e0, e1, v):
@@ -296,3 +297,50 @@ def _stage_rivers(ctx):
                 "end_terrain_m": round(float(terrain[-1]), 3),
             }
         )
+
+
+def scarp_band(x, z, sc, size_m):
+    """True inside the step-5 edge band (distance to a listed edge < band_m)."""
+    edge = {"north": z, "south": size_m - z, "west": x, "east": size_m - x}
+    d = np.minimum.reduce([np.broadcast_to(edge[e], np.broadcast(x, z).shape) for e in sc["edges"]])
+    return d < sc["band_m"]
+
+
+def thermal_erosion(h, sample_m, talus_deg, iterations, frozen):
+    """4-neighbour thermal erosion; returns a new array. Material above the
+    talus slope moves to lower neighbours; frozen cells never change."""
+    h = np.array(h, dtype=np.float64)
+    limit = math.tan(math.radians(talus_deg)) * sample_m
+    live = ~frozen
+    # (source slice, neighbour slice) for east, west, south, north
+    pairs = [
+        ((slice(None), slice(None, -1)), (slice(None), slice(1, None))),
+        ((slice(None), slice(1, None)), (slice(None), slice(None, -1))),
+        ((slice(None, -1), slice(None)), (slice(1, None), slice(None))),
+        ((slice(1, None), slice(None)), (slice(None, -1), slice(None))),
+    ]
+    for _ in range(iterations):
+        ex = []
+        for src, dst in pairs:
+            e = np.zeros_like(h)
+            e[src] = np.maximum(h[src] - h[dst] - limit, 0.0) * (live[src] & live[dst])
+            ex.append(e)
+        total = ex[0] + ex[1] + ex[2] + ex[3]
+        if not np.any(total > 0.0):
+            break
+        biggest = np.maximum(np.maximum(ex[0], ex[1]), np.maximum(ex[2], ex[3]))
+        share = np.divide(EROSION_RATE * biggest, total, out=np.zeros_like(h), where=total > 0.0)
+        new = h - EROSION_RATE * biggest
+        for (src, dst), e in zip(pairs, ex):
+            new[dst] += (e * share)[src]
+        h = new
+    return h
+
+
+@stage("erosion")
+def _stage_erosion(ctx):
+    er, sk = ctx.sketch["erosion"], ctx.sketch
+    frozen = scarp_band(ctx.x, ctx.z, sk["scarp"], sk["size_m"])
+    ctx.layers["height"] = thermal_erosion(
+        ctx.layers["height"], ctx.grid.sample_m, er["talus_deg"], er["iterations"], frozen
+    )

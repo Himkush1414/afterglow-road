@@ -50,6 +50,7 @@ SAMPLE = {
     "corridor": {"d0": 20.0, "d1": 160.0, "poi_r_m": {"default": 0.0, "village": 100.0}, "discs": [{"x": 1700.0, "z": 300.0, "r": 40.0}]},
     "vista": {"from": [1200.0, 1300.0], "bearing_deg": 43.0, "width_m": 60.0, "length_m": 400.0},
     "rivers": {"bank_deg": 30.0, "valley_m": 150.0, "valley_depth_m": 12.0, "max_incision_m": 14.0},
+    "erosion": {"iterations": 30, "talus_deg": 38.0},
     "scarp": {"edges": ["north", "east"], "band_m": 200.0, "height_m": 160.0, "full_at_m": 110.0, "noise_free_m": 64.0},
 }
 
