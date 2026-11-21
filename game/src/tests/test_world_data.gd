@@ -38,6 +38,23 @@ func test_T_05_2() -> void:
 		check(worst <= 0.01, "%s: height_at differs by %.4f m (limit 0.01)" % [dir, worst])
 
 
+func test_read_layer_decodes_the_lod_and_normal_files() -> void:
+	for dir: String in [WorldData.default_dir(), ContentDB.SAMPLE_ROOT + "/world"]:
+		if not check(_world.load_dir(dir), "load %s: %s" % [dir, ", ".join(_world.errors)]):
+			continue
+		var texels := int(round(_world.size_m / 4.0))
+		check_eq(_world.read_layer("normal.bin", texels * texels * 2).size(), texels * texels * 2)
+		var nodes := 0
+		var k := int(round(_world.size_m / 64.0))
+		while k >= 2:
+			nodes += k * k
+			k /= 2
+		check_eq(_world.read_layer("minmax.bin", nodes * 4).size(), nodes * 4, dir)
+		check(_world.errors.is_empty(), ", ".join(_world.errors))
+		check(_world.read_layer("minmax.bin", nodes * 4 + 4).is_empty(), "wrong size refused")
+		check(_world.errors.size() == 1 and "minmax.bin" in _world.errors[0], "error names it")
+
+
 func test_a_changed_file_is_refused() -> void:
 	var dir := "user://world_test_copy"
 	DirAccess.make_dir_recursive_absolute(dir)

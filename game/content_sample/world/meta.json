@@ -6,7 +6,9 @@
  "sea_level_y": 0,
  "sha256": {
   "biome.bin": "6691c415a12ed764d3f85b7c98a13177205fdd1d64178b648ed8690f535a3053",
-  "height.bin": "96bcb9a7b1f91d1e9c737aa7198c0e15472ee622a3258a224476268bc1ed10df"
+  "height.bin": "96bcb9a7b1f91d1e9c737aa7198c0e15472ee622a3258a224476268bc1ed10df",
+  "minmax.bin": "05e27636e93e965ecee34a2c05aa4700e2d0ec844c8e3db8727ca13639db14ab",
+  "normal.bin": "952f1c47036d5c4c50911c5d025cd451cd37b2931671d67c233e833992f7c780"
  },
  "size_m": 256,
  "version": 1,
