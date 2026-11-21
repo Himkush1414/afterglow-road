@@ -6,6 +6,7 @@
 [ext_resource type="Script" path="res://src/world/world_data.gd" id="4"]
 [ext_resource type="Script" path="res://src/world/terrain.gd" id="5"]
 [ext_resource type="Script" path="res://src/world/water.gd" id="6"]
+[ext_resource type="Script" path="res://src/world/streamer.gd" id="7"]
 
 [node name="Game" type="Node3D"]
 script = ExtResource("1")
@@ -21,6 +22,9 @@ script = ExtResource("5")
 
 [node name="Water" type="Node3D" parent="."]
 script = ExtResource("6")
+
+[node name="Streamer" type="Node3D" parent="."]
+script = ExtResource("7")
 
 [node name="Players" type="Node3D" parent="."]
 
