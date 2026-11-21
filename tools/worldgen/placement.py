@@ -12,6 +12,7 @@ tree_radius_factor x the larger canopy radius between trees of one species
 and a trunk clearance between any two trees.
 """
 import csv
+import json
 import math
 
 import numpy as np
@@ -20,6 +21,10 @@ from . import biome, derive, geometry, roads
 from .grid import Grid
 
 CELL_M = 4.0
+## Tree chunk files (04 §2): 128 m chunks, 7-byte records.
+CHUNK_M = 128.0
+RECORD_BYTES = 7
+POS_UNITS_PER_M = 512.0
 SIZES = ("young", "mature", "old")
 ## Gap kept between any two trunks, metres (beyond their radii).
 TRUNK_GAP_M = 1.0
@@ -28,9 +33,14 @@ MAX_DARTS = 30
 
 
 def tree_table(path):
-    """Rows of the tree table in file order (the model index)."""
-    with open(path, newline="", encoding="utf-8") as f:
-        rows = list(csv.DictReader(f))
+    """Rows of the tree table in file order (the model index): the game's
+    trees.json ({"trees": [...]}) or the CSV it is made from."""
+    if path.endswith(".json"):
+        with open(path, encoding="utf-8") as f:
+            rows = json.load(f)["trees"]
+    else:
+        with open(path, newline="", encoding="utf-8") as f:
+            rows = list(csv.DictReader(f))
     for r in rows:
         r["canopy_r_m"] = float(r["canopy_r_m"])
         r["trunk_r_m"] = float(r["trunk_r_m"])
@@ -257,3 +267,83 @@ def count_report(rec, expect, table):
         have = int(((rec["biome"] == bid) & (planted == sp)).sum())
         out.append((bid, sp, want, have))
     return out
+
+
+def chunk_records(rec, chunk_m=CHUNK_M):
+    """{(cx, cz): bytes} of the non-empty chunks; per tree: model u8, x u16,
+    z u16 (1/512 m inside the chunk), yaw u8, scale u8, in record order."""
+    cx = np.floor(rec["x"] / chunk_m).astype(int)
+    cz = np.floor(rec["z"] / chunk_m).astype(int)
+    lx = np.clip(np.floor((rec["x"] - cx * chunk_m) * POS_UNITS_PER_M + 0.5), 0, 65535).astype("<u2")
+    lz = np.clip(np.floor((rec["z"] - cz * chunk_m) * POS_UNITS_PER_M + 0.5), 0, 65535).astype("<u2")
+    rows = np.zeros(rec["model"].size, dtype=[("m", "u1"), ("x", "<u2"), ("z", "<u2"), ("yaw", "u1"), ("s", "u1")])
+    rows["m"], rows["x"], rows["z"], rows["yaw"], rows["s"] = rec["model"], lx, lz, rec["yaw"], rec["scale"]
+    out = {}
+    key = cz * 100000 + cx
+    order = np.argsort(key, kind="stable")
+    keys = key[order]
+    starts = np.flatnonzero(np.r_[True, keys[1:] != keys[:-1]])
+    ends = np.r_[starts[1:], keys.size]
+    for a, b in zip(starts, ends):
+        i = order[a]
+        out[(int(cx[i]), int(cz[i]))] = rows[order[a:b]].tobytes()
+    return out
+
+
+def decode_chunk(raw):
+    """Records of one chunk file (decompressed) as a structured array."""
+    return np.frombuffer(raw, dtype=[("m", "u1"), ("x", "<u2"), ("z", "<u2"), ("yaw", "u1"), ("s", "u1")])
+
+
+def write_tree_files(rec, out_dir, chunk_m=CHUNK_M):
+    """Writes trees/<cx>_<cz>.bin (ZSTD) for every non-empty chunk and
+    trees/index.json (chunk size, record size, per file its SHA-256 and
+    tree count). Returns the index text's bytes; old chunk files go."""
+    import os
+
+    from . import files
+
+    d = os.path.join(out_dir, "trees")
+    os.makedirs(d, exist_ok=True)
+    for name in os.listdir(d):
+        if name.endswith(".bin"):
+            os.remove(os.path.join(d, name))
+    entries = {}
+    for (cx, cz), raw in sorted(chunk_records(rec, chunk_m).items()):
+        name = f"{cx}_{cz}.bin"
+        entries[name] = {"count": len(raw) // RECORD_BYTES, "sha256": files.write(os.path.join(d, name), files.compress(raw))}
+    doc = {"chunk_m": chunk_m, "record_bytes": RECORD_BYTES, "files": entries}
+    text = (json.dumps(doc, sort_keys=True, separators=(",", ":")) + "\n").encode("ascii")
+    files.write(os.path.join(d, "index.json"), text)
+    return text
+
+
+def check_tree_files(out_dir):
+    """Errors of trees/ against its index (hashes, record sizes)."""
+    import hashlib
+    import os
+
+    from . import files
+
+    d = os.path.join(out_dir, "trees")
+    errors = []
+    try:
+        with open(os.path.join(d, "index.json"), encoding="ascii") as f:
+            doc = json.load(f)
+    except (OSError, ValueError) as e:
+        return [f"trees/index.json: {e}"]
+    on_disk = {n for n in os.listdir(d) if n.endswith(".bin")}
+    if on_disk != set(doc["files"]):
+        errors.append(f"trees/: files {sorted(on_disk ^ set(doc['files']))[:5]} differ from the index")
+    for name, e in doc["files"].items():
+        try:
+            with open(os.path.join(d, name), "rb") as f:
+                data = f.read()
+        except OSError as ex:
+            errors.append(f"trees/{name}: {ex}")
+            continue
+        if hashlib.sha256(data).hexdigest() != e["sha256"]:
+            errors.append(f"trees/{name}: SHA-256 differs from the index")
+        elif len(files.decompress(data)) != e["count"] * doc["record_bytes"]:
+            errors.append(f"trees/{name}: size differs from its count")
+    return errors
