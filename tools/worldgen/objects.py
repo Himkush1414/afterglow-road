@@ -1,4 +1,5 @@
-"""Stage 14b: static objects of the regions (05 §4 stage 14, 14 §4-5):
+"""Stage 14b: static objects of the regions (rows [sid, x, y, z, yaw] plus
+any extra transform values the kind needs, e.g. a cliff's pitch) (05 §4 stage 14, 14 §4-5):
 forage spots and loose pickups here, resource nodes in nodes.py; written
 to regions/<rx>_<rz>.json with a hash index.
 
@@ -158,12 +159,13 @@ def region_documents(objs, sk, heights):
     ys = files.height_tri(heights, float(sk["sample_m"]), xs, zs) if objs else np.zeros(0)
     docs = {}
     for o, y in zip(objs, ys):
-        kind, tid, x, z, yaw = o
+        kind, tid, x, z, yaw = o[:5]
+        extra = list(o[5:])  # e.g. a cliff face's pitch
         x, z = round(x, 2), round(z, 2)  # the region follows the stored position
         r = (min(max(int(x // REGION_M), 0), per_side - 1), min(max(int(z // REGION_M), 0), per_side - 1))
         d = docs.setdefault(r, {"version": REGION_FILE_VERSION, "region": list(r), "objects": {}})
         rows = d["objects"].setdefault(kind, {}).setdefault(tid, [])
-        rows.append([0, x, round(float(y), 2), z, yaw])
+        rows.append([0, x, round(float(y), 2), z, yaw] + extra)
     for (rx, rz), d in docs.items():
         local = 0
         for kind in sorted(d["objects"]):
