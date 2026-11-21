@@ -101,5 +101,31 @@
 		},
 		"default_mobile": "low",
 		"default_desktop": "high"
+	},
+	"terrain": {
+		"layers": [
+			"ground",
+			"stone"
+		],
+		"tile_m": 4.0,
+		"biome_layer": {
+			"2": "ground",
+			"4": "ground",
+			"6": "stone"
+		},
+		"slope_layers": [
+			{
+				"deg": 35,
+				"layer": "stone"
+			}
+		],
+		"slope_blend_deg": 4.0,
+		"dirt_layer": "ground",
+		"mud_layer": "ground",
+		"height_blend": 0.2,
+		"macro_near_m": 100,
+		"macro_far_m": 300,
+		"wet_albedo": 0.8,
+		"wet_roughness": 0.4
 	}
 }
