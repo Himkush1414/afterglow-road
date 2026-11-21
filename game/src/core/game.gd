@@ -41,6 +41,8 @@ func _ready() -> void:
 			Log.error("terrain", "; ".join(terrain.errors))
 		if not water.setup(world):
 			Log.error("water", "; ".join(water.errors))
+		elif terrain.is_ready():
+			water.build(terrain.height_texture())
 	if App.is_dev():
 		var console: DebugConsole = (load(CONSOLE_SCENE) as PackedScene).instantiate()
 		var perf: PerfOverlay = (load(PERF_SCENE) as PackedScene).instantiate()

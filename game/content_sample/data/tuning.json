@@ -127,5 +127,30 @@
 		"macro_far_m": 300,
 		"wet_albedo": 0.8,
 		"wet_roughness": 0.4
+	},
+	"water": {
+		"shallow_color": [
+			0.36,
+			0.52,
+			0.48
+		],
+		"deep_color": [
+			0.05,
+			0.16,
+			0.2
+		],
+		"foam_color": [
+			0.9,
+			0.92,
+			0.9
+		],
+		"deep_m": 3.0,
+		"foam_m": 0.3,
+		"flow_min_mps": 0.6,
+		"flow_max_mps": 1.5,
+		"wave_amplitude_m": 0.25,
+		"wave_range_m": 200,
+		"normal_tile_m": 8.0,
+		"roughness": 0.05
 	}
 }
