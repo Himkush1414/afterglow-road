@@ -143,6 +143,8 @@ def generate(args):
     }
     bad = 0
     if args.trees:
+        import numpy as np
+
         from . import biome, placement
 
         table = placement.tree_table(args.trees)
@@ -155,6 +157,8 @@ def generate(args):
             bad += off
             flag = "  FAIL" if off else ""
             print(f"  trees {names[bid]:<18} {sp:<8} expected {want:>7} placed {have:>7}{flag}")
+        rules, counts = np.unique(rec["rule"], return_counts=True)
+        print("  trees by rule: " + ", ".join(f"{r} {c}" for r, c in zip(rules, counts)))
         print(f"  trees total {rec['model'].size} in {len(json.loads(out['trees/index.json'])['files'])} chunks")
     hashes = {name: files.write(os.path.join(args.out, name), data) for name, data in out.items() if name != "trees/index.json"}
     if "trees/index.json" in out:

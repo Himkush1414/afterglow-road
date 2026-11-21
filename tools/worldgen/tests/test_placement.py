@@ -54,11 +54,12 @@ class PlacementTest(unittest.TestCase):
 
     def test_trees_stand_on_usable_ground(self):
         g = self.gd
-        col = np.floor(self.rec["x"] / placement.CELL_M).astype(int)
-        row = np.floor(self.rec["z"] / placement.CELL_M).astype(int)
+        d = self.rec["rule"] == "density"
+        col = np.floor(self.rec["x"][d] / placement.CELL_M).astype(int)
+        row = np.floor(self.rec["z"][d] / placement.CELL_M).astype(int)
         self.assertTrue(g["usable"][row, col].all(), "no tree on a way, lot, water or steep slope")
         self.assertTrue((g["factor"][row, col] > 0).all(), "none above the tree limit")
-        self.assertTrue((g["biome"][row, col] == self.rec["biome"]).all())
+        self.assertTrue((g["biome"][row, col] == self.rec["biome"][d]).all())
 
     def test_spacing(self):
         x, z, m = self.rec["x"], self.rec["z"], self.rec["planted"]
@@ -84,19 +85,21 @@ class PlacementTest(unittest.TestCase):
         wet = self.rec["biome"] == 4
         self.assertTrue(wet.any())
         self.assertTrue((size[wet] == "young").all(), "stunted biome: young trees only")
-        forest_oak = (self.rec["biome"] == 2) & (np.array([r["species"] for r in TABLE])[self.rec["planted"]] == "oak")
+        forest_oak = (self.rec["biome"] == 2) & (self.rec["rule"] == "density")
+        forest_oak &= np.array([r["species"] for r in TABLE])[self.rec["planted"]] == "oak"
         n = int(forest_oak.sum())
         for s, share in self.sk["placement"]["size_mix"].items():
             self.assertLessEqual(abs(int((size[forest_oak] == s).sum()) - share * n), 1.0, s)
 
     def test_dead_wood_fractions_of_forest_trees(self):
-        forest = self.rec["biome"] == 2
+        forest = (self.rec["biome"] == 2) & (self.rec["rule"] == "density")
         n = int(forest.sum())
         snag = int((self.rec["model"][forest] == 11).sum())
         log = int((self.rec["model"][forest] == 12).sum())
         self.assertEqual(snag, round(0.03 * n))
         self.assertEqual(log, round(0.04 * n))
-        self.assertFalse(np.isin(self.rec["model"][~forest], [11, 12]).any(), "only in forest biomes")
+        dead = np.isin(self.rec["model"], [11, 12]) & (self.rec["rule"] == "density")
+        self.assertFalse(dead[~forest].any(), "only in forest biomes")
 
     def test_deterministic(self):
         again = placement.place_trees(self.ctx, TABLE, self.gd)
@@ -135,3 +138,59 @@ class ChunkFileTest(unittest.TestCase):
             with open(os.path.join(d, "trees", "1_0.bin"), "ab") as f:
                 f.write(b"x")
             self.assertTrue(placement.check_tree_files(d), "a changed chunk is reported")
+
+
+class SpecialRulesTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.sk = sketch()
+        cls.ctx = run(cls.sk, Grid.full(cls.sk["size_m"], 2), cls.sk["world_seed"])
+        cls.gd = placement.ground(cls.ctx)
+        cls.rec = placement.place_trees(cls.ctx, TABLE + [_row("hazel_bush", "hazel", "shrub", 1.6, 0.04)], cls.gd)
+        cls.table = TABLE + [_row("hazel_bush", "hazel", "shrub", 1.6, 0.04)]
+
+    def _rule(self, name):
+        return self.rec["rule"] == name
+
+    def test_vista_strip(self):
+        inside, along = placement.in_vista(self.sk, self.rec["x"], self.rec["z"])
+        self.assertFalse((inside & (along < 150.0)).any(), "no trees in the grass part")
+        size = np.array([r["size"] for r in self.table])[self.rec["planted"]]
+        self.assertTrue((size[inside] == "young").all(), "young trees only")
+        self.assertTrue((self._rule("vista") == inside).all(), "only the vista rule plants there")
+        cap = self.sk["vista"]["young_max_per_ha"]
+        area_ha = self.gd["vista"].sum() * 16 / 10000.0
+        self.assertLessEqual(int(inside.sum()), round(cap * area_ha))
+        self.assertGreater(int(inside.sum()), 0)
+
+    def test_hazel_on_the_forest_edge(self):
+        hz = self._rule("hazel")
+        band = placement.edge_band(self.sk, self.sk["placement"], self.gd, 4.0)
+        want = round(6 * band.sum() * 16 / 10000.0)
+        self.assertGreater(want, 0)
+        self.assertEqual(int(hz.sum()), want)
+        col = (self.rec["x"][hz] // 4).astype(int)
+        row = (self.rec["z"][hz] // 4).astype(int)
+        self.assertTrue(band[row, col].all())
+
+    def test_hedgerows_along_field_edges(self):
+        hr = self._rule("hedgerow")
+        self.assertGreater(int(hr.sum()), 10)
+        species = np.array([r["species"] for r in self.table])[self.rec["planted"]][hr]
+        self.assertEqual(set(species), {"oak", "birch"})
+        x0, z0, x1, z1 = self.sk["biomes"][6]["rule"]["rects"][0]
+        on_edge = np.minimum.reduce([np.abs(self.rec["x"][hr] - x0), np.abs(self.rec["x"][hr] - x1), np.abs(self.rec["z"][hr] - z0), np.abs(self.rec["z"][hr] - z1)])
+        self.assertLess(float(on_edge.max()), 1e-6)
+
+    def test_antenna_snags(self):
+        an = self._rule("antenna")
+        self.assertEqual(int(an.sum()), 12)
+        self.assertTrue((self.rec["model"][an] == 11).all())
+        poi = next(p for p in self.sk["pois"] if p["id"] == "pit")
+        d = np.hypot(self.rec["x"][an] - poi["x"], self.rec["z"][an] - poi["z"])
+        self.assertTrue(((d >= 60) & (d <= 150)).all())
+
+    def test_density_counts_stay_exact(self):
+        expect = placement.expected_counts(self.sk, self.gd)
+        for bid, sp, want, have in placement.count_report(self.rec, expect, self.table):
+            self.assertLessEqual(abs(have - want), max(1, 0.02 * want), (bid, sp, want, have))
