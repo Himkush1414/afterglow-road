@@ -65,6 +65,11 @@ def ground(ctx, cell_m=CELL_M):
     usable = (mask[..., 0] == 0) & (slope <= float(cfg["max_slope_deg"]))
     usable &= ~_lot_cores(ctx, g, x, z)
     usable &= ~_water(ctx, g, x, z, h)
+    vista = np.zeros(x.shape, dtype=bool)
+    if "vista" in sk:  # its own rule (_vista): only young trees beyond the grass part
+        inside, along = in_vista(sk, x, z)
+        vista = inside & usable & (along >= vista_strip(sk)[4])
+        usable &= ~inside
     factor = np.ones_like(h)
     names = biome.names(sk)
     for b in sk["biomes"]:
@@ -73,7 +78,7 @@ def ground(ctx, cell_m=CELL_M):
             sel = bio == b["id"]
             lo, hi = float(lim["full_below"]), float(lim["none_above"])
             factor[sel] = np.clip((hi - h[sel]) / (hi - lo), 0.0, 1.0)
-    return {"grid": g, "x": x, "z": z, "biome": bio, "height": h, "usable": usable, "factor": factor, "names": names}
+    return {"grid": g, "x": x, "z": z, "biome": bio, "height": h, "usable": usable, "factor": factor, "names": names, "vista": vista}
 
 
 def _lot_cores(ctx, g, x, z):
@@ -192,9 +197,10 @@ def place_trees(ctx, table, gd=None, cell_m=CELL_M):
     max_trunk = max(r["trunk_r_m"] for r in table)
     index = _Index(cell=8.0)
     reach = max(factor_k * max_canopy, 2 * max_trunk + TRUNK_GAP_M)
-    out = {"model": [], "x": [], "z": [], "biome": []}
+    out = {"model": [], "x": [], "z": [], "biome": [], "rule": []}
     stunted = {b["id"] for b in sk["biomes"] if b.get("stunted")}
     expect = expected_counts(sk, gd, cell_m)
+    has_vista = "vista" in sk
     flat_ok = (gd["usable"] & (gd["factor"] > 0)).ravel()
     for (bid, sp), n in sorted(expect.items()):
         if n <= 0 or sp not in models:
@@ -218,6 +224,8 @@ def place_trees(ctx, table, gd=None, cell_m=CELL_M):
                 z = gd["z"][row, col] - cell_m / 2 + jz
                 model = models[sp][plan[placed]]
                 cr, tr = table[model]["canopy_r_m"], table[model]["trunk_r_m"]
+                if has_vista and in_vista(sk, x, z)[0]:
+                    continue
                 ok = True
                 for ox, oz, osp, ocr, otr in index.near(x, z, reach):
                     d = math.hypot(x - ox, z - oz)
@@ -231,9 +239,15 @@ def place_trees(ctx, table, gd=None, cell_m=CELL_M):
                 out["x"].append(x)
                 out["z"].append(z)
                 out["biome"].append(bid)
+                out["rule"].append("density")
                 placed += 1
                 if placed == n:
                     break
+    fit = _Fitter(index, reach, factor_k, table, gd, cell_m, sk)
+    _vista(rng, out, fit, models, sk, gd, cell_m)
+    _hazel_edges(rng, out, fit, models, sk, cfg, gd, cell_m)
+    _hedgerows(rng, out, fit, models, sk, cfg, gd)
+    _antenna_snags(rng, out, fit, table, sk, cfg)
     rec = {k: np.asarray(v) for k, v in out.items()}
     rec["planted"] = rec["model"].copy()  # before dead wood replaces some
     _dead_wood(rng, rec, table, sk, cfg)
@@ -243,13 +257,195 @@ def place_trees(ctx, table, gd=None, cell_m=CELL_M):
     return rec
 
 
+class _Fitter:
+    """Places single trees with the same spacing rules as the main pass."""
+
+    def __init__(self, index, reach, factor_k, table, gd, cell_m, sk=None):
+        self.index, self.reach, self.k, self.table, self.gd, self.cell = index, reach, factor_k, table, gd, cell_m
+        self.sk = sk
+
+    def usable(self, x, z):
+        col, row = int(x // self.cell), int(z // self.cell)
+        g = self.gd
+        if not (0 <= row < g["usable"].shape[0] and 0 <= col < g["usable"].shape[1]):
+            return False, -1
+        return bool(g["usable"][row, col]), int(g["biome"][row, col])
+
+    def fits(self, x, z, model, vista=False):
+        """Spacing holds, and the point is outside the vista strip unless
+        `vista` (only the vista rule plants there)."""
+        if not vista and self.sk is not None and "vista" in self.sk and in_vista(self.sk, x, z)[0]:
+            return False
+        r = self.table[model]
+        sp, cr, tr = r["species"], r["canopy_r_m"], r["trunk_r_m"]
+        for ox, oz, osp, ocr, otr in self.index.near(x, z, self.reach):
+            d = math.hypot(x - ox, z - oz)
+            if d < tr + otr + TRUNK_GAP_M or (osp == sp and d < self.k * max(cr, ocr)):
+                return False
+        return True
+
+    def add(self, out, x, z, model, bid, rule):
+        r = self.table[model]
+        self.index.add((x, z, r["species"], r["canopy_r_m"], r["trunk_r_m"]))
+        for key, v in (("model", model), ("x", x), ("z", z), ("biome", bid), ("rule", rule)):
+            out[key].append(v)
+
+
+def vista_strip(sk):
+    """(origin, unit direction, width, length, grass length, young cap) of
+    the vista strip; bearing measured clockwise from north (map -z)."""
+    v = sk["vista"]
+    a = math.radians(float(v["bearing_deg"]))
+    return np.asarray(v["from"], dtype=np.float64), np.array([math.sin(a), -math.cos(a)]), float(v["width_m"]), float(v["length_m"]), float(v.get("grass_m", 0.0)), float(v.get("young_max_per_ha", 0.0))
+
+
+def in_vista(sk, x, z):
+    """(inside the strip, metres along it) for map points."""
+    o, d, w, length, _, _ = vista_strip(sk)
+    px, pz = np.asarray(x) - o[0], np.asarray(z) - o[1]
+    along = px * d[0] + pz * d[1]
+    across = -px * d[1] + pz * d[0]
+    return (along >= 0) & (along <= length) & (np.abs(across) <= w / 2), along
+
+
+def _vista(rng, out, fit, models, sk, gd, cell_m):
+    """Young trees only in the strip beyond its grass part, young_max_per_ha
+    of them, species drawn by the local biome's densities."""
+    if "vista" not in sk:
+        return
+    cap = vista_strip(sk)[5]
+    cells = np.flatnonzero(gd["vista"].ravel())
+    n = int(round(cap * cells.size * cell_m * cell_m / 10000.0))
+    dens = species_densities(sk)
+    cols = gd["x"].shape[1]
+    placed, darts = 0, 0
+    while placed < n and darts < n * MAX_DARTS:
+        c = int(cells[rng.integers(cells.size)])
+        row, col = divmod(c, cols)
+        bid = int(gd["biome"][row, col])
+        mix = {sp: v for sp, v in dens.get(bid, {}).items() if sp in models and "young" in models[sp]}
+        darts += 1
+        if not mix:
+            continue
+        names = sorted(mix)
+        p = np.array([mix[k] for k in names])
+        sp = names[int(rng.choice(len(names), p=p / p.sum()))]
+        x = col * cell_m + rng.random() * cell_m
+        z = row * cell_m + rng.random() * cell_m
+        model = models[sp]["young"]
+        inside, along = in_vista(sk, x, z)
+        if inside and along >= vista_strip(sk)[4] and fit.fits(x, z, model, vista=True):
+            fit.add(out, x, z, model, bid, "vista")
+            placed += 1
+
+
+def edge_band(sk, cfg, gd, cell_m):
+    """Texels of forest biomes within edge_band_m of non-forest ground."""
+    names = gd["names"]
+    forest = np.isin(gd["biome"], [b for b, n in names.items() if n in cfg.get("forest_biomes", [])])
+    k = max(1, int(round(float(cfg.get("edge_band_m", 0.0)) / cell_m)))
+    open_ground = ~forest
+    near = open_ground.copy()
+    for _ in range(k):  # grow the open ground k texels (4-neighbour steps)
+        grown = near.copy()
+        grown[1:, :] |= near[:-1, :]
+        grown[:-1, :] |= near[1:, :]
+        grown[:, 1:] |= near[:, :-1]
+        grown[:, :-1] |= near[:, 1:]
+        near = grown
+    return forest & near & gd["usable"]
+
+
+def _hazel_edges(rng, out, fit, models, sk, cfg, gd, cell_m):
+    per_ha = float(cfg.get("hazel_edge_per_ha", 0.0))
+    if per_ha <= 0 or "hazel" not in models:
+        return
+    band = np.flatnonzero(edge_band(sk, cfg, gd, cell_m).ravel())
+    n = int(round(per_ha * band.size * cell_m * cell_m / 10000.0))
+    model = models["hazel"]["shrub"]
+    placed, darts = 0, 0
+    cols = gd["x"].shape[1]
+    while placed < n and darts < n * MAX_DARTS:
+        c = int(band[rng.integers(band.size)])
+        row, col = divmod(c, cols)
+        x = col * cell_m + rng.random() * cell_m
+        z = row * cell_m + rng.random() * cell_m
+        darts += 1
+        if fit.fits(x, z, model):
+            fit.add(out, x, z, model, int(gd["biome"][row, col]), "hazel")
+            placed += 1
+
+
+def hedgerow_points(sk, cfg, gd):
+    """Points every hedgerow_every_m along the outline of the farmland
+    rectangles (their union), on usable farmland."""
+    step = float(cfg.get("hedgerow_every_m", 0.0))
+    out = []
+    if step <= 0:
+        return out
+    for b in sk["biomes"]:
+        rects = b.get("rule", {}).get("rects")
+        if not rects or not b.get("trees"):
+            continue
+        for x0, z0, x1, z1 in rects:
+            for (ax, az), (bx, bz) in (((x0, z0), (x1, z0)), ((x1, z0), (x1, z1)), ((x1, z1), (x0, z1)), ((x0, z1), (x0, z0))):
+                n = int(math.hypot(bx - ax, bz - az) // step)
+                for i in range(n):
+                    x, z = ax + (bx - ax) * i / n, az + (bz - az) * i / n
+                    inner = any(r[0] < x < r[2] and r[1] < z < r[3] for r in rects)
+                    if not inner:
+                        out.append((x, z, b["id"]))
+    return out
+
+
+def _hedgerows(rng, out, fit, models, sk, cfg, gd):
+    species = [s for s in cfg.get("hedgerow_species", []) if s in models]
+    if not species:
+        return
+    mix = cfg["size_mix"]
+    k = 0
+    for x, z, bid in hedgerow_points(sk, cfg, gd):
+        ok, here = fit.usable(x, z)
+        if not ok or here != bid:
+            continue
+        sp = species[k % len(species)]
+        k += 1
+        sizes = [s for s in SIZES if s in models[sp]]
+        size = rng.choice(sizes, p=np.array([mix[s] for s in sizes]) / sum(mix[s] for s in sizes))
+        model = models[sp][str(size)]
+        if fit.fits(x, z, model):
+            fit.add(out, x, z, model, bid, "hedgerow")
+
+
+def _antenna_snags(rng, out, fit, table, sk, cfg):
+    a = cfg.get("antenna_snags")
+    if not a:
+        return
+    poi = next(p for p in sk.get("pois", []) if p["id"] == a["from_poi"])
+    model = next(i for i, r in enumerate(table) if r["id"] == "snag")
+    r0, r1 = a["r_m"]
+    placed = 0
+    for _ in range(int(a["count"]) * MAX_DARTS * 10):
+        ang = rng.random() * 2 * math.pi
+        dist = math.sqrt(rng.uniform(r0 * r0, r1 * r1))
+        x, z = poi["x"] + math.cos(ang) * dist, poi["z"] + math.sin(ang) * dist
+        ok, bid = fit.usable(x, z)
+        if ok and fit.fits(x, z, model):
+            fit.add(out, x, z, model, bid, "antenna")
+            placed += 1
+            if placed == int(a["count"]):
+                return
+    raise ValueError(f"antenna snags: only {placed} of {a['count']} fit")
+
+
 def _dead_wood(rng, rec, table, sk, cfg):
     """Turns snag and fallen_log fractions of the forest biomes' trees into
     those models (they keep their place)."""
     ids = {r["id"]: i for i, r in enumerate(table)}
     names = biome.names(sk)
     forest = [bid for bid, n in names.items() if n in cfg.get("forest_biomes", [])]
-    pool = np.flatnonzero(np.isin(rec["biome"], forest)) if forest else np.array([], dtype=int)
+    density = rec["rule"] == "density"
+    pool = np.flatnonzero(np.isin(rec["biome"], forest) & density) if forest else np.array([], dtype=int)
     rng.shuffle(pool)
     n_snag = int(round(cfg["snag"] * pool.size))
     n_log = int(round(cfg["fallen_log"] * pool.size))
@@ -264,7 +460,7 @@ def count_report(rec, expect, table):
     planted = species[rec["planted"]] if rec["planted"].size else np.array([], dtype=str)
     out = []
     for (bid, sp), want in sorted(expect.items()):
-        have = int(((rec["biome"] == bid) & (planted == sp)).sum())
+        have = int(((rec["biome"] == bid) & (planted == sp) & (rec["rule"] == "density")).sum())
         out.append((bid, sp, want, have))
     return out
 
