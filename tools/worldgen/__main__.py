@@ -157,7 +157,13 @@ def generate(args):
         tree_lines.append(f"  tree cover: mean {mask[..., 3].mean() / 255:.3f} of the map")
         from . import objects
 
+        from . import nodes
+
         objs, counts = objects.area_objects(ctx, gd, mask[..., 3])
+        node_objs, node_plan = nodes.place_nodes(ctx, gd)
+        for (tid, k), (want, have) in node_plan.items():
+            counts[f"{tid}#{k + 1}"] = (want, have)
+        objs += node_objs
         for name, (want, have) in sorted(counts.items()):
             off = abs(have - want) > max(1, 0.02 * want)
             bad += off

@@ -104,6 +104,16 @@ SAMPLE = {
         },
     },
     "erosion": {"iterations": 30, "talus_deg": 38.0},
+    "nodes": [
+        {"id": "boulder", "rules": [{"kind": "area", "biomes": ["hills", "high"], "river_beds": True, "count": 200}]},
+        {"id": "limestone_outcrop", "rules": [{"kind": "cut_face", "cut": "quarry", "count": 10}, {"kind": "area", "biomes": ["high", "hills"], "x_min": 800, "facing": "south", "count": 20}]},
+        {"id": "iron_vein", "rules": [{"kind": "area", "biomes": ["hills"], "bumps": ["big"], "slope_min": 30, "face_out": True, "count": 15}, {"kind": "area", "biomes": ["hills"], "steepest": True, "count": 6}, {"kind": "cut_face", "cut": "bench", "count": 5}]},
+        {"id": "coal_seam", "rules": [{"kind": "road_cut", "line": "lane", "from": [900.0, 1500.0], "to": [1800.0, 1600.0], "count": 8}]},
+        {"id": "clay_bank", "rules": [{"kind": "banks", "biomes": ["wet"], "count": 30}]},
+        {"id": "sand_patch", "rules": [{"kind": "area", "biomes": ["beach"], "lake_banks": True, "count": 30}]},
+        {"id": "gravel_bar", "rules": [{"kind": "bends", "river_kind": "river", "count": 5}]},
+        {"id": "car_wreck", "rules": [{"kind": "along", "line": "lane", "every_m": [150, 400], "yaw_deg": 45, "side_m": 2}, {"kind": "area", "biomes": ["town"], "fill_to": 12}]},
+    ],
     "placement": {
         "tree_radius_factor": 1.2,
         "max_slope_deg": 40,
