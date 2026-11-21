@@ -6,10 +6,12 @@ engine's world tests run without private content:
 import json
 import os
 import sys
+from types import SimpleNamespace
 
 import numpy as np
 
-from . import files
+from . import derive, files
+from .grid import Grid
 
 SKETCH = {
     "size_m": 256,
@@ -18,6 +20,8 @@ SKETCH = {
     "height_encoding": {"scale": 0.02, "offset_m": 64.0},
     "origin_offset_m": 128,
     "world_seed": 5,
+    # root quadtree nodes of 128 m (2 x 2), as the full map has 4,096 m roots
+    "derive": {"minmax_node_m": 64, "minmax_lods": [0, 1]},
 }
 BIOME_CELL_M = 16
 
@@ -45,9 +49,13 @@ def biomes():
 def write(out):
     os.makedirs(out, exist_ok=True)
     h = heights()
+    encoded = files.encode_height(h, SKETCH)
+    ctx = SimpleNamespace(sketch=SKETCH, grid=Grid.full(SKETCH["size_m"], SKETCH["sample_m"]), layers={"height": h})
     data = {
-        "height.bin": files.compress(files.encode_height(h, SKETCH).tobytes()),
+        "height.bin": files.compress(encoded.tobytes()),
         "biome.bin": files.compress(biomes().tobytes()),
+        "minmax.bin": files.compress(derive.minmax_bytes(ctx, encoded)),
+        "normal.bin": files.compress(derive.normal_bytes(ctx)),
     }
     hashes = {name: files.write(os.path.join(out, name), blob) for name, blob in data.items()}
     files.write(os.path.join(out, "meta.json"), files.meta_text(files.meta(SKETCH, hashes)).encode("ascii"))

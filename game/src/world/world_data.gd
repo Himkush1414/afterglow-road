@@ -11,7 +11,6 @@ const TREE_CHUNK_M := 128.0
 const TREE_CHUNKS_PER_SIDE := 64
 ## Biome cell size in metres (04 §2).
 const BIOME_CELL_M := 16.0
-const FILES: Array[String] = ["height.bin", "biome.bin"]
 
 var errors: PackedStringArray = []
 var size_m := 0.0
@@ -23,6 +22,8 @@ var _height_scale := 0.0
 var _height_offset := 0.0
 var _heights := PackedByteArray()
 var _biomes := PackedByteArray()
+var _dir := ""
+var _hashes := {}
 
 
 ## The world folder of the active content.
@@ -52,39 +53,39 @@ func load_dir(dir: String) -> bool:
 		errors.append("%s/meta.json: size, sample spacing or height scale missing" % dir)
 		return false
 	samples = int(round(size_m / sample_m)) + 1
-	var hashes: Dictionary = m.get("sha256", {})
-	var raw := {}
-	for file_name in FILES:
-		var data := FileAccess.get_file_as_bytes(dir + "/" + file_name)
-		if data.is_empty():
-			errors.append("%s/%s: missing or empty" % [dir, file_name])
-			continue
-		var ctx := HashingContext.new()
-		ctx.start(HashingContext.HASH_SHA256)
-		ctx.update(data)
-		if ctx.finish().hex_encode() != str(hashes.get(file_name, "")):
-			errors.append("%s/%s: SHA-256 differs from meta.json" % [dir, file_name])
-			continue
-		raw[file_name] = data
-	if not errors.is_empty():
-		return false
-	var heights: PackedByteArray = raw["height.bin"].decompress(
-		samples * samples * 2, FileAccess.COMPRESSION_ZSTD
-	)
-	if heights.size() != samples * samples * 2:
-		errors.append("%s/height.bin: %d bytes decoded" % [dir, heights.size()])
-		return false
+	_dir = dir
+	_hashes = m.get("sha256", {})
 	var cells := int(round(size_m / BIOME_CELL_M))
-	var biomes: PackedByteArray = raw["biome.bin"].decompress(
-		cells * cells, FileAccess.COMPRESSION_ZSTD
-	)
-	if biomes.size() != cells * cells:
-		errors.append("%s/biome.bin: %d bytes decoded" % [dir, biomes.size()])
+	var heights := read_layer("height.bin", samples * samples * 2)
+	var biomes := read_layer("biome.bin", cells * cells)
+	if not errors.is_empty():
 		return false
 	_heights = heights
 	_biomes = biomes
 	biome_cells = cells
 	return true
+
+
+## Decoded bytes of a ZSTD world file of the loaded folder (heights, biomes,
+## LOD boxes, normals), checked against meta.json. Returns an
+## empty array and appends to `errors` when the file is missing, changed or
+## does not decode to `decoded_size` bytes.
+func read_layer(file_name: String, decoded_size: int) -> PackedByteArray:
+	var data := FileAccess.get_file_as_bytes(_dir + "/" + file_name)
+	if data.is_empty():
+		errors.append("%s/%s: missing or empty" % [_dir, file_name])
+		return PackedByteArray()
+	var ctx := HashingContext.new()
+	ctx.start(HashingContext.HASH_SHA256)
+	ctx.update(data)
+	if ctx.finish().hex_encode() != str(_hashes.get(file_name, "")):
+		errors.append("%s/%s: SHA-256 differs from meta.json" % [_dir, file_name])
+		return PackedByteArray()
+	var out := data.decompress(decoded_size, FileAccess.COMPRESSION_ZSTD)
+	if out.size() != decoded_size:
+		errors.append("%s/%s: %d bytes decoded" % [_dir, file_name, out.size()])
+		return PackedByteArray()
+	return out
 
 
 func is_loaded() -> bool:
