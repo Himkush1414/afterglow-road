@@ -6,7 +6,9 @@ extends TestCase
 const CAMERAS := 200
 ## Eye height above the ground, drawn per camera.
 const EYE_HEIGHTS: Array[float] = [1.7, 1.7, 20.0, 150.0, 600.0]
-const TOLERANCE_M := 0.002
+## Both sides of a shared vertex must agree to float32 rounding of heights
+## (a 0.7 mm disagreement already showed as a one-pixel hole).
+const TOLERANCE_M := 1e-5
 
 var _world: WorldData
 var _lod: TerrainLod
@@ -180,13 +182,14 @@ func _vertex(p: PackedFloat32Array, quads: int, g: Vector2, eye: Vector3) -> Vec
 	)
 	var step := p[2] / (quads * s)
 	var rng_m: float = _lod.ranges[int(p[3])]
-	var idx := origin + g * step
+	var grid := origin / step + g
+	var idx := grid * step
 	var map_eye := _world.world_to_map(eye)
 	var d := Vector3(idx.x * s - map_eye.x, _lod.lift, idx.y * s - map_eye.z).length()
 	var k := clampf((d - _lod.morph_start * rng_m) / ((1.0 - _lod.morph_start) * rng_m), 0.0, 1.0)
-	g.x -= fposmod(g.x * 0.5, 1.0) * 2.0 * k
-	g.y -= fposmod(g.y * 0.5, 1.0) * 2.0 * k
-	idx = origin + g * step
+	grid.x -= fposmod(grid.x * 0.5, 1.0) * 2.0 * k
+	grid.y -= fposmod(grid.y * 0.5, 1.0) * 2.0 * k
+	idx = grid * step
 	return Vector3(idx.x, idx.y, _height(idx))
 
 

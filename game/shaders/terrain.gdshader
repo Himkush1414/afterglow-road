@@ -74,12 +74,16 @@ void vertex() {
 	float range = r0 * exp2(level);
 	float step_idx = INSTANCE_CUSTOM.z / (quads * sample_m);
 	vec2 g = floor(round(VERTEX.xz * MESH_QUADS) * (quads / MESH_QUADS));
-	vec2 idx = origin_idx + g * step_idx;
+	// Morph in the global grid: G = origin / step + g is an exact integer and
+	// step a power of two, so two patches with different origins that share a
+	// vertex compute it bit-identically (a local g would round differently).
+	vec2 grid = origin_idx / step_idx + g;
+	vec2 idx = grid * step_idx;
 	vec2 dxz = idx * sample_m - origin_offset - eye.xz;
 	float d = sqrt(dot(dxz, dxz) + lift * lift);
 	float k = clamp((d - morph_start * range) / ((1.0 - morph_start) * range), 0.0, 1.0);
-	g -= fract(g * 0.5) * 2.0 * k;
-	idx = origin_idx + g * step_idx;
+	grid -= fract(grid * 0.5) * 2.0 * k;
+	idx = grid * step_idx;
 	vec2 wxz = idx * sample_m - origin_offset;
 	VERTEX = vec3(wxz.x, height_at_idx(idx), wxz.y);
 	v_pos = VERTEX;
