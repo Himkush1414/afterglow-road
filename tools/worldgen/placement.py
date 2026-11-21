@@ -62,9 +62,9 @@ def ground(ctx, cell_m=CELL_M):
     mask = derive.mask_rgba(ctx, cell_m)
     nx, nz = derive.normals(ctx, cell_m)
     slope = np.degrees(np.arccos(np.clip(np.sqrt(np.maximum(1.0 - nx * nx - nz * nz, 0.0)), -1, 1)))
-    usable = (mask[..., 0] == 0) & (slope <= float(cfg["max_slope_deg"]))
-    usable &= ~_lot_cores(ctx, g, x, z)
-    usable &= ~_water(ctx, g, x, z, h)
+    water = _water(ctx, g, x, z, h)
+    open_ground = (mask[..., 0] == 0) & ~_lot_cores(ctx, g, x, z) & ~water
+    usable = open_ground & (slope <= float(cfg["max_slope_deg"]))
     vista = np.zeros(x.shape, dtype=bool)
     if "vista" in sk:  # its own rule (_vista): only young trees beyond the grass part
         inside, along = in_vista(sk, x, z)
@@ -78,7 +78,7 @@ def ground(ctx, cell_m=CELL_M):
             sel = bio == b["id"]
             lo, hi = float(lim["full_below"]), float(lim["none_above"])
             factor[sel] = np.clip((hi - h[sel]) / (hi - lo), 0.0, 1.0)
-    return {"grid": g, "x": x, "z": z, "biome": bio, "height": h, "usable": usable, "factor": factor, "names": names, "vista": vista}
+    return {"grid": g, "x": x, "z": z, "biome": bio, "height": h, "usable": usable, "factor": factor, "names": names, "vista": vista, "slope": slope, "open": open_ground, "water": water, "normal": (nx, nz)}
 
 
 def _lot_cores(ctx, g, x, z):
