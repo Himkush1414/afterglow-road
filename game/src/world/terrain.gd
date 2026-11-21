@@ -21,6 +21,9 @@ const SLOPE_SLOTS := 2
 const LAYER_TEXEL_M := 4.0
 
 var lod := TerrainLod.new()
+## Collision chunks around tracked bodies, and the fall-through guard
+## (made by setup).
+var collision: TerrainCollision
 var errors: PackedStringArray = []
 ## Selections run so far and the instance count of the last one.
 var selections := 0
@@ -74,6 +77,10 @@ func setup(world: WorldData) -> bool:
 	)
 	if not _setup_surface(world):
 		return false
+	if collision == null:
+		collision = TerrainCollision.new()
+		add_child(collision)
+	collision.setup(world)
 	_multimesh.instance_count = 0
 	_multimesh.transform_format = MultiMesh.TRANSFORM_3D
 	_multimesh.use_custom_data = true
@@ -223,6 +230,11 @@ static func _layer_arrays(layers: Array) -> Array[Texture2DArray]:
 
 static func _texture(px: int, format: int, data: PackedByteArray) -> ImageTexture:
 	return ImageTexture.create_from_image(Image.create_from_data(px, px, false, format, data))
+
+
+## The node that draws the patches (null before setup).
+func draw_node() -> MultiMeshInstance3D:
+	return _draw
 
 
 func is_ready() -> bool:
