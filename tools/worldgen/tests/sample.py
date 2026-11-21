@@ -116,6 +116,8 @@ SAMPLE = {
         "hedgerow_every_m": 9,
         "hedgerow_species": ["oak", "birch"],
         "antenna_snags": {"count": 12, "from_poi": "pit", "r_m": [60, 150]},
+        "forage": {"berry_edge_per_ha": 2, "mushroom_forest_per_ha": 3, "reed_lake_shore": 0.35, "marsh_biomes": ["wet"], "marsh_reed_per_ha": 2, "reed_every_m": 8, "reed_stretches": 4},
+        "pickups": {"m2_per_item": {"stick_under_trees": 60, "stone": 400, "stone_river_beds_hills": 40, "flint_river_beds_beaches": 2000}, "hill_biomes": ["hills"], "beach_biomes": ["beach"]},
     },
     "scarp": {"edges": ["north", "east"], "band_m": 200.0, "height_m": 160.0, "full_at_m": 110.0, "noise_free_m": 64.0},
 }

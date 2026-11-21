@@ -134,6 +134,7 @@ def generate(args):
     bad = 0
     tree_lines = []
     tree_index = None
+    region_index = None
     if args.trees:
         import numpy as np
 
@@ -154,6 +155,15 @@ def generate(args):
         tree_lines.append("  trees by rule: " + ", ".join(f"{r} {c}" for r, c in zip(rules, counts)))
         tree_lines.append(f"  trees total {rec['model'].size} in {len(json.loads(tree_index)['files'])} chunks")
         tree_lines.append(f"  tree cover: mean {mask[..., 3].mean() / 255:.3f} of the map")
+        from . import objects
+
+        objs, counts = objects.area_objects(ctx, gd, mask[..., 3])
+        for name, (want, have) in sorted(counts.items()):
+            off = abs(have - want) > max(1, 0.02 * want)
+            bad += off
+            tree_lines.append(f"  objects {name:<16} expected {want:>7} placed {have:>7}{'  FAIL' if off else ''}")
+        region_index = objects.write_region_files(objects.region_documents(objs, sk, ctx.layers["height"]), args.out)
+        tree_lines.append(f"  objects total {len(objs)} in {len(json.loads(region_index)['files'])} region files")
     out = {
         "height.bin": files.compress(encoded.tobytes()),
         "minmax.bin": files.compress(derive.minmax_bytes(ctx, encoded)),
@@ -168,11 +178,14 @@ def generate(args):
         print(line)
     if tree_index is not None:
         out["trees/index.json"] = tree_index
-    hashes = {name: files.write(os.path.join(args.out, name), data) for name, data in out.items() if name != "trees/index.json"}
-    if "trees/index.json" in out:
-        import hashlib
+        out["regions/index.json"] = region_index
+    written = ("trees/index.json", "regions/index.json")  # written with their files
+    hashes = {name: files.write(os.path.join(args.out, name), data) for name, data in out.items() if name not in written}
+    import hashlib
 
-        hashes["trees/index.json"] = hashlib.sha256(out["trees/index.json"]).hexdigest()
+    for name in written:
+        if name in out:
+            hashes[name] = hashlib.sha256(out[name]).hexdigest()
     files.write(os.path.join(args.out, "meta.json"), files.meta_text(files.meta(sk, hashes)).encode("ascii"))
     # check fixture for the engine (T-05-2), not a world file
     points = files.height_points(ctx.layers["height"], sk)
