@@ -8,7 +8,8 @@ Steep ground is judged on the 4 m texels of placement.ground(); a steep
 patch counts when its connected texels (4-neighbours) span at least
 min_extent_m. A face covers the texels whose centres fall inside its
 footprint on the map: face width along the contour by face height x
-cos(slope) across it.
+cos(slope) across it, both scaled by cover_share (below 1 the faces
+overlap, so no ground shows between them).
 """
 import math
 
@@ -75,7 +76,8 @@ def _frame(gd, row, col):
 def _footprint(gd, x, z, d, slope, cfg, cell_m):
     """Texel indices whose centres lie inside a face's map footprint."""
     w, hgt = cfg["face_m"]
-    half_w, half_d = w / 2.0, hgt * math.cos(math.radians(slope)) / 2.0
+    share = float(cfg.get("cover_share", 1.0))  # < 1: neighbouring faces overlap
+    half_w, half_d = share * w / 2.0, share * hgt * math.cos(math.radians(slope)) / 2.0
     reach = math.hypot(half_w, half_d)
     r0 = max(int((z - reach) // cell_m), 0)
     r1 = min(int((z + reach) // cell_m) + 1, gd["slope"].shape[0])
