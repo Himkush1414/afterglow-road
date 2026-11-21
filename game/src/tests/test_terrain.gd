@@ -97,3 +97,42 @@ func test_the_game_sets_up_its_terrain() -> void:
 	if not check(game != null, "game scene running"):
 		return
 	check(game.terrain.is_ready(), "terrain draw node in the game")
+
+
+func test_surface_rules_follow_the_tuning() -> void:
+	for dir: String in [WorldData.default_dir(), ContentDB.SAMPLE_ROOT + "/world"]:
+		if not _setup(dir):
+			continue
+		var cfg := ContentDB.tuning("terrain")
+		var layers: Array = cfg.layers
+		var mat := (
+			(_terrain.get_child(0) as MultiMeshInstance3D).material_override as ShaderMaterial
+		)
+		var table: PackedInt32Array = mat.get_shader_parameter("biome_layer")
+		for key: String in cfg.biome_layer:
+			check_eq(table[int(key)], layers.find(cfg.biome_layer[key]), "biome %s" % key)
+		var slope: PackedInt32Array = mat.get_shader_parameter("slope_layer")
+		check_eq(slope[0], layers.find(cfg.slope_layers[0].layer), "first slope layer")
+		check_eq(mat.get_shader_parameter("dirt_layer"), layers.find(cfg.dirt_layer))
+		var have_all := true
+		for name: String in layers:
+			for kind: String in ["ah", "nra"]:
+				have_all = (
+					have_all
+					and ResourceLoader.exists(
+						(
+							"%s/%s/%s%s_%s.png"
+							% [
+								ContentDB.root,
+								Terrain.TEXTURE_DIR,
+								Terrain.TEXTURE_PREFIX,
+								name,
+								kind
+							]
+						)
+					)
+				)
+		check_eq(_terrain.layer_count(), layers.size() if have_all else 0, "%s layers" % dir)
+		check_eq(mat.get_shader_parameter("use_mask"), _world.has_layer("mask.bin"))
+		_terrain.set_wetness(2.0)
+		check_eq(mat.get_shader_parameter("wetness"), 1.0, "wetness clamped")

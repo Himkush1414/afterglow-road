@@ -11,6 +11,14 @@ const RESELECT_M := 4.0
 const RESELECT_DEG := 5.0
 ## Mesh grid; the shader folds it to fewer quads per patch.
 const MESH_QUADS := 32
+## Layer textures: <content>/<TEXTURE_DIR>/<TEXTURE_PREFIX><layer>_ah.png and _nra.png.
+const TEXTURE_DIR := "assets/textures/terrain"
+const TEXTURE_PREFIX := "terrain_"
+## Size of the shader's biome-to-layer table and its slope-layer slots.
+const BIOME_IDS := 32
+const SLOPE_SLOTS := 2
+## Texel size of the normal and mask layers (04 §2).
+const LAYER_TEXEL_M := 4.0
 
 var lod := TerrainLod.new()
 var errors: PackedStringArray = []
@@ -35,7 +43,7 @@ func setup(world: WorldData) -> bool:
 	var r0: Variant = Quality.value("terrain_r0_m")
 	lod.set_ranges(float(r0) if r0 != null else TerrainLod.R0_M, TerrainLod.MORPH_START)
 	var quads: Variant = Quality.value("terrain_quads")
-	var normal_px := int(round(world.size_m / 4.0))
+	var normal_px := int(round(world.size_m / LAYER_TEXEL_M))
 	var normals := world.read_layer("normal.bin", normal_px * normal_px * 2)
 	var heights := world.read_layer("height.bin", world.samples * world.samples * 2)
 	if normals.is_empty() or heights.is_empty():
@@ -64,6 +72,8 @@ func setup(world: WorldData) -> bool:
 	_material.set_shader_parameter(
 		"base_quads", float(quads) if quads != null else float(TerrainLod.PATCH_QUADS)
 	)
+	if not _setup_surface(world):
+		return false
 	_multimesh.instance_count = 0
 	_multimesh.transform_format = MultiMesh.TRANSFORM_3D
 	_multimesh.use_custom_data = true
@@ -89,6 +99,130 @@ func setup(world: WorldData) -> bool:
 	)
 	_last_eye = Vector3(INF, INF, INF)
 	return true
+
+
+## Ground wetness 0..1 from the weather (darker, smoother ground).
+func set_wetness(value: float) -> void:
+	_material.set_shader_parameter("wetness", clampf(value, 0.0, 1.0))
+
+
+## Number of ground layers drawn (0 when the layer textures are missing).
+func layer_count() -> int:
+	return int(_material.get_shader_parameter("layer_count"))
+
+
+## Ground surface (05 §5 fragment): biome cells, way and wet mask, far colour
+## and the layer texture arrays, with the rules from the "terrain" tuning.
+## A part whose file does not exist (the sample world has no mask or far
+## colour; layer textures may not be generated yet) is turned off; a file
+## that exists but fails its check fails the setup.
+func _setup_surface(world: WorldData) -> bool:
+	var cfg := ContentDB.tuning("terrain")
+	var cells := world.biome_cells
+	var biomes := world.read_layer("biome.bin", cells * cells)
+	var mask_px := int(round(world.size_m / LAYER_TEXEL_M))
+	var mask := PackedByteArray()
+	if world.has_layer("mask.bin"):
+		mask = world.read_layer("mask.bin", mask_px * mask_px * 4)
+	if not world.errors.is_empty():
+		errors.append_array(world.errors)
+		return false
+	_material.set_shader_parameter("biome_tex", _texture(cells, Image.FORMAT_R8, biomes))
+	_material.set_shader_parameter("biome_cell_m", WorldData.BIOME_CELL_M)
+	_material.set_shader_parameter("use_mask", not mask.is_empty())
+	if not mask.is_empty():
+		_material.set_shader_parameter("mask_tex", _texture(mask_px, Image.FORMAT_RGBA8, mask))
+	var macro_path := world.folder() + "/macro.png"
+	var use_macro := ResourceLoader.exists(macro_path)
+	_material.set_shader_parameter("use_macro", use_macro)
+	if use_macro:
+		var macro := (load(macro_path) as Texture2D).get_image()
+		macro.generate_mipmaps()
+		_material.set_shader_parameter("macro_tex", ImageTexture.create_from_image(macro))
+	var layers: Array = cfg.get("layers", [])
+	var index := {}
+	for i in layers.size():
+		index[layers[i]] = i
+	var table := PackedInt32Array()
+	table.resize(BIOME_IDS)
+	table.fill(-1)
+	var biome_layer: Dictionary = cfg.get("biome_layer", {})
+	for key: String in biome_layer:
+		if int(key) < BIOME_IDS:
+			table[int(key)] = index.get(biome_layer[key], -1)
+	var slope_layer := PackedInt32Array([-1, -1])
+	var slope_deg := PackedFloat32Array([90.0, 90.0])
+	var slopes: Array = cfg.get("slope_layers", [])
+	for i in mini(slopes.size(), SLOPE_SLOTS):
+		slope_layer[i] = index.get(slopes[i].layer, -1)
+		slope_deg[i] = float(slopes[i].deg)
+	# Desktop projects the steepest slope layer (rock) triplanar; phones use XZ only.
+	var desktop := RenderingServer.get_current_rendering_method() != "mobile"
+	var steepest := (
+		slope_layer[mini(slopes.size(), SLOPE_SLOTS) - 1] if not slopes.is_empty() else -1
+	)
+	var arrays := _layer_arrays(layers)
+	var p := {
+		"biome_layer": table,
+		"slope_layer": slope_layer,
+		"slope_deg": slope_deg,
+		"slope_blend_deg": float(cfg.get("slope_blend_deg", 0.0)),
+		"dirt_layer": index.get(cfg.get("dirt_layer", ""), -1),
+		"mud_layer": index.get(cfg.get("mud_layer", ""), -1),
+		"tile_m": float(cfg.get("tile_m", 1.0)),
+		"height_blend": float(cfg.get("height_blend", 0.0)),
+		"macro_near_m": float(cfg.get("macro_near_m", 0.0)),
+		"macro_far_m": float(cfg.get("macro_far_m", 0.0)),
+		"wet_albedo": float(cfg.get("wet_albedo", 1.0)),
+		"wet_roughness": float(cfg.get("wet_roughness", 1.0)),
+		"triplanar_layer": steepest if desktop else -1,
+		"layer_count": layers.size() if not arrays.is_empty() else 0,
+	}
+	for key: String in p:
+		_material.set_shader_parameter(key, p[key])
+	if not arrays.is_empty():
+		_material.set_shader_parameter("layer_ah", arrays[0])
+		_material.set_shader_parameter("layer_nra", arrays[1])
+	return true
+
+
+## [albedo+height array, normal+roughness+AO array], or [] when a texture is
+## missing or the sizes differ.
+static func _layer_arrays(layers: Array) -> Array[Texture2DArray]:
+	var ah: Array[Image] = []
+	var nra: Array[Image] = []
+	var size := Vector2i.ZERO
+	for name: String in layers:
+		for k in 2:
+			var path := (
+				"%s/%s/%s%s_%s.png"
+				% [ContentDB.root, TEXTURE_DIR, TEXTURE_PREFIX, name, ["ah", "nra"][k]]
+			)
+			if not ResourceLoader.exists(path):
+				return []
+			var img := (load(path) as Texture2D).get_image()
+			if img.is_compressed():
+				img.decompress()
+			img.convert(Image.FORMAT_RGBA8)
+			if size == Vector2i.ZERO:
+				size = img.get_size()
+			if img.get_size() != size:
+				Log.error("terrain", "%s: %s, expected %s" % [path, img.get_size(), size])
+				return []
+			img.generate_mipmaps()
+			(ah if k == 0 else nra).append(img)
+	if layers.is_empty():
+		return []
+	var out: Array[Texture2DArray] = []
+	for images: Array[Image] in [ah, nra]:
+		var arr := Texture2DArray.new()
+		arr.create_from_images(images)
+		out.append(arr)
+	return out
+
+
+static func _texture(px: int, format: int, data: PackedByteArray) -> ImageTexture:
+	return ImageTexture.create_from_image(Image.create_from_data(px, px, false, format, data))
 
 
 func is_ready() -> bool:

@@ -936,6 +936,79 @@
 					"type": "id"
 				}
 			}
+		},
+		"tuning_terrain": {
+			"type": "object",
+			"fields": {
+				"layers": {
+					"type": "list",
+					"of": {
+						"type": "id"
+					},
+					"min_len": 1
+				},
+				"tile_m": {
+					"type": "number",
+					"min": 0.1
+				},
+				"biome_layer": {
+					"type": "map",
+					"values": {
+						"type": "id"
+					}
+				},
+				"slope_layers": {
+					"type": "list",
+					"of": {
+						"type": "terrain_slope_layer"
+					}
+				},
+				"slope_blend_deg": {
+					"type": "number",
+					"min": 0
+				},
+				"dirt_layer": {
+					"type": "id"
+				},
+				"mud_layer": {
+					"type": "id"
+				},
+				"height_blend": {
+					"type": "number",
+					"min": 0
+				},
+				"macro_near_m": {
+					"type": "number",
+					"min": 0
+				},
+				"macro_far_m": {
+					"type": "number",
+					"min": 0
+				},
+				"wet_albedo": {
+					"type": "number",
+					"min": 0,
+					"max": 1
+				},
+				"wet_roughness": {
+					"type": "number",
+					"min": 0,
+					"max": 1
+				}
+			}
+		},
+		"terrain_slope_layer": {
+			"type": "object",
+			"fields": {
+				"deg": {
+					"type": "number",
+					"min": 0,
+					"max": 90
+				},
+				"layer": {
+					"type": "id"
+				}
+			}
 		}
 	},
 	"files": {
@@ -952,6 +1025,9 @@
 					},
 					"quality": {
 						"type": "tuning_quality"
+					},
+					"terrain": {
+						"type": "tuning_terrain"
 					}
 				}
 			}

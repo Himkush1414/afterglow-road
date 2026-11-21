@@ -88,6 +88,16 @@ func read_layer(file_name: String, decoded_size: int) -> PackedByteArray:
 	return out
 
 
+## True when meta.json lists `file_name` (optional layers may be absent).
+func has_layer(file_name: String) -> bool:
+	return _hashes.has(file_name)
+
+
+## The folder the world was loaded from.
+func folder() -> String:
+	return _dir
+
+
 func is_loaded() -> bool:
 	return not _heights.is_empty()
 
