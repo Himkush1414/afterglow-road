@@ -18,6 +18,7 @@ var play_seconds := 0.0
 @onready var world: WorldData = $WorldData
 @onready var terrain: Terrain = $Terrain
 @onready var water: Water = $Water
+@onready var streamer: Streamer = $Streamer
 
 
 func _enter_tree() -> void:
@@ -29,6 +30,7 @@ func _exit_tree() -> void:
 	for name: String in ["clock", "ids"]:
 		SaveGame.unregister_section(name)
 	SaveGame.meta_source = func() -> Dictionary: return {}
+	SaveGame.region_source = func() -> Dictionary: return {}
 	if current == self:
 		current = null
 
@@ -43,6 +45,8 @@ func _ready() -> void:
 			Log.error("water", "; ".join(water.errors))
 		elif terrain.is_ready():
 			water.build(terrain.height_texture())
+		streamer.setup(world)
+		SaveGame.region_source = streamer.deltas
 	if App.is_dev():
 		var console: DebugConsole = (load(CONSOLE_SCENE) as PackedScene).instantiate()
 		var perf: PerfOverlay = (load(PERF_SCENE) as PackedScene).instantiate()
