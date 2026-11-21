@@ -32,7 +32,7 @@ func test_setup_on_both_worlds() -> void:
 		if not _setup(dir):
 			continue
 		check(_terrain.is_ready(), "draw node added")
-		var mat := _terrain.get_child(0) as MultiMeshInstance3D
+		var mat := _terrain.draw_node()
 		var tex: Texture2D = (mat.material_override as ShaderMaterial).get_shader_parameter(
 			"height_tex"
 		)
@@ -105,9 +105,7 @@ func test_surface_rules_follow_the_tuning() -> void:
 			continue
 		var cfg := ContentDB.tuning("terrain")
 		var layers: Array = cfg.layers
-		var mat := (
-			(_terrain.get_child(0) as MultiMeshInstance3D).material_override as ShaderMaterial
-		)
+		var mat := _terrain.draw_node().material_override as ShaderMaterial
 		var table: PackedInt32Array = mat.get_shader_parameter("biome_layer")
 		for key: String in cfg.biome_layer:
 			check_eq(table[int(key)], layers.find(cfg.biome_layer[key]), "biome %s" % key)
