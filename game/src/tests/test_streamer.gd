@@ -46,6 +46,8 @@ func test_load_and_unload_thresholds() -> void:
 	_west_of(r, 380.0)
 	_streamer.update()
 	check(_streamer.state_of(r) != Region.State.UNLOADED, "380 m: loading or loaded")
+	for i in 10:
+		_streamer.update()
 	_west_of(r, 440.0)
 	_streamer.update()
 	check_eq(_streamer.state_of(r), Region.State.ACTIVE, "440 m: still loaded (hysteresis)")
@@ -89,7 +91,8 @@ func test_load_steps_stay_within_the_budget() -> void:
 			all_active = all_active and _streamer.state_of(r) == Region.State.ACTIVE
 		if all_active:
 			break
-	check_eq(ticks, 9, "a zero budget runs one load step per tick (9 regions, one step each)")
+	# a zero budget runs one load step per tick: 9 regions x 3 steps (read, delta, cliffs)
+	check_eq(ticks, 27, "one load step per tick")
 
 
 func test_deltas_survive_unload_and_return_on_load() -> void:

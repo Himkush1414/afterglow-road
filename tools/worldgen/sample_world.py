@@ -11,7 +11,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from . import derive, files, placement
+from . import derive, files, objects, placement
 from . import water as water_io
 from .grid import Grid
 
@@ -62,6 +62,13 @@ def water():
     }
 
 
+def region_objects():
+    """One cliff face on the hill's east flank and one boulder, for the
+    engine's region tests (the sample content has no rock meshes, so a
+    stand-in slab is drawn)."""
+    return [("cliff", "face_a", 196.0, 90.0, 90, 35), ("node", "boulder", 120.0, 150.0, 30)]
+
+
 def trees():
     """Three trees of the sample's one tree model, two in chunk (0, 0) and one
     in chunk (1, 1), for the engine's chunk-file test."""
@@ -94,6 +101,8 @@ def write(out):
     }
     hashes = {name: files.write(os.path.join(out, name), blob) for name, blob in data.items()}
     hashes["trees/index.json"] = hashlib.sha256(placement.write_tree_files(trees(), out)).hexdigest()
+    docs = objects.region_documents(region_objects(), SKETCH, h)
+    hashes["regions/index.json"] = hashlib.sha256(objects.write_region_files(docs, out)).hexdigest()
     files.write(os.path.join(out, "meta.json"), files.meta_text(files.meta(SKETCH, hashes)).encode("ascii"))
     points = files.height_points(h, SKETCH)
     files.write(os.path.join(out, "height_points.json"), (json.dumps(points) + "\n").encode("ascii"))
