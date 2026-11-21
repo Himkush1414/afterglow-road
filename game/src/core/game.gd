@@ -17,6 +17,7 @@ var play_seconds := 0.0
 @onready var clock: GameClock = $Clock
 @onready var world: WorldData = $WorldData
 @onready var terrain: Terrain = $Terrain
+@onready var water: Water = $Water
 
 
 func _enter_tree() -> void:
@@ -35,8 +36,11 @@ func _exit_tree() -> void:
 func _ready() -> void:
 	if not world.load_dir(WorldData.default_dir()):
 		Log.error("world", "; ".join(world.errors))
-	elif not terrain.setup(world):
-		Log.error("terrain", "; ".join(terrain.errors))
+	else:
+		if not terrain.setup(world):
+			Log.error("terrain", "; ".join(terrain.errors))
+		if not water.setup(world):
+			Log.error("water", "; ".join(water.errors))
 	if App.is_dev():
 		var console: DebugConsole = (load(CONSOLE_SCENE) as PackedScene).instantiate()
 		var perf: PerfOverlay = (load(PERF_SCENE) as PackedScene).instantiate()

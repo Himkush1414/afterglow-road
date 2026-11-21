@@ -88,6 +88,23 @@ func read_layer(file_name: String, decoded_size: int) -> PackedByteArray:
 	return out
 
 
+## Text of a plain world file of the loaded folder (for example the water
+## description), checked against meta.json. Returns "" and appends to
+## `errors` when the file is missing or changed.
+func read_text(file_name: String) -> String:
+	var data := FileAccess.get_file_as_bytes(_dir + "/" + file_name)
+	if data.is_empty():
+		errors.append("%s/%s: missing or empty" % [_dir, file_name])
+		return ""
+	var ctx := HashingContext.new()
+	ctx.start(HashingContext.HASH_SHA256)
+	ctx.update(data)
+	if ctx.finish().hex_encode() != str(_hashes.get(file_name, "")):
+		errors.append("%s/%s: SHA-256 differs from meta.json" % [_dir, file_name])
+		return ""
+	return data.get_string_from_utf8()
+
+
 ## True when meta.json lists `file_name` (optional layers may be absent).
 func has_layer(file_name: String) -> bool:
 	return _hashes.has(file_name)

@@ -11,6 +11,7 @@ from types import SimpleNamespace
 import numpy as np
 
 from . import derive, files
+from . import water as water_io
 from .grid import Grid
 
 SKETCH = {
@@ -30,9 +31,7 @@ def heights():
     """A smooth made-up field: a slope, a hill and a valley, 129 x 129 samples."""
     n = SKETCH["size_m"] // SKETCH["sample_m"] + 1
     x, z = np.meshgrid(np.arange(n) * 2.0, np.arange(n) * 2.0)
-    hill = 30.0 * np.exp(-((x - 170.0) ** 2 + (z - 90.0) ** 2) / (2 * 35.0**2))
-    valley = -6.0 * np.exp(-((x - 70.0) ** 2) / (2 * 15.0**2))
-    return 12.0 + 0.05 * x + 0.02 * z + hill + valley + 0.7 * np.sin(x / 9.0) * np.cos(z / 13.0)
+    return heights_at(x, z)
 
 
 def biomes():
@@ -46,6 +45,28 @@ def biomes():
     return ids
 
 
+def water():
+    """A small lake and a stream in the valley (map coordinates). The stream
+    runs downhill (decreasing z), its level 0.3 m above the valley floor."""
+    t = np.linspace(0.0, 2.0 * np.pi, 24, endpoint=False)
+    lake = [[round(70.0 + 9.0 * np.cos(a), 3), round(40.0 + 14.0 * np.sin(a), 3)] for a in t]
+    zs = np.arange(230.0, 119.0, -5.0)
+    centre = [[70.0, float(z)] for z in zs]
+    floor = heights_at(np.full(zs.shape, 70.0), zs)
+    level = np.minimum.accumulate(floor + 0.3)
+    return {
+        "sea_level_y": SKETCH["sea_level_y"],
+        "lakes": [{"id": "pond", "level": 11.0, "polygon": lake}],
+        "rivers": [{"id": "brook", "kind": "stream", "centre": centre, "level": [round(float(v), 3) for v in level], "width": [2.0] * len(centre)}],
+    }
+
+
+def heights_at(x, z):
+    hill = 30.0 * np.exp(-((x - 170.0) ** 2 + (z - 90.0) ** 2) / (2 * 35.0**2))
+    valley = -6.0 * np.exp(-((x - 70.0) ** 2) / (2 * 15.0**2))
+    return 12.0 + 0.05 * x + 0.02 * z + hill + valley + 0.7 * np.sin(x / 9.0) * np.cos(z / 13.0)
+
+
 def write(out):
     os.makedirs(out, exist_ok=True)
     h = heights()
@@ -56,6 +77,7 @@ def write(out):
         "biome.bin": files.compress(biomes().tobytes()),
         "minmax.bin": files.compress(derive.minmax_bytes(ctx, encoded)),
         "normal.bin": files.compress(derive.normal_bytes(ctx)),
+        "water.json": water_io.dumps(water()).encode("ascii"),
     }
     hashes = {name: files.write(os.path.join(out, name), blob) for name, blob in data.items()}
     files.write(os.path.join(out, "meta.json"), files.meta_text(files.meta(SKETCH, hashes)).encode("ascii"))
