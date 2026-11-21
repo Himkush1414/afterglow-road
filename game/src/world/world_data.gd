@@ -107,6 +107,11 @@ func sample(i: int, j: int) -> float:
 	return _heights.decode_u16((j * samples + i) * 2) * _height_scale - _height_offset
 
 
+## Height of a u16 height code (height.bin, minmax.bin).
+func height_of_code(code: int) -> float:
+	return code * _height_scale - _height_offset
+
+
 ## Terrain height at engine (x, z), on the triangles of the heightmap
 ## collision: each 2 m cell is split along the diagonal from (1, 0) to (0, 1).
 func height_at(x: float, z: float) -> float:
