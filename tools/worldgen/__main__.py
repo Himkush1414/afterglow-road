@@ -164,6 +164,14 @@ def generate(args):
         for (tid, k), (want, have) in node_plan.items():
             counts[f"{tid}#{k + 1}"] = (want, have)
         objs += node_objs
+        from . import cliffs
+
+        faces, steep, covered = cliffs.place_faces(ctx, gd, node_objs)
+        objs += [("cliff", v, x, z, yaw, pitch) for v, x, z, yaw, pitch, _ in faces]
+        missing = cliffs.uncovered(steep, covered)
+        bad += missing > 0
+        carriers = sum(1 for f in faces if f[5] == "carrier")
+        tree_lines.append(f"  cliffs: {len(faces)} faces ({carriers} carrying veins/seams), {int(steep.sum())} steep texels, uncovered {missing}{'  FAIL' if missing else ''}")
         for name, (want, have) in sorted(counts.items()):
             off = abs(have - want) > max(1, 0.02 * want)
             bad += off

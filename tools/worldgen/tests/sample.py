@@ -104,6 +104,7 @@ SAMPLE = {
         },
     },
     "erosion": {"iterations": 30, "talus_deg": 38.0},
+    "cliffs": {"min_slope_deg": 50, "min_extent_m": 6, "face_m": [8, 6], "variants": ["face_a", "face_b"], "carry": ["iron_vein", "coal_seam"]},
     "nodes": [
         {"id": "boulder", "rules": [{"kind": "area", "biomes": ["hills", "high"], "river_beds": True, "count": 200}]},
         {"id": "limestone_outcrop", "rules": [{"kind": "cut_face", "cut": "quarry", "count": 10}, {"kind": "area", "biomes": ["high", "hills"], "x_min": 800, "facing": "south", "count": 20}]},
