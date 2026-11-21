@@ -35,7 +35,7 @@ def check_dir(path, sk):
     want = set(sizes) | {"macro.png", "water.json", "roads.json"}
     trees = "trees/index.json" in meta.get("sha256", {})
     if trees:  # optional until every world places trees
-        want |= {"trees/index.json"}
+        want |= {"trees/index.json", "regions/index.json"}
     if set(meta.get("sha256", {})) != want:
         errors.append(f"meta.json: files {sorted(set(meta.get('sha256', {})) ^ want)} differ")
     for name in sorted(want):
@@ -65,6 +65,10 @@ def check_dir(path, sk):
             from . import placement
 
             errors.extend(placement.check_tree_files(path))
+        elif name == "regions/index.json":
+            from . import objects
+
+            errors.extend(objects.check_region_files(path))
         else:
             doc = json.loads(data)
             if name == "water.json" and set(doc) != {"sea_level_y", "lakes", "rivers"}:
