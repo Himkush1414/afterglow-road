@@ -10,6 +10,7 @@ const LAKE := &"lake"
 ## Size of the lookup cells for river segments, metres.
 const CELL_M := 64.0
 const SHADER := "res://shaders/water.gdshader"
+const SHADER_DESKTOP := "res://shaders/water_desktop.gdshader"
 ## Sea near grid (05 §7): QUADS x QUADS over GRID_M, snapped to the camera,
 ## and a ring around it out to FAR_M.
 const SEA_GRID_M := 512.0
@@ -218,9 +219,18 @@ func _index_river(index: int) -> void:
 				_cells[key].append([index, i])
 
 
+## Desktop path (refraction, waves): not on the Mobile renderer, and only
+## when the applied quality preset allows refraction.
+static func uses_desktop_path() -> bool:
+	if RenderingServer.get_current_rendering_method() == "mobile":
+		return false
+	var refraction: Variant = Quality.value("water_refraction")
+	return refraction == null or bool(refraction)
+
+
 func _material(ground: Texture2D, cfg: Dictionary, flowing: bool) -> ShaderMaterial:
 	var m := ShaderMaterial.new()
-	m.shader = load(SHADER)
+	m.shader = load(SHADER_DESKTOP if uses_desktop_path() else SHADER)
 	m.set_shader_parameter("ground_tex", ground)
 	m.set_shader_parameter("origin_offset", _world.origin_offset_m)
 	m.set_shader_parameter("sample_m", _world.sample_m)
@@ -233,6 +243,8 @@ func _material(ground: Texture2D, cfg: Dictionary, flowing: bool) -> ShaderMater
 		m.set_shader_parameter(key, float(cfg.get(key, 1.0)))
 	m.set_shader_parameter("roughness_value", float(cfg.get("roughness", 0.1)))
 	m.set_shader_parameter("flowing", flowing)
+	m.set_shader_parameter("wave_amplitude_m", float(cfg.get("wave_amplitude_m", 0.0)))
+	m.set_shader_parameter("wave_range_m", float(cfg.get("wave_range_m", 0.0)))
 	m.set_shader_parameter("normal_a", _normal_texture(1))
 	m.set_shader_parameter("normal_b", _normal_texture(2))
 	return m

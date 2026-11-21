@@ -213,3 +213,13 @@ func _ribbon_centre(v: Vector3) -> Vector3:
 				best = d
 				out = _world.map_to_world(Vector3(p.x, v.y, p.y))
 	return Vector3(out.x, v.y, out.z)
+
+
+func test_the_desktop_path_follows_the_preset() -> void:
+	var saved := Quality.current
+	Quality.current = {"water_refraction": false}
+	check(not Water.uses_desktop_path(), "refraction off in the preset: phone path")
+	Quality.current = {"water_refraction": true}
+	var mobile := RenderingServer.get_current_rendering_method() == "mobile"
+	check_eq(Water.uses_desktop_path(), not mobile, "refraction on: desktop path unless Mobile")
+	Quality.current = saved

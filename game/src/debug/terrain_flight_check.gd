@@ -10,6 +10,8 @@ extends Node3D
 ## Prints one line per frame, then RESULT PASS or FAIL (exit code 0 or 1).
 ## --biomes: instead of the flight, one ground-level view per biome, from the
 ## cell with the most cells of the same biome around it (review frames).
+## --water: review views of each lake, river and the sea with the water
+## drawn under a plain sky; no hole verdict (RESULT REVIEW).
 
 const CLEAR := Color(1.0, 0.0, 1.0)
 const SETTLE_FRAMES := 3
@@ -54,10 +56,23 @@ func _run() -> void:
 	cam.far = 12000.0
 	add_child(cam)
 	cam.make_current()
-	_add_light_and_clear()
+	var review_water := "--water" in args
+	_add_light_and_clear(review_water)
 	var poses: Array[Transform3D] = []
 	var labels: Array[String] = []
-	if "--biomes" in args:
+	if review_water:
+		var water := Water.new()
+		add_child(water)
+		if not water.setup(world):
+			printerr("terrain check: %s" % ", ".join(water.errors))
+			get_tree().quit(2)
+			return
+		water.build(terrain.height_texture())
+		var views := water_views(world, water)
+		for label: String in views:
+			poses.append(views[label])
+			labels.append(label)
+	elif "--biomes" in args:
 		var views := biome_views(world)
 		for id: int in views:
 			poses.append(views[id])
@@ -85,13 +100,9 @@ func _run() -> void:
 		)
 		if out != "":
 			img.save_png(out.path_join("terrain_%s_%s.png" % [method, labels[i]]))
-	print(
-		(
-			"RESULT %s (%s, %d frames, %d pixels)"
-			% ["PASS" if total == 0 else "FAIL", method, poses.size(), total]
-		)
-	)
-	get_tree().quit(0 if total == 0 else 1)
+	var verdict := "REVIEW" if review_water else ("PASS" if total == 0 else "FAIL")
+	print("RESULT %s (%s, %d frames, %d pixels)" % [verdict, method, poses.size(), total])
+	get_tree().quit(0 if verdict != "FAIL" else 1)
 
 
 ## One camera pose per biome id present: at the scanned cell with the most
@@ -139,14 +150,56 @@ static func count_holes(img: Image) -> int:
 	return holes
 
 
-func _add_light_and_clear() -> void:
+## Review poses over each water body, 3 m above the surface: across each
+## lake from its middle, down each river from its middle, and out to sea
+## from the last river point (a mouth).
+static func water_views(world: WorldData, water: Water) -> Dictionary:
+	var out := {}
+	var pitch := deg_to_rad(15.0)
+	for lake: Dictionary in water.lakes():
+		var poly: PackedVector2Array = lake.polygon
+		var c := Vector2.ZERO
+		for v in poly:
+			c += v
+		c /= poly.size()
+		out["lake_%s" % lake.id] = _view(world, c, poly[0] - c, lake.level + 3.0, pitch)
+	for r: Dictionary in water.rivers():
+		var centre: PackedVector2Array = r.centre
+		var level: PackedFloat32Array = r.level
+		var i := centre.size() / 2
+		out["river_%s" % r.id] = _view(
+			world, centre[i], centre[i + 1] - centre[i], level[i] + 3.0, pitch
+		)
+	if not water.rivers().is_empty():
+		var c: PackedVector2Array = water.rivers()[-1].centre
+		var n := c.size()
+		out["sea"] = _view(world, c[n - 1], c[n - 1] - c[n - 2], water.sea_level + 6.0, pitch)
+	return out
+
+
+static func _view(
+	world: WorldData, map_xz: Vector2, dir: Vector2, y: float, pitch: float
+) -> Transform3D:
+	var p := world.map_to_world(Vector3(map_xz.x, 0.0, map_xz.y))
+	p.y = maxf(y, world.height_at(p.x, p.z) + 2.0)
+	var d := dir.normalized()
+	var forward := Vector3(d.x * cos(pitch), -sin(pitch), d.y * cos(pitch))
+	return Transform3D(Basis.looking_at(forward, Vector3.UP), p)
+
+
+func _add_light_and_clear(sky: bool = false) -> void:
 	var sun := DirectionalLight3D.new()
 	sun.rotation_degrees = Vector3(-35.0, -60.0, 0.0)
 	add_child(sun)
 	var env := WorldEnvironment.new()
 	env.environment = Environment.new()
-	env.environment.background_mode = Environment.BG_COLOR
-	env.environment.background_color = CLEAR
+	if sky:
+		env.environment.background_mode = Environment.BG_SKY
+		env.environment.sky = Sky.new()
+		env.environment.sky.sky_material = ProceduralSkyMaterial.new()
+	else:
+		env.environment.background_mode = Environment.BG_COLOR
+		env.environment.background_color = CLEAR
 	env.environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.environment.ambient_light_color = Color(0.5, 0.55, 0.6)
 	add_child(env)
