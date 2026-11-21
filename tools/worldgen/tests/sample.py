@@ -51,12 +51,12 @@ SAMPLE = {
     "biomes": [
         {"id": 0, "name": "sea", "rule": {"height_below": 0, "not_water": True}},
         {"id": 1, "name": "beach", "rule": {"any": [{"height_between": [0, 2.5], "near_sea_m": 60}, {"near_lake_edge_m": 12}]}},
-        {"id": 7, "name": "high", "rule": {"height_above": 250}},
-        {"id": 6, "name": "hills", "rule": {"any": [{"bumps_above": {"ids": ["big"], "m": 100}}, {"slope_above_deg": 32}]}},
-        {"id": 4, "name": "wet", "rule": {"any": [{"near_point": {"x": 1800, "z": 1800, "m": 150}}, {"near_water_m": 40, "slope_below_deg": 3}]}},
+        {"id": 7, "name": "high", "rule": {"height_above": 250}, "trees": {"pine": 15}, "tree_limits": {"full_below": 300, "none_above": 340}},
+        {"id": 6, "name": "hills", "rule": {"any": [{"bumps_above": {"ids": ["big"], "m": 100}}, {"slope_above_deg": 32}]}, "trees": {"pine": 25, "birch": 15}},
+        {"id": 4, "name": "wet", "rule": {"any": [{"near_point": {"x": 1800, "z": 1800, "m": 150}}, {"near_water_m": 40, "slope_below_deg": 3}]}, "trees": {"willow": 45}, "stunted": True},
         {"id": 9, "name": "town", "rule": {"near_pois": {"village": 100}}},
-        {"id": 3, "name": "field", "rule": {"rects": [[100, 1500, 600, 1800]]}},
-        {"id": 2, "name": "forest", "rule": {}},
+        {"id": 3, "name": "field", "rule": {"rects": [[100, 1500, 600, 1800]]}, "trees": {"mixed": 8}},
+        {"id": 2, "name": "forest", "rule": {}, "trees": {"oak": 56, "pine": 56, "willow": 14}},
     ],
     "noise": {
         "octaves": 5,
@@ -104,6 +104,14 @@ SAMPLE = {
         },
     },
     "erosion": {"iterations": 30, "talus_deg": 38.0},
+    "placement": {
+        "tree_radius_factor": 1.2,
+        "max_slope_deg": 40,
+        "size_mix": {"young": 0.3, "mature": 0.55, "old": 0.15},
+        "snag": 0.03,
+        "fallen_log": 0.04,
+        "forest_biomes": ["forest"],
+    },
     "scarp": {"edges": ["north", "east"], "band_m": 200.0, "height_m": 160.0, "full_at_m": 110.0, "noise_free_m": 64.0},
 }
 
