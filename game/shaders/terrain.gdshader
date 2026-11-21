@@ -1,10 +1,12 @@
 shader_type spatial;
-render_mode world_vertex_coords;
+render_mode world_vertex_coords, cull_disabled;
 // Terrain patch (05 §5). Every instance has the identity transform; the patch
 // is placed from INSTANCE_CUSTOM = (corner x, corner z, size, level + 0.5 when
 // drawn as a quadrant). Positions are formed in whole-sample units, so
 // vertices shared by two patches are bit-identical. The morph uses the eye
 // and lift of the last selection (not the live camera), like the selection.
+// Culling is off: at grazing angles vertex snapping can flip a sliver
+// triangle's screen winding, and culling it left pinholes at crests.
 
 uniform sampler2D height_tex : filter_nearest, repeat_disable;
 uniform sampler2D normal_tex : filter_linear, repeat_disable;
