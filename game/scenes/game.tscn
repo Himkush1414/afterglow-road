@@ -4,6 +4,7 @@
 [ext_resource type="Script" path="res://src/sky/game_clock.gd" id="2"]
 [ext_resource type="PackedScene" path="res://ui/pause_menu.tscn" id="3"]
 [ext_resource type="Script" path="res://src/world/world_data.gd" id="4"]
+[ext_resource type="Script" path="res://src/world/terrain.gd" id="5"]
 
 [node name="Game" type="Node3D"]
 script = ExtResource("1")
@@ -13,6 +14,9 @@ script = ExtResource("2")
 
 [node name="WorldData" type="Node" parent="."]
 script = ExtResource("4")
+
+[node name="Terrain" type="Node3D" parent="."]
+script = ExtResource("5")
 
 [node name="Players" type="Node3D" parent="."]
 
