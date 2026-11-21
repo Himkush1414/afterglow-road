@@ -194,3 +194,18 @@ class SpecialRulesTest(unittest.TestCase):
         expect = placement.expected_counts(self.sk, self.gd)
         for bid, sp, want, have in placement.count_report(self.rec, expect, self.table):
             self.assertLessEqual(abs(have - want), max(1, 0.02 * want), (bid, sp, want, have))
+
+
+class TreeCoverTest(unittest.TestCase):
+    def test_cover_counts_canopy_cells(self):
+        rec = {"model": np.array([0, 1]), "x": np.array([10.0, 41.0]), "z": np.array([10.0, 41.0])}
+        table = [{"canopy_r_m": 3.2}, {"canopy_r_m": 0.0}]
+        raster = placement.canopy_raster(rec, table, 64.0)
+        # 2 m cells centred on odd metres within 3.2 m of (10, 10): offsets (±1, ±1) and (±3, ±1), (±1, ±3)
+        self.assertEqual(int(raster.sum()), 12)
+        self.assertFalse(raster[20, 20], "a zero canopy covers nothing")
+        a = placement.tree_cover(rec, table, 64.0)
+        self.assertEqual(a.shape, (16, 16))
+        self.assertEqual(int(a[2, 2]), 255, "texel (8-12 m) fully under the canopy")
+        self.assertEqual(int(a[10, 10]), 0)
+        self.assertEqual(int(a[0, 0]), 0, "texel (0-4 m) outside")

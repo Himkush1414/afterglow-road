@@ -131,6 +131,29 @@ def generate(args):
 
     encoded = files.encode_height(ctx.layers["height"], sk)
     mask = derive.mask_rgba(ctx)
+    bad = 0
+    tree_lines = []
+    tree_index = None
+    if args.trees:
+        import numpy as np
+
+        from . import biome, placement
+
+        table = placement.tree_table(args.trees)
+        gd = placement.ground(ctx)
+        rec = placement.place_trees(ctx, table, gd)
+        mask[..., 3] = placement.tree_cover(rec, table, sk["size_m"])
+        tree_index = placement.write_tree_files(rec, args.out)
+        names = biome.names(sk)
+        for bid, sp, want, have in placement.count_report(rec, placement.expected_counts(sk, gd), table):
+            off = abs(have - want) > max(1, 0.02 * want)
+            bad += off
+            flag = "  FAIL" if off else ""
+            tree_lines.append(f"  trees {names[bid]:<18} {sp:<8} expected {want:>7} placed {have:>7}{flag}")
+        rules, counts = np.unique(rec["rule"], return_counts=True)
+        tree_lines.append("  trees by rule: " + ", ".join(f"{r} {c}" for r, c in zip(rules, counts)))
+        tree_lines.append(f"  trees total {rec['model'].size} in {len(json.loads(tree_index)['files'])} chunks")
+        tree_lines.append(f"  tree cover: mean {mask[..., 3].mean() / 255:.3f} of the map")
     out = {
         "height.bin": files.compress(encoded.tobytes()),
         "minmax.bin": files.compress(derive.minmax_bytes(ctx, encoded)),
@@ -141,25 +164,10 @@ def generate(args):
         "water.json": water_io.dumps(water_io.document(sk)).encode("ascii"),
         "roads.json": water_io.dumps(roads_io.document(ctx)).encode("ascii"),
     }
-    bad = 0
-    if args.trees:
-        import numpy as np
-
-        from . import biome, placement
-
-        table = placement.tree_table(args.trees)
-        gd = placement.ground(ctx)
-        rec = placement.place_trees(ctx, table, gd)
-        out["trees/index.json"] = placement.write_tree_files(rec, args.out)
-        names = biome.names(sk)
-        for bid, sp, want, have in placement.count_report(rec, placement.expected_counts(sk, gd), table):
-            off = abs(have - want) > max(1, 0.02 * want)
-            bad += off
-            flag = "  FAIL" if off else ""
-            print(f"  trees {names[bid]:<18} {sp:<8} expected {want:>7} placed {have:>7}{flag}")
-        rules, counts = np.unique(rec["rule"], return_counts=True)
-        print("  trees by rule: " + ", ".join(f"{r} {c}" for r, c in zip(rules, counts)))
-        print(f"  trees total {rec['model'].size} in {len(json.loads(out['trees/index.json'])['files'])} chunks")
+    for line in tree_lines:
+        print(line)
+    if tree_index is not None:
+        out["trees/index.json"] = tree_index
     hashes = {name: files.write(os.path.join(args.out, name), data) for name, data in out.items() if name != "trees/index.json"}
     if "trees/index.json" in out:
         import hashlib
