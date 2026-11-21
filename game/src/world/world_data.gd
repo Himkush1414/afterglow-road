@@ -24,6 +24,8 @@ var _heights := PackedByteArray()
 var _biomes := PackedByteArray()
 var _dir := ""
 var _hashes := {}
+## folder -> its parsed index.json (files with sha256 and count)
+var _indexes := {}
 
 
 ## The world folder of the active content.
@@ -55,6 +57,7 @@ func load_dir(dir: String) -> bool:
 	samples = int(round(size_m / sample_m)) + 1
 	_dir = dir
 	_hashes = m.get("sha256", {})
+	_indexes.clear()
 	var cells := int(round(size_m / BIOME_CELL_M))
 	var heights := read_layer("height.bin", samples * samples * 2)
 	var biomes := read_layer("biome.bin", cells * cells)
@@ -101,6 +104,28 @@ func read_text(file_name: String) -> String:
 	ctx.update(data)
 	if ctx.finish().hex_encode() != str(_hashes.get(file_name, "")):
 		errors.append("%s/%s: SHA-256 differs from meta.json" % [_dir, file_name])
+		return ""
+	return data.get_string_from_utf8()
+
+
+## Text of `file_name` in an indexed folder (trees/, regions/): the folder's
+## index.json is checked against meta.json, the file against the index.
+## Returns "" without an error when the index does not list the file (an
+## empty region), and "" with an error when the index or file is changed.
+func read_indexed(folder: String, file_name: String) -> String:
+	if not _indexes.has(folder):
+		var doc: Variant = JSON.parse_string(read_text(folder + "/index.json"))
+		_indexes[folder] = doc if doc is Dictionary else {}
+	var files: Dictionary = (_indexes[folder] as Dictionary).get("files", {})
+	if not files.has(file_name):
+		return ""
+	var path := "%s/%s/%s" % [_dir, folder, file_name]
+	var data := FileAccess.get_file_as_bytes(path)
+	var ctx := HashingContext.new()
+	ctx.start(HashingContext.HASH_SHA256)
+	ctx.update(data)
+	if data.is_empty() or ctx.finish().hex_encode() != str(files[file_name].get("sha256", "")):
+		errors.append("%s: missing or differs from %s/index.json" % [path, folder])
 		return ""
 	return data.get_string_from_utf8()
 

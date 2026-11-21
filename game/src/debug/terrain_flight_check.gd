@@ -12,6 +12,8 @@ extends Node3D
 ## cell with the most cells of the same biome around it (review frames).
 ## --water: review views of each lake, river and the sea with the water
 ## drawn under a plain sky; no hole verdict (RESULT REVIEW).
+## --cliffs: review views of the three regions with the most cliff faces,
+## regions streamed around the camera (RESULT REVIEW).
 
 const CLEAR := Color(1.0, 0.0, 1.0)
 const SETTLE_FRAMES := 3
@@ -57,10 +59,21 @@ func _run() -> void:
 	add_child(cam)
 	cam.make_current()
 	var review_water := "--water" in args
-	_add_light_and_clear(review_water)
+	var review_cliffs := "--cliffs" in args
+	_add_light_and_clear(review_water or review_cliffs)
+	var streamer: Streamer = null
 	var poses: Array[Transform3D] = []
 	var labels: Array[String] = []
-	if review_water:
+	if review_cliffs:
+		streamer = Streamer.new()
+		add_child(streamer)
+		streamer.setup(world)
+		streamer.track(cam)
+		var views := cliff_views(world)
+		for label: String in views:
+			poses.append(views[label])
+			labels.append(label)
+	elif review_water:
 		var water := Water.new()
 		add_child(water)
 		if not water.setup(world):
@@ -86,21 +99,27 @@ func _run() -> void:
 	var total := 0
 	for i in poses.size():
 		cam.global_transform = poses[i]
+		if streamer != null:
+			for k in 200:
+				streamer.update()
 		for f in SETTLE_FRAMES:
 			await get_tree().process_frame
 		await RenderingServer.frame_post_draw
 		var img := get_viewport().get_texture().get_image()
 		var holes := count_holes(img)
 		total += holes
+		var tris := RenderingServer.get_rendering_info(
+			RenderingServer.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME
+		)
 		print(
 			(
-				"frame %s: %d instances, %d clear pixels under terrain"
-				% [labels[i], terrain.instances, holes]
+				"frame %s: %d instances, %d clear pixels under terrain, %d triangles"
+				% [labels[i], terrain.instances, holes, tris]
 			)
 		)
 		if out != "":
 			img.save_png(out.path_join("terrain_%s_%s.png" % [method, labels[i]]))
-	var verdict := "REVIEW" if review_water else ("PASS" if total == 0 else "FAIL")
+	var verdict := "REVIEW" if review_water or review_cliffs else ("PASS" if total == 0 else "FAIL")
 	print("RESULT %s (%s, %d frames, %d pixels)" % [verdict, method, poses.size(), total])
 	get_tree().quit(0 if verdict != "FAIL" else 1)
 
@@ -174,6 +193,33 @@ static func water_views(world: WorldData, water: Water) -> Dictionary:
 		var c: PackedVector2Array = water.rivers()[-1].centre
 		var n := c.size()
 		out["sea"] = _view(world, c[n - 1], c[n - 1] - c[n - 2], water.sea_level + 6.0, pitch)
+	return out
+
+
+## Review poses facing a cliff face of each of the three regions with the
+## most faces, 40 m downhill of it and 12 m up.
+static func cliff_views(world: WorldData) -> Dictionary:
+	var index: Variant = JSON.parse_string(world.read_text("regions/index.json"))
+	var ranked := []
+	if index is Dictionary:
+		for name: String in index.files:
+			var doc: Variant = JSON.parse_string(world.read_indexed("regions", name))
+			var rows: Array = []
+			for r: Array in ((doc as Dictionary).objects.get("cliff", {}) as Dictionary).values():
+				rows.append_array(r)
+			if not rows.is_empty():
+				ranked.append([rows.size(), name, rows[rows.size() / 2]])
+	ranked.sort_custom(func(a: Array, b: Array) -> bool: return a[0] > b[0])
+	var out := {}
+	for entry: Array in ranked.slice(0, 3):
+		var row: Array = entry[2]
+		var target := world.map_to_world(Vector3(row[1], row[2], row[3]))
+		var yaw := deg_to_rad(float(row[4]))
+		var down := Vector3(sin(yaw), 0.0, -cos(yaw))
+		var eye := target + down * 40.0
+		eye.y = maxf(world.height_at(eye.x, eye.z), target.y) + 12.0
+		var label := "cliffs_%s" % str(entry[1]).trim_suffix(".json")
+		out[label] = Transform3D(Basis.looking_at(target - eye, Vector3.UP), eye)
 	return out
 
 

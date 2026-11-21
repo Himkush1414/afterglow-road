@@ -28,7 +28,7 @@ class SampleWorldTest(unittest.TestCase):
     def test_committed_sample_world_is_reproduced(self):
         with tempfile.TemporaryDirectory() as d:
             sample_world.write(d)
-            for name in ("meta.json", "height.bin", "biome.bin", "minmax.bin", "normal.bin", "water.json", "trees/index.json", "trees/0_0.bin", "trees/1_1.bin", "height_points.json"):
+            for name in ("meta.json", "height.bin", "biome.bin", "minmax.bin", "normal.bin", "water.json", "trees/index.json", "trees/0_0.bin", "trees/1_1.bin", "regions/index.json", "regions/0_0.json", "height_points.json"):
                 with open(os.path.join(d, name), "rb") as a, open(os.path.join(ROOT, "game/content_sample/world", name), "rb") as b:
                     self.assertEqual(a.read(), b.read(), name)
 

@@ -112,7 +112,7 @@ func _request(r: Vector2i) -> void:
 	_kept.erase(r)
 	if delta.is_empty() and SaveGame.active_slot != "":
 		delta = SaveGame.load_region(SaveGame.active_slot, r)
-	region.begin_load(delta)
+	region.begin_load(delta, _world, RockKit.shared())
 	_regions[r] = region
 	_queue.append(r)
 
