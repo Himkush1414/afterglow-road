@@ -50,7 +50,7 @@ def face_mesh(bm, spec, rnd):
             ey = min(j, ny - j) / (ny / 2)
             edge = min(ex, ey)
             bump = fbm(Vector((x * 0.35, y * 0.35, 0.0)) + off) * relief
-            z = bump * min(1.0, edge * 3.0) - (1.0 - min(1.0, edge * 4.0)) * relief  # edges recede
+            z = bump * min(1.0, edge * 3.0) - (1.0 - min(1.0, edge * 4.0)) * relief * spec.get("edge_sink", 1.0)  # edges recede
             row.append(bm.verts.new((x, y, z)))
         verts.append(row)
     for j in range(ny):
