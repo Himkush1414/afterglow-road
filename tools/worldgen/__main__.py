@@ -21,6 +21,9 @@
       Runs every stage on the full map and writes the world files of 04 §2
       into DIR (those implemented so far) plus meta.json with their SHA-256.
       --layer-colours: far colours from a painted-texture manifest (mean albedo).
+      --trees: the tree table (the game's trees.json): places trees (stage 14a),
+      writes trees/<cx>_<cz>.bin and trees/index.json and reports the counts per
+      biome and species (exit 1 when one is more than 2 % off).
 
   python3 -m tools.worldgen check-files --sketch S.json --dir DIR
       Checks every world file in DIR against its format and its hash in
@@ -138,7 +141,26 @@ def generate(args):
         "water.json": water_io.dumps(water_io.document(sk)).encode("ascii"),
         "roads.json": water_io.dumps(roads_io.document(ctx)).encode("ascii"),
     }
-    hashes = {name: files.write(os.path.join(args.out, name), data) for name, data in out.items()}
+    bad = 0
+    if args.trees:
+        from . import biome, placement
+
+        table = placement.tree_table(args.trees)
+        gd = placement.ground(ctx)
+        rec = placement.place_trees(ctx, table, gd)
+        out["trees/index.json"] = placement.write_tree_files(rec, args.out)
+        names = biome.names(sk)
+        for bid, sp, want, have in placement.count_report(rec, placement.expected_counts(sk, gd), table):
+            off = abs(have - want) > max(1, 0.02 * want)
+            bad += off
+            flag = "  FAIL" if off else ""
+            print(f"  trees {names[bid]:<18} {sp:<8} expected {want:>7} placed {have:>7}{flag}")
+        print(f"  trees total {rec['model'].size} in {len(json.loads(out['trees/index.json'])['files'])} chunks")
+    hashes = {name: files.write(os.path.join(args.out, name), data) for name, data in out.items() if name != "trees/index.json"}
+    if "trees/index.json" in out:
+        import hashlib
+
+        hashes["trees/index.json"] = hashlib.sha256(out["trees/index.json"]).hexdigest()
     files.write(os.path.join(args.out, "meta.json"), files.meta_text(files.meta(sk, hashes)).encode("ascii"))
     # check fixture for the engine (T-05-2), not a world file
     points = files.height_points(ctx.layers["height"], sk)
@@ -146,7 +168,9 @@ def generate(args):
     for name in sorted(hashes):
         print(f"  {name:<12} {len(out[name]):>10} bytes  sha256 {hashes[name]}")
     print(f"GENERATE: wrote {len(hashes) + 1} files to {args.out}")
-    return 0
+    if bad:
+        print(f"PLACEMENT CHECK: FAIL ({bad} counts more than 2 % off)")
+    return 1 if bad else 0
 
 
 def check_files(args):
@@ -183,6 +207,7 @@ def main(argv=None):
     gen.add_argument("--buildings")
     gen.add_argument("--out", required=True)
     gen.add_argument("--layer-colours")
+    gen.add_argument("--trees")
     cf = sub.add_parser("check-files", help="check written world files against their formats")
     cf.add_argument("--sketch", required=True)
     cf.add_argument("--dir", required=True)

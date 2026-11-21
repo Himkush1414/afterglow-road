@@ -106,3 +106,32 @@ class PlacementTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ChunkFileTest(unittest.TestCase):
+    def test_records_round_trip_and_files_check(self):
+        import os
+        import tempfile
+
+        rec = {
+            "model": np.array([3, 0, 7], dtype=np.uint8),
+            "x": np.array([5.25, 130.0, 255.998]),
+            "z": np.array([1.0, 2.5, 127.9]),
+            "yaw": np.array([0, 128, 255], dtype=np.uint8),
+            "scale": np.array([10, 20, 30], dtype=np.uint8),
+        }
+        chunks = placement.chunk_records(rec)
+        self.assertEqual(sorted(chunks), [(0, 0), (1, 0)])
+        a = placement.decode_chunk(chunks[(0, 0)])
+        self.assertEqual(a["m"].tolist(), [3])
+        self.assertEqual(a["x"][0], int(5.25 * 512))
+        b = placement.decode_chunk(chunks[(1, 0)])
+        self.assertEqual(b["m"].tolist(), [0, 7])
+        self.assertEqual(b["x"].tolist(), [int(2.0 * 512), 65535])  # clamped at the chunk's far edge
+        self.assertEqual(b["yaw"].tolist(), [128, 255])
+        with tempfile.TemporaryDirectory() as d:
+            placement.write_tree_files(rec, d)
+            self.assertEqual(placement.check_tree_files(d), [])
+            with open(os.path.join(d, "trees", "1_0.bin"), "ab") as f:
+                f.write(b"x")
+            self.assertTrue(placement.check_tree_files(d), "a changed chunk is reported")

@@ -3,6 +3,7 @@ engine's world tests run without private content:
 
   python3 -m tools.worldgen.sample_world game/content_sample/world
 """
+import hashlib
 import json
 import os
 import sys
@@ -10,7 +11,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from . import derive, files
+from . import derive, files, placement
 from . import water as water_io
 from .grid import Grid
 
@@ -61,6 +62,18 @@ def water():
     }
 
 
+def trees():
+    """Three trees of the sample's one tree model, two in chunk (0, 0) and one
+    in chunk (1, 1), for the engine's chunk-file test."""
+    return {
+        "model": np.array([0, 0, 0], dtype=np.uint8),
+        "x": np.array([20.0, 64.5, 200.25]),
+        "z": np.array([30.0, 100.0, 140.75]),
+        "yaw": np.array([0, 64, 200], dtype=np.uint8),
+        "scale": np.array([0, 128, 255], dtype=np.uint8),
+    }
+
+
 def heights_at(x, z):
     hill = 30.0 * np.exp(-((x - 170.0) ** 2 + (z - 90.0) ** 2) / (2 * 35.0**2))
     valley = -6.0 * np.exp(-((x - 70.0) ** 2) / (2 * 15.0**2))
@@ -80,6 +93,7 @@ def write(out):
         "water.json": water_io.dumps(water()).encode("ascii"),
     }
     hashes = {name: files.write(os.path.join(out, name), blob) for name, blob in data.items()}
+    hashes["trees/index.json"] = hashlib.sha256(placement.write_tree_files(trees(), out)).hexdigest()
     files.write(os.path.join(out, "meta.json"), files.meta_text(files.meta(SKETCH, hashes)).encode("ascii"))
     points = files.height_points(h, SKETCH)
     files.write(os.path.join(out, "height_points.json"), (json.dumps(points) + "\n").encode("ascii"))
