@@ -543,3 +543,36 @@ def check_tree_files(out_dir):
         elif len(files.decompress(data)) != e["count"] * doc["record_bytes"]:
             errors.append(f"trees/{name}: size differs from its count")
     return errors
+
+
+def canopy_raster(rec, table, size_m, sample_m=2.0):
+    """Boolean raster on sample_m cells (rows north to south): a cell is
+    covered when its centre lies within a tree's canopy radius."""
+    n = int(round(size_m / sample_m))
+    out = np.zeros((n, n), dtype=bool)
+    radius = np.array([float(r["canopy_r_m"]) for r in table])
+    for model in np.unique(rec["model"]):
+        r = radius[model]
+        if r <= 0:
+            continue
+        sel = rec["model"] == model
+        x, z = rec["x"][sel], rec["z"][sel]
+        i0 = np.floor(x / sample_m).astype(int)
+        j0 = np.floor(z / sample_m).astype(int)
+        k = int(math.ceil(r / sample_m)) + 1
+        for dj in range(-k, k + 1):
+            for di in range(-k, k + 1):
+                i, j = i0 + di, j0 + dj
+                inside = ((i + 0.5) * sample_m - x) ** 2 + ((j + 0.5) * sample_m - z) ** 2 <= r * r
+                inside &= (i >= 0) & (j >= 0) & (i < n) & (j < n)
+                out[j[inside], i[inside]] = True
+    return out
+
+
+def tree_cover(rec, table, size_m, cell_m=CELL_M, sample_m=2.0):
+    """Mask channel A (04 §2): the covered share of each cell_m texel, 0-255."""
+    cover = canopy_raster(rec, table, size_m, sample_m).astype(np.float64)
+    k = int(round(cell_m / sample_m))
+    n = cover.shape[0] // k
+    share = cover[: n * k, : n * k].reshape(n, k, n, k).mean(axis=(1, 3))
+    return np.floor(share * 255.0 + 0.5).astype(np.uint8)
