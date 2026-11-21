@@ -145,6 +145,21 @@ def minmax_bytes(ctx, encoded):
     return b"".join(parts)
 
 
+def apply_layer_colours(sk, manifest):
+    """Takes the far-distance layer colours from a painted-texture manifest
+    (tools.assetgen.paint): each material's mean albedo replaces the colour of
+    the macro layer of the same name, and the colours stop being placeholders.
+    Raises ValueError when the manifest misses a layer the sketch uses."""
+    cfg = sk["derive"]["macro"]
+    colours = {m["name"]: m["mean_albedo"] for m in manifest["materials"]}
+    missing = sorted(set(cfg["layers"]) - set(colours))
+    if missing:
+        raise ValueError(f"layer colours: the manifest has no {', '.join(missing)}")
+    cfg["layers"] = {name: [int(c) for c in colours[name]] for name in cfg["layers"]}
+    cfg["placeholder"] = False
+    return cfg["layers"]
+
+
 def macro_rgb(ctx, mask, cell_m=4.0):
     """Far-distance ground colour per texel (rows, cols, 3) by the shader's
     layer rules: the biome's layer, scree/rock by slope, wetness blending to

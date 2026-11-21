@@ -17,9 +17,10 @@
       lot is flat, and buildings left unplaced, on a way, or without a layout.
       Exit 1 on any failure or a place without a track.
 
-  python3 -m tools.worldgen generate --sketch S.json --pois P.csv --buildings B.csv --out DIR
+  python3 -m tools.worldgen generate --sketch S.json --pois P.csv --buildings B.csv --out DIR [--layer-colours M.json]
       Runs every stage on the full map and writes the world files of 04 §2
       into DIR (those implemented so far) plus meta.json with their SHA-256.
+      --layer-colours: far colours from a painted-texture manifest (mean albedo).
 
   python3 -m tools.worldgen check-files --sketch S.json --dir DIR
       Checks every world file in DIR against its format and its hash in
@@ -116,6 +117,11 @@ def generate(args):
     from . import files
 
     sk = sketch_io.load(args.sketch, args.pois, args.buildings)
+    if args.layer_colours:
+        from . import derive as derive_mod
+
+        with open(args.layer_colours, encoding="utf-8") as f:
+            derive_mod.apply_layer_colours(sk, json.load(f))
     ctx = run(sk, Grid.full(sk["size_m"], float(sk["sample_m"])), sk["world_seed"])
     os.makedirs(args.out, exist_ok=True)
     from . import derive
@@ -176,6 +182,7 @@ def main(argv=None):
     gen.add_argument("--pois", required=True)
     gen.add_argument("--buildings")
     gen.add_argument("--out", required=True)
+    gen.add_argument("--layer-colours")
     cf = sub.add_parser("check-files", help="check written world files against their formats")
     cf.add_argument("--sketch", required=True)
     cf.add_argument("--dir", required=True)

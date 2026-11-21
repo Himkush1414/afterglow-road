@@ -181,6 +181,19 @@ class MacroTest(unittest.TestCase):
             if sel.any():
                 np.testing.assert_array_equal(rgb[sel], np.tile(layers[cfg["biome_layer"][name]], (int(sel.sum()), 1)), name)
 
+    def test_layer_colours_from_a_manifest(self):
+        import copy
+
+        sk = copy.deepcopy(self.sk)
+        names = list(sk["derive"]["macro"]["layers"])
+        manifest = {"materials": [{"name": n, "mean_albedo": [i, 2 * i, 3 * i]} for i, n in enumerate(names)] + [{"name": "unused", "mean_albedo": [1, 1, 1]}]}
+        layers = derive.apply_layer_colours(sk, manifest)
+        self.assertEqual(layers, {n: [i, 2 * i, 3 * i] for i, n in enumerate(names)})
+        self.assertFalse(sk["derive"]["macro"]["placeholder"])
+        manifest["materials"] = manifest["materials"][1:]
+        with self.assertRaises(ValueError):
+            derive.apply_layer_colours(copy.deepcopy(self.sk), manifest)
+
     def test_png(self):
         import io
 
