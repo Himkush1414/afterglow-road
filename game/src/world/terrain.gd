@@ -232,6 +232,11 @@ static func _texture(px: int, format: int, data: PackedByteArray) -> ImageTextur
 	return ImageTexture.create_from_image(Image.create_from_data(px, px, false, format, data))
 
 
+## The terrain height texture (RG8 codes) shared with the water shader.
+func height_texture() -> Texture2D:
+	return _material.get_shader_parameter("height_tex")
+
+
 ## The node that draws the patches (null before setup).
 func draw_node() -> MultiMeshInstance3D:
 	return _draw

@@ -147,3 +147,69 @@ func test_the_game_sets_up_its_water() -> void:
 	var game := Game.current
 	if check(game != null, "game scene running"):
 		check(not game.water.rivers().is_empty(), "water loaded in the game")
+
+
+func test_build_makes_sea_lake_and_river_surfaces() -> void:
+	for dir: String in [WorldData.default_dir(), ContentDB.SAMPLE_ROOT + "/world"]:
+		if not _load(dir):
+			continue
+		_water.build(ImageTexture.new())
+		check_eq(_water.sea.get_child_count(), 2, "sea grid and far ring")
+		check_eq(_water.lake_meshes.size(), _water.lakes().size(), "one mesh per lake")
+		check(_water.river_meshes.size() >= _water.rivers().size(), "river pieces")
+		var cfg := ContentDB.tuning("water")
+		var off_level := 0
+		var off_ribbon := 0
+		var bad_speed := 0
+		var points := 0
+		for node in _water.river_meshes:
+			var arr := node.mesh.surface_get_arrays(0)
+			var verts: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+			var uv2: PackedVector2Array = arr[Mesh.ARRAY_TEX_UV2]
+			for k in verts.size():
+				points += 1
+				var v := verts[k]
+				# a vertex on the ribbon edge: just inside it the water is at that level
+				var inward := _water.surface_y(v.lerp(_ribbon_centre(v), 0.05))
+				if inward != -INF and absf(inward - v.y) > 0.05:
+					off_level += 1
+				if _water.kind_at(v.lerp(_ribbon_centre(v), 0.05)) == &"":
+					off_ribbon += 1 if inward != -INF else 0
+				var sp := uv2[k].x
+				if sp < cfg.flow_min_mps - 1e-4 or sp > cfg.flow_max_mps + 1e-4:
+					bad_speed += 1
+		check(points > 0, "ribbon vertices")
+		check_eq(off_level, 0, "%s: ribbon edges off the river level" % dir)
+		check_eq(bad_speed, 0, "%s: flow speed outside the range" % dir)
+		var lake: MeshInstance3D = (
+			_water.lake_meshes[0] if not _water.lake_meshes.is_empty() else null
+		)
+		if lake != null:
+			check_near(lake.get_aabb().position.y, _water.lakes()[0].level, 1e-3, "lake mesh level")
+
+
+func test_the_sea_follows_the_camera_in_quad_steps() -> void:
+	if not _load(WorldData.default_dir()):
+		return
+	_water.build(ImageTexture.new())
+	_water.follow(Vector3(1003.0, 50.0, -2005.0))
+	var step := Water.SEA_GRID_M / Water.SEA_GRID_QUADS
+	check_eq(
+		_water.sea.position,
+		Vector3(snappedf(1003.0, step), _water.sea_level, snappedf(-2005.0, step))
+	)
+
+
+## The nearest river centre point to `v` (engine), at v's height.
+func _ribbon_centre(v: Vector3) -> Vector3:
+	var best := INF
+	var out := v
+	var m := _world.world_to_map(v)
+	for r: Dictionary in _water.rivers():
+		var c: PackedVector2Array = r.centre
+		for p in c:
+			var d := Vector2(m.x, m.z).distance_squared_to(p)
+			if d < best:
+				best = d
+				out = _world.map_to_world(Vector3(p.x, v.y, p.y))
+	return Vector3(out.x, v.y, out.z)
