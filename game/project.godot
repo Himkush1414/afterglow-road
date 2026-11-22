@@ -51,3 +51,34 @@ textures/vram_compression/import_etc2_astc=true
 [internationalization]
 
 locale/translations=PackedStringArray("res://ui/i18n/ui.en.translation")
+
+[shader_globals]
+
+cloud_shadow_tex={
+"type": "sampler2D",
+"value": ""
+}
+cloud_shadow_drift={
+"type": "vec2",
+"value": Vector2(0, 0)
+}
+cloud_shadow_wind={
+"type": "vec2",
+"value": Vector2(0, 0)
+}
+cloud_shadow_t0={
+"type": "float",
+"value": 0.0
+}
+cloud_shadow_cover={
+"type": "float",
+"value": 0.0
+}
+cloud_shadow_tile_m={
+"type": "float",
+"value": 2000.0
+}
+cloud_time_rollover_s={
+"type": "float",
+"value": 3600.0
+}

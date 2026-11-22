@@ -7,6 +7,9 @@ render_mode world_vertex_coords, cull_disabled;
 // and lift of the last selection (not the live camera), like the selection.
 // Culling is off: at grazing angles vertex snapping can flip a sliver
 // triangle's screen winding, and culling it left pinholes at crests.
+// Lighting is the shared cloud_direct_light (cloud shadows dim the sun).
+
+#include "res://shaders/common/cloud_shadow.gdshaderinc"
 
 uniform sampler2D height_tex : filter_nearest, repeat_disable;
 uniform sampler2D normal_tex : filter_linear, repeat_disable;
@@ -196,4 +199,10 @@ void fragment() {
 	ROUGHNESS = mix(rough, wet_roughness, wetness);
 	AO = ao;
 	NORMAL = normalize((VIEW_MATRIX * vec4(nw, 0.0)).xyz);
+}
+
+
+void light() {
+	cloud_direct_light(v_pos, NORMAL, VIEW, LIGHT, LIGHT_COLOR, ATTENUATION, LIGHT_IS_DIRECTIONAL,
+			ROUGHNESS, METALLIC, DIFFUSE_LIGHT, SPECULAR_LIGHT);
 }

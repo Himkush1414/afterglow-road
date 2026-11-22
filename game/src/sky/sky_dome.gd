@@ -32,6 +32,8 @@ const KEYS: Array[String] = [
 const NOISE_SIDE := 512
 const CUMULUS_NOISE := [0.008, 5, 11]
 const CIRRUS_NOISE := [0.006, 4, 23]
+## Metres per repeat of the cumulus noise, in the sky and in its shadow.
+const CUMULUS_TILE_M := 2000.0
 
 var errors: PackedStringArray = []
 var material: ShaderMaterial
@@ -92,6 +94,10 @@ func setup(clock: GameClock, lights: SkyLights, radiance_size: int) -> bool:
 	cirrus_texture = noise_texture(CIRRUS_NOISE)
 	material.set_shader_parameter("cumulus_tex", cumulus_texture)
 	material.set_shader_parameter("cirrus_tex", cirrus_texture)
+	material.set_shader_parameter("cumulus_tile_m", CUMULUS_TILE_M)
+	RenderingServer.global_shader_parameter_set("cloud_shadow_tex", cumulus_texture)
+	RenderingServer.global_shader_parameter_set("cloud_shadow_tile_m", CUMULUS_TILE_M)
+	RenderingServer.global_shader_parameter_set("cloud_time_rollover_s", rollover)
 	_drift = Vector2.ZERO
 	_drift_t0 = -1.0
 	_next.clear()
@@ -123,6 +129,10 @@ func show_minute(gmin: int) -> void:
 	_advance_drift(t0)
 	material.set_shader_parameter("cloud_offset", _drift)
 	material.set_shader_parameter("cloud_wind", wind)
+	RenderingServer.global_shader_parameter_set("cloud_shadow_drift", _drift)
+	RenderingServer.global_shader_parameter_set("cloud_shadow_wind", wind)
+	RenderingServer.global_shader_parameter_set("cloud_shadow_t0", t0)
+	RenderingServer.global_shader_parameter_set("cloud_shadow_cover", cloud_cover)
 	material.set_shader_parameter("blend_s", _clock.gmin_real_s() / scale)
 	material.set_shader_parameter("blend_t0", t0)
 	updates += 1
