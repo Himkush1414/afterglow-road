@@ -46,6 +46,8 @@ func _ready() -> void:
 		var size := 128 if radiance == null else int(radiance)
 		if not sky_dome.setup(clock, sky_lights, size, ContentDB.tuning("environment")):
 			Log.error("sky", "; ".join(sky_dome.errors))
+		var forward := RenderingServer.get_current_rendering_method() == "forward_plus"
+		sky_dome.volumetric = forward and Quality.value("volumetric_fog") == true
 	if not world.load_dir(WorldData.default_dir()):
 		Log.error("world", "; ".join(world.errors))
 	else:

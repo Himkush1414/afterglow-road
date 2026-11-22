@@ -51,6 +51,12 @@ var sky: Sky
 var cloud_cover := 0.0
 var cloud_darkness := 0.0
 var wind := Vector2.ZERO
+## Set by the weather: visibility in metres (0 = no fog) and whether the
+## dawn mist may form (clear weather).
+var visibility_m := 0.0
+var mist_allowed := true
+## Volumetric fog on (desktop presets that ask for it, Forward+ only).
+var volumetric := false
 ## The glow band (08 §2.6): the point it leads to (engine coordinates),
 ## whether one is known, and whether the story has ended (the band then
 ## stops at the target and brightens).
@@ -72,6 +78,7 @@ var _shown_gmin := -1
 var _drift := Vector2.ZERO
 var _drift_t0 := -1.0
 var _drift_wind := Vector2.ZERO
+var _env := {}
 var _glow := {}
 var _glow_azimuth := -1000.0
 var _glow_end := -1000.0
@@ -163,9 +170,8 @@ func show_minute(gmin: int) -> void:
 	RenderingServer.global_shader_parameter_set("cloud_shadow_cover", cloud_cover)
 	material.set_shader_parameter("blend_s", _clock.gmin_real_s() / scale)
 	material.set_shader_parameter("blend_t0", t0)
-	environment.ambient_light_energy = float(
-		_ramp.at(_clock.sun_elevation_deg(_hours(gmin))).ambient_energy
-	)
+	environment.ambient_light_energy = float(now.ambient_energy)
+	_apply_fog(now, _hours(gmin))
 	updates += 1
 	if gmin % MEASURE_EVERY_GMIN == 0:
 		_measure_time.call_deferred()
@@ -191,6 +197,7 @@ func values_at(gmin: float) -> Dictionary:
 		"cloud_cover": cloud_cover,
 		"cloud_darkness": cloud_darkness,
 		"glow": glow_strength(e),
+		"ambient_energy": r.ambient_energy,
 	}
 
 
@@ -252,9 +259,66 @@ func _hours(gmin: float) -> float:
 	return fmod(gmin, GameClock.GMIN_PER_DAY) / 60.0
 
 
+## Exponential fog density for a visibility in metres (08 §4.4): `k` over
+## the visibility, so `k` is the optical depth at that distance.
+static func fog_density(visibility: float, k: float) -> float:
+	return k / visibility if visibility > 0.0 else 0.0
+
+
+## How much the fog covers the sky: 0 at clear_m and beyond, 1 at full_m
+## and nearer, falling with the logarithm of the visibility between.
+static func sky_affect(visibility: float, clear_m: float, full_m: float) -> float:
+	if visibility <= 0.0:
+		return 0.0
+	var k := 1.0 - log(maxf(visibility, full_m) / full_m) / log(clear_m / full_m)
+	return clampf(k, 0.0, 1.0) ** 2
+
+
+## Dawn mist strength at clock `hours`: 1 between from_h and to_h, fading
+## in and out over fade_h at both ends.
+static func mist_factor(hours: float, from_h: float, to_h: float, fade_h: float) -> float:
+	if hours < from_h - fade_h or hours > to_h + fade_h:
+		return 0.0
+	var f := 1.0
+	if fade_h > 0.0:
+		f = minf(clampf((hours - (from_h - fade_h)) / fade_h, 0.0, 1.0), f)
+		f = minf(clampf((to_h + fade_h - hours) / fade_h, 0.0, 1.0), f)
+	return f
+
+
+## Depth fog from the visibility in the horizon colour, the sky covered by
+## it as far as sky_affect says, the dawn mist as height fog below
+## mist_top_y, and volumetric fog of the same density when on.
+func _apply_fog(now: Dictionary, hours: float) -> void:
+	if _env.is_empty():
+		return
+	var density := fog_density(visibility_m, float(_env.fog_k))
+	var mist := 0.0
+	if mist_allowed:
+		mist = mist_factor(
+			hours, float(_env.mist_from_h), float(_env.mist_to_h), float(_env.mist_fade_h)
+		)
+	environment.fog_enabled = density > 0.0
+	environment.fog_mode = Environment.FOG_MODE_EXPONENTIAL
+	environment.fog_density = density
+	environment.fog_light_color = now.horizon
+	environment.fog_light_energy = 1.0
+	environment.fog_sun_scatter = 0.0
+	environment.fog_aerial_perspective = 0.0
+	environment.fog_sky_affect = sky_affect(
+		visibility_m, float(_env.sky_fog_clear_m), float(_env.sky_fog_full_m)
+	)
+	environment.fog_height = float(_env.mist_top_y)
+	environment.fog_height_density = density * float(_env.mist_mult) * mist
+	environment.volumetric_fog_enabled = volumetric and density > 0.0
+	environment.volumetric_fog_density = density
+	environment.volumetric_fog_albedo = now.horizon
+
+
 ## Tone mapping AgX, exposure and white, glow, and the ambient floor
 ## (08 §2.2, §2.4).
 func _setup_environment(cfg: Dictionary) -> void:
+	_env = cfg
 	environment.tonemap_mode = Environment.TONE_MAPPER_AGX
 	environment.tonemap_exposure = float(cfg.exposure)
 	environment.tonemap_white = float(cfg.tonemap_white)

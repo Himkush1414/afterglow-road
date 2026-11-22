@@ -241,7 +241,15 @@ func test_environment_settings_and_ambient() -> void:
 		"glow_intensity": 0.3,
 		"glow_threshold": 1.1,
 		"ambient_floor_colour": "#FFFFFF",
-		"ambient_floor_energy": 0.1
+		"ambient_floor_energy": 0.1,
+		"fog_k": 3.0,
+		"sky_fog_clear_m": 12000,
+		"sky_fog_full_m": 150,
+		"mist_from_h": 5,
+		"mist_to_h": 8,
+		"mist_fade_h": 0.5,
+		"mist_top_y": 130,
+		"mist_mult": 6
 	}
 	var dome := SkyDome.new()
 	check(dome.setup(_clock, _lights, 128, env_cfg), "setup: %s" % [dome.errors])
@@ -262,4 +270,60 @@ func test_environment_settings_and_ambient() -> void:
 	var bad: Dictionary = env_cfg.duplicate()
 	bad.ambient_floor_colour = "x"
 	check(not dome.setup(_clock, _lights, 128, bad), "bad colour refused")
+	dome.free()
+
+
+func test_fog_mapping_helpers() -> void:
+	check_near(SkyDome.fog_density(1200.0, 3.0), 0.0025, 1e-12, "k over visibility")
+	check_eq(SkyDome.fog_density(0.0, 3.0), 0.0, "no visibility, no fog")
+	check_near(SkyDome.sky_affect(12000.0, 12000.0, 150.0), 0.0, 1e-9, "clear sky untouched")
+	check_near(SkyDome.sky_affect(150.0, 12000.0, 150.0), 1.0, 1e-9, "thick fog covers it")
+	check_near(SkyDome.sky_affect(50.0, 12000.0, 150.0), 1.0, 1e-9, "and nearer")
+	var mid := SkyDome.sky_affect(1341.6, 12000.0, 150.0)  # geometric middle
+	check_near(mid, 0.25, 1e-3, "half way in log distance, squared")
+	check_eq(SkyDome.mist_factor(4.0, 5.0, 8.0, 0.5), 0.0, "before")
+	check_near(SkyDome.mist_factor(4.75, 5.0, 8.0, 0.5), 0.5, 1e-9, "fading in")
+	check_eq(SkyDome.mist_factor(6.0, 5.0, 8.0, 0.5), 1.0, "inside")
+	check_near(SkyDome.mist_factor(8.25, 5.0, 8.0, 0.5), 0.5, 1e-9, "fading out")
+	check_eq(SkyDome.mist_factor(9.0, 5.0, 8.0, 0.5), 0.0, "after")
+
+
+func test_fog_reaches_the_environment() -> void:
+	var env_cfg := {
+		"exposure": 1.0,
+		"tonemap_white": 6.0,
+		"glow_intensity": 0.4,
+		"glow_threshold": 1.0,
+		"ambient_floor_colour": "#000000",
+		"ambient_floor_energy": 0.0,
+		"fog_k": 3.0,
+		"sky_fog_clear_m": 12000,
+		"sky_fog_full_m": 150,
+		"mist_from_h": 5,
+		"mist_to_h": 8,
+		"mist_fade_h": 0.5,
+		"mist_top_y": 130,
+		"mist_mult": 6
+	}
+	var dome := SkyDome.new()
+	check(dome.setup(_clock, _lights, 128, env_cfg), "setup: %s" % [dome.errors])
+	var env := dome.environment
+	dome.show_minute(720)
+	check(not env.fog_enabled, "no visibility set: no fog")
+	dome.visibility_m = 1500.0
+	dome.show_minute(721)
+	check(env.fog_enabled and env.fog_mode == Environment.FOG_MODE_EXPONENTIAL, "exponential fog")
+	check_near(env.fog_density, 0.002, 1e-9, "density")
+	check_eq(env.fog_light_color, dome.values_at(721.0).horizon, "fog takes the horizon colour")
+	check_eq(env.fog_height_density, 0.0, "no mist at noon")
+	dome.show_minute(6 * 60)
+	check_near(env.fog_height_density, 0.012, 1e-9, "dawn mist: six times the density")
+	check_near(env.fog_height, 130.0, 1e-9, "below its top")
+	dome.mist_allowed = false
+	dome.show_minute(6 * 60 + 1)
+	check_eq(env.fog_height_density, 0.0, "no mist outside clear weather")
+	check(not env.volumetric_fog_enabled, "volumetric off by default")
+	dome.volumetric = true
+	dome.show_minute(6 * 60 + 2)
+	check(env.volumetric_fog_enabled and is_equal_approx(env.volumetric_fog_density, 0.002), "on")
 	dome.free()

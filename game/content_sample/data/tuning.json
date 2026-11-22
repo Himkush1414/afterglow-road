@@ -213,6 +213,14 @@
 		"glow_intensity": 0.3,
 		"glow_threshold": 1.2,
 		"ambient_floor_colour": "#808890",
-		"ambient_floor_energy": 0.03
+		"ambient_floor_energy": 0.03,
+		"fog_k": 3.0,
+		"sky_fog_clear_m": 5000,
+		"sky_fog_full_m": 100,
+		"mist_from_h": 4,
+		"mist_to_h": 7,
+		"mist_fade_h": 0.5,
+		"mist_top_y": 20,
+		"mist_mult": 4
 	}
 }
