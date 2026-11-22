@@ -222,5 +222,121 @@
 		"mist_fade_h": 0.5,
 		"mist_top_y": 20,
 		"mist_mult": 4
+	},
+	"weather": {
+		"states": [
+			{
+				"id": "fair",
+				"cloud_cover": 0.1,
+				"cloud_darkness": 0.0,
+				"rain": 0,
+				"wind_min_ms": 0,
+				"wind_max_ms": 4,
+				"gustiness": 0.2,
+				"temp_day_c": 0,
+				"temp_night_c": 0,
+				"visibility_m": 9000,
+				"lightning": false
+			},
+			{
+				"id": "grey",
+				"cloud_cover": 0.7,
+				"cloud_darkness": 0.3,
+				"rain": 0,
+				"wind_min_ms": 2,
+				"wind_max_ms": 6,
+				"gustiness": 0.3,
+				"temp_day_c": -1,
+				"temp_night_c": 0,
+				"visibility_m": 5000,
+				"lightning": false
+			},
+			{
+				"id": "wet",
+				"cloud_cover": 0.95,
+				"cloud_darkness": 0.7,
+				"rain": 0.8,
+				"wind_min_ms": 4,
+				"wind_max_ms": 9,
+				"gustiness": 0.5,
+				"temp_day_c": -3,
+				"temp_night_c": -2,
+				"visibility_m": 1500,
+				"lightning": false
+			},
+			{
+				"id": "haze",
+				"cloud_cover": 0.4,
+				"cloud_darkness": 0.1,
+				"rain": 0,
+				"wind_min_ms": 0,
+				"wind_max_ms": 1,
+				"gustiness": 0.1,
+				"temp_day_c": -1,
+				"temp_night_c": -1,
+				"visibility_m": 300,
+				"lightning": false
+			}
+		],
+		"transitions": [
+			{
+				"from": "fair",
+				"p": [
+					0.6,
+					0.3,
+					0,
+					0.1
+				]
+			},
+			{
+				"from": "grey",
+				"p": [
+					0.3,
+					0.4,
+					0.3,
+					0
+				]
+			},
+			{
+				"from": "wet",
+				"p": [
+					0,
+					0.5,
+					0.5,
+					0
+				]
+			},
+			{
+				"from": "haze",
+				"p": [
+					0.6,
+					0.3,
+					0,
+					0.1
+				]
+			}
+		],
+		"roll_every_gmin": 60,
+		"blend_gmin": 5,
+		"fog_state": "haze",
+		"fog_start_from_h": 4,
+		"fog_start_to_h": 7,
+		"fog_end_h": 9,
+		"fallback_state": "fair",
+		"grace_state": "fair",
+		"grace_until_gmin": 600,
+		"grace_then_state": "grey",
+		"rain_states": [
+			"wet"
+		],
+		"no_rain_before_gmin": 1200,
+		"no_rain_state": "grey",
+		"prevailing_from_deg": 270,
+		"turn_deg": 30,
+		"wet_full_gmin": 30,
+		"dry_sun_gmin": 90,
+		"dry_shade_gmin": 180,
+		"sun_max_cover": 0.5,
+		"mist_state": "fair"
 	}
 }
