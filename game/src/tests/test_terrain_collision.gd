@@ -145,7 +145,8 @@ func test_rays_meet_height_at() -> void:
 func test_recentring_refills_only_new_chunks() -> void:
 	if not _load(WorldData.default_dir()):
 		return
-	var at := _world.map_to_world(Vector3(10.5, 0.0, 10.5) * TerrainCollision.CHUNK_M)
+	# chunk (2, 2): the window and two moves east and south stay on any map of 8+ chunks
+	var at := _world.map_to_world(Vector3(2.5, 0.0, 2.5) * TerrainCollision.CHUNK_M)
 	var body := _target(at)
 	_col.track(body)
 	check_eq(_col.fills, 25, "first window")
@@ -162,11 +163,11 @@ func test_recentring_refills_only_new_chunks() -> void:
 	var want := []
 	for dz in range(-2, 3):
 		for dx in range(-2, 3):
-			want.append(Vector2i(12 + dx, 11 + dz))
+			want.append(Vector2i(4 + dx, 3 + dz))
 	var have := _col.chunks_of(body)
 	have.sort()
 	want.sort()
-	check_eq(have, want, "window around chunk (12, 11)")
+	check_eq(have, want, "window around chunk (4, 3)")
 	_col.untrack(body)
 	await tree.process_frame
 	check_eq(_col.get_child_count(), 0, "untrack frees the pool")

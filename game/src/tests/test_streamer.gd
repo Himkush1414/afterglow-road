@@ -29,6 +29,32 @@ func _load(dir: String) -> bool:
 	return true
 
 
+## The region in the middle of the loaded map (the only one on a one-region map).
+func _middle() -> Vector2i:
+	var k := (ceili(_world.size_m / WorldData.REGION_M) - 1) / 2
+	return Vector2i(k, k)
+
+
+## The middle region and its neighbours that lie on the map.
+func _middle_and_neighbours() -> Array:
+	var per_side := ceili(_world.size_m / WorldData.REGION_M)
+	var m := _middle()
+	var out := []
+	for dz in range(-1, 2):
+		for dx in range(-1, 2):
+			var r := m + Vector2i(dx, dz)
+			if r.x >= 0 and r.y >= 0 and r.x < per_side and r.y < per_side:
+				out.append(r)
+	out.sort()
+	return out
+
+
+## Puts the body in the middle of the box of `region` (map coordinates).
+func _inside(region: Vector2i) -> void:
+	var m := (Vector3(region.x, 0.0, region.y) + Vector3(0.5, 0.0, 0.5)) * WorldData.REGION_M
+	_body.global_position = _world.map_to_world(m)
+
+
 ## Puts the body `d` metres west of the box of `region` (map coordinates),
 ## level with the box's middle.
 func _west_of(region: Vector2i, d: float) -> void:
@@ -39,7 +65,7 @@ func _west_of(region: Vector2i, d: float) -> void:
 func test_load_and_unload_thresholds() -> void:
 	if not _load(WorldData.default_dir()):
 		return
-	var r := Vector2i(6, 6)
+	var r := _middle()
 	_west_of(r, 390.0)
 	_streamer.update()
 	check_eq(_streamer.state_of(r), Region.State.UNLOADED, "390 m: not loaded")
@@ -65,23 +91,22 @@ func test_load_and_unload_thresholds() -> void:
 func test_inside_a_region_loads_its_neighbours_within_range() -> void:
 	if not _load(WorldData.default_dir()):
 		return
-	_body.global_position = _world.map_to_world(Vector3(3328.0, 0.0, 3328.0))  # middle of (6, 6)
+	_inside(_middle())
 	_streamer.update()
 	var loaded := _streamer.loaded_regions()
 	loaded.sort()
-	var want := []
-	for rz in range(5, 8):
-		for rx in range(5, 8):
-			want.append(Vector2i(rx, rz))
-	want.sort()
-	check_eq(loaded, want, "the region and its 8 neighbours (256 m from the box edges)")
+	check_eq(
+		loaded,
+		_middle_and_neighbours(),
+		"the region and its neighbours on the map (256 m from the box edges)"
+	)
 
 
 func test_load_steps_stay_within_the_budget() -> void:
 	if not _load(WorldData.default_dir()):
 		return
 	_streamer.budget_ms = 0.0
-	_body.global_position = _world.map_to_world(Vector3(3328.0, 0.0, 3328.0))
+	_inside(_middle())
 	var ticks := 0
 	while ticks < 50:
 		_streamer.update()
@@ -91,14 +116,14 @@ func test_load_steps_stay_within_the_budget() -> void:
 			all_active = all_active and _streamer.state_of(r) == Region.State.ACTIVE
 		if all_active:
 			break
-	# a zero budget runs one load step per tick: 9 regions x 3 steps (read, delta, cliffs)
-	check_eq(ticks, 27, "one load step per tick")
+	# a zero budget runs one load step per tick: 3 steps (read, delta, cliffs) per region
+	check_eq(ticks, 3 * _middle_and_neighbours().size(), "one load step per tick")
 
 
 func test_deltas_survive_unload_and_return_on_load() -> void:
 	if not _load(WorldData.default_dir()):
 		return
-	var r := Vector2i(6, 6)
+	var r := _middle()
 	_west_of(r, 100.0)
 	_streamer.update()
 	var region := _streamer.region_node(r)
