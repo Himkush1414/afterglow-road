@@ -26,10 +26,11 @@
       biome and species (exit 1 when one is more than 2 % off).
 
   python3 -m tools.worldgen check-world --sketch S.json --pois P.csv --buildings B.csv
-      Runs every stage on the full map and checks the final height field
-      (T-05-10): way grades, river incision below the uncarved terrain, the
+      Runs every stage on the full map and checks the final height field:
+      T-05-5 (places on dry, level, reachable ground; the outer band out of
+      reach; no walkable pocket left) and T-05-10 (way grades, river incision below the uncarved terrain, the
       named water lines ending below sea level, the highest point near the
-      peak place and below the largest encodable height. Exit 1 on a failure.
+      peak place and below the largest encodable height). Exit 1 on a failure.
 
   python3 -m tools.worldgen check-files --sketch S.json --dir DIR
       Checks every world file in DIR against its format and its hash in
@@ -223,7 +224,13 @@ def check_world(args):
 
     sk = sketch_io.load(args.sketch, args.pois, args.buildings)
     ctx = run(sk, Grid.full(sk["size_m"], float(sk["sample_m"])), sk["world_seed"])
+    from . import reach
+
     lines, bad = final_check.report(ctx)
+    more, bad_more = reach.report(ctx)
+    lines, bad = lines + more, bad + bad_more
+    fill = ctx.pocket_fill
+    print(f"  pocket fill: {fill['cells']} cells in {fill['rounds']} rounds, {fill['left']} left, largest change {fill['max_change_m']:.2f} m")
     for line in lines:
         print(line)
     print(f"WORLD CHECK: {'FAIL' if bad else 'PASS'} ({bad} failures, sample {sk['sample_m']:g} m)")
