@@ -32,6 +32,11 @@
       named water lines ending below sea level, the highest point near the
       peak place and below the largest encodable height). Exit 1 on a failure.
 
+  python3 -m tools.worldgen check-vista --sketch S.json --pois P.csv --trees T.json --dir DIR
+      The data part of T-05-8 on written world files: the ray from the eye
+      beside the start place to the peak clears the terrain and every placed
+      tree (canopy cylinder from ground to top). Exit 1 on a failure.
+
   python3 -m tools.worldgen check-files --sketch S.json --dir DIR
       Checks every world file in DIR against its format and its hash in
       meta.json. Exit 1 on any error.
@@ -237,6 +242,17 @@ def check_world(args):
     return 1 if bad else 0
 
 
+def check_vista(args):
+    from . import placement, vista
+
+    sk = sketch_io.load(args.sketch, args.pois)
+    lines, bad = vista.report(args.dir, sk, placement.tree_table(args.trees))
+    for line in lines:
+        print(line)
+    print(f"VISTA CHECK: {'FAIL' if bad else 'PASS'} ({args.dir})")
+    return 1 if bad else 0
+
+
 def check_files(args):
     from . import formats
 
@@ -276,11 +292,16 @@ def main(argv=None):
     cw.add_argument("--sketch", required=True)
     cw.add_argument("--pois", required=True)
     cw.add_argument("--buildings")
+    cv = sub.add_parser("check-vista", help="check the vista ray on world files (T-05-8)")
+    cv.add_argument("--sketch", required=True)
+    cv.add_argument("--pois", required=True)
+    cv.add_argument("--trees", required=True)
+    cv.add_argument("--dir", required=True)
     cf = sub.add_parser("check-files", help="check written world files against their formats")
     cf.add_argument("--sketch", required=True)
     cf.add_argument("--dir", required=True)
     args = ap.parse_args(argv)
-    commands = {"check-pois": check_pois, "water": write_water, "roads": write_roads, "generate": generate, "check-world": check_world, "check-files": check_files}
+    commands = {"check-pois": check_pois, "water": write_water, "roads": write_roads, "generate": generate, "check-world": check_world, "check-vista": check_vista, "check-files": check_files}
     return commands[args.cmd](args)
 
 
