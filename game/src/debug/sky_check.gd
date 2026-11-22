@@ -70,7 +70,10 @@ func _run() -> void:
 	var dome := SkyDome.new()
 	add_child(dome)
 	var radiance := int(_arg(args, "--radiance", "128"))
-	if not lights.setup(clock, ContentDB.tuning("sky")) or not dome.setup(clock, lights, radiance):
+	if (
+		not lights.setup(clock, ContentDB.tuning("sky"))
+		or not dome.setup(clock, lights, radiance, ContentDB.tuning("environment"))
+	):
 		printerr("sky check: %s" % ", ".join(lights.errors + dome.errors))
 		get_tree().quit(2)
 		return
@@ -131,7 +134,6 @@ func _run() -> void:
 		var glow_ok := ratio >= GLOW_RATIO
 		bad += int(not glow_ok)
 		print("glow ratio %.2f (want >= %.1f)%s" % [ratio, GLOW_RATIO, "" if glow_ok else "  FAIL"])
-	await ShaderClock.measure(self)
 	var half := await _blend_halfway(dome, cam, vp, float(_arg(args, "--blend-s", str(BLEND_S))))
 	var blend_ok := absf(half - 0.5) <= BLEND_TOL
 	bad += int(not blend_ok)
@@ -240,6 +242,10 @@ static func _row_median(img: Image, y: int) -> float:
 ## zenith value seen straight up (0.5 when the clocks agree).
 func _blend_halfway(dome: SkyDome, cam: Camera3D, vp: Viewport, blend_s: float) -> float:
 	var m := dome.material
+	# Read raw shader output: no tone mapping or glow.
+	dome.environment.tonemap_mode = Environment.TONE_MAPPER_LINEAR
+	dome.environment.tonemap_exposure = 1.0
+	dome.environment.glow_enabled = false
 	m.set_shader_parameter("prev_zenith", Color.BLACK)
 	m.set_shader_parameter("next_zenith", Color.WHITE)
 	for key: String in ["prev_sun_dir", "next_sun_dir", "prev_moon_dir", "next_moon_dir"]:
@@ -249,7 +255,10 @@ func _blend_halfway(dome: SkyDome, cam: Camera3D, vp: Viewport, blend_s: float) 
 	]:
 		m.set_shader_parameter(key, 0.0)
 	cam.basis = Basis.from_euler(Vector3(PI * 0.5, 0.0, 0.0))
-	await RenderingServer.frame_post_draw
+	# Let the changes settle (a recompile is a hitch), then read the clock.
+	for f in 10:
+		await RenderingServer.frame_post_draw
+	await ShaderClock.measure(self)
 	m.set_shader_parameter("blend_s", blend_s)
 	m.set_shader_parameter("blend_t0", ShaderClock.now() - blend_s * 0.5)
 	await RenderingServer.frame_post_draw

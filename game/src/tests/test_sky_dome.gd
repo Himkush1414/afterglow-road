@@ -232,3 +232,34 @@ func test_glow_azimuth_follows_the_target_within_its_range() -> void:
 	var end := float(dome.material.get_shader_parameter("glow_end_elev"))
 	check_near(end, atan2(50.0, Vector2(100.0, 100.0).length()), 1e-6, "ends at the target")
 	dome.free()
+
+
+func test_environment_settings_and_ambient() -> void:
+	var env_cfg := {
+		"exposure": 1.2,
+		"tonemap_white": 5.0,
+		"glow_intensity": 0.3,
+		"glow_threshold": 1.1,
+		"ambient_floor_colour": "#FFFFFF",
+		"ambient_floor_energy": 0.1
+	}
+	var dome := SkyDome.new()
+	check(dome.setup(_clock, _lights, 128, env_cfg), "setup: %s" % [dome.errors])
+	var env := dome.environment
+	check_eq(env.tonemap_mode, Environment.TONE_MAPPER_AGX)
+	check_near(env.tonemap_exposure, 1.2, 1e-6, "exposure")
+	check_near(env.tonemap_white, 5.0, 1e-6, "white")
+	check(env.glow_enabled, "glow on")
+	check_near(env.glow_intensity, 0.3, 1e-6, "glow intensity")
+	check_near(env.glow_hdr_threshold, 1.1, 1e-6, "glow threshold")
+	var floor_v: Vector3 = dome.material.get_shader_parameter("ambient_floor")
+	check(floor_v.is_equal_approx(Vector3(0.1, 0.1, 0.1)), "ambient floor in linear light")
+	dome.show_minute(720)
+	var r := _lights.ramp.at(_clock.sun_elevation_deg(12.0))
+	check_near(
+		env.ambient_light_energy, float(r.ambient_energy), 1e-6, "ambient energy from the ramp"
+	)
+	var bad: Dictionary = env_cfg.duplicate()
+	bad.ambient_floor_colour = "x"
+	check(not dome.setup(_clock, _lights, 128, bad), "bad colour refused")
+	dome.free()

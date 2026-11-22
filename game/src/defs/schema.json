@@ -1113,6 +1113,34 @@
 				}
 			}
 		},
+		"tuning_environment": {
+			"type": "object",
+			"fields": {
+				"exposure": {
+					"type": "number",
+					"min": 0
+				},
+				"tonemap_white": {
+					"type": "number",
+					"min": 0
+				},
+				"glow_intensity": {
+					"type": "number",
+					"min": 0
+				},
+				"glow_threshold": {
+					"type": "number",
+					"min": 0
+				},
+				"ambient_floor_colour": {
+					"type": "string"
+				},
+				"ambient_floor_energy": {
+					"type": "number",
+					"min": 0
+				}
+			}
+		},
 		"sky_glow": {
 			"type": "object",
 			"fields": {
@@ -1685,6 +1713,9 @@
 					},
 					"sky": {
 						"type": "tuning_sky"
+					},
+					"environment": {
+						"type": "tuning_environment"
 					},
 					"vitals": {
 						"type": "tuning_vitals",

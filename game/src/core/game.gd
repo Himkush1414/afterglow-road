@@ -43,7 +43,8 @@ func _ready() -> void:
 		Log.error("sky", "; ".join(sky_lights.errors))
 	else:
 		var radiance: Variant = Quality.value("sky_radiance_size")
-		if not sky_dome.setup(clock, sky_lights, 128 if radiance == null else int(radiance)):
+		var size := 128 if radiance == null else int(radiance)
+		if not sky_dome.setup(clock, sky_lights, size, ContentDB.tuning("environment")):
 			Log.error("sky", "; ".join(sky_dome.errors))
 	if not world.load_dir(WorldData.default_dir()):
 		Log.error("world", "; ".join(world.errors))
