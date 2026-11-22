@@ -151,6 +151,14 @@ func test_typed_defs_match_the_data() -> void:
 	for id: String in ContentDB.ids("nodes"):
 		var n := ContentDB.node(StringName(id))
 		check(not n.drops.is_empty() and not n.biomes.is_empty(), id)
+	for id: String in ContentDB.ids("animals"):
+		var a := ContentDB.animal(StringName(id))
+		check_eq(
+			a.active_hours.size(), (ContentDB.entry("animals", id).active_hours as Array).size(), id
+		)
+		check(a.active_hours_per_day() > 0 and a.active_hours_per_day() <= 24, "%s hours" % id)
+		for d: Dictionary in a.drops:
+			check(ContentDB.item(StringName(d.item)) != null, "%s drop %s" % [id, d.item])
 	for id: String in ContentDB.ids("loot"):
 		var lt := ContentDB.loot(StringName(id))
 		check(lt.rolls >= 1 and not lt.entries.is_empty(), id)
@@ -200,3 +208,13 @@ func test_text_problems_are_reported() -> void:
 	)
 	DirAccess.remove_absolute(DIR + "/text/content.csv")
 	DirAccess.remove_absolute(DIR + "/text")
+
+
+func test_animal_hours_wrap_past_midnight() -> void:
+	check(ContentDB.load_root(ContentDB.SAMPLE_ROOT), "sample loads")
+	var a := ContentDB.animal(&"critter")
+	check_eq(a.active_hours_per_day(), 9, "06-09 and 20-02")
+	check_eq(a.flee_mode, &"run", "flee mode")
+	check_eq(ContentDB.animal(&"swimmer").hp, -1, "no body to hit")
+	check_eq(ContentDB.animal(&"swimmer").active_hours_per_day(), 24, "all day")
+	_load()

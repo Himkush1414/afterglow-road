@@ -4,7 +4,8 @@
 Usage: csv_to_content.py <csv dir> <output data dir>
 
 Writes materials.json, items.json (with the pseudo-items of units.csv as
-`units`), build_pieces.json, recipes.json, trees.json, nodes.json and loot.json; other files in the output folder are
+`units`), build_pieces.json, recipes.json, trees.json, nodes.json, loot.json
+and, when animals.csv exists, animals.json; other files in the output folder are
 left alone. Columns map 1:1 to JSON fields except where a rule below says
 otherwise. Exit code 1 with one line per problem when a table is invalid.
 """
@@ -264,6 +265,73 @@ def nodes(rows, problems):
     return {"nodes": out}
 
 
+FLEE = re.compile(r"^(?:(\d+(?:\.\d+)?)|([a-z]+)(?: (\d+(?:\.\d+)?))?)$")
+HOURS = re.compile(r"^(\d{2})-(\d{2})$")
+
+
+def flee(text, where, problems):
+    """'35' -> run 35 m; 'fly 60' -> fly 60 m; 'tree' -> tree, no distance;
+    empty -> none."""
+    if not text:
+        return {"mode": "none", "m": None}
+    m = FLEE.match(text)
+    if not m:
+        problems.append(f"{where}: '{text}' is not a distance or 'mode [distance]'")
+        return {"mode": "none", "m": None}
+    if m[1]:
+        return {"mode": "run", "m": float(m[1])}
+    return {"mode": m[2], "m": float(m[3]) if m[3] else None}
+
+
+def hours(text, where, problems):
+    """'05-10;17-22' -> [{from 5, to 10}, {from 17, to 22}] (an end below
+    its start wraps past midnight)."""
+    out = []
+    for part in filter(None, text.split(";")):
+        m = HOURS.match(part)
+        if not m or int(m[1]) > 24 or int(m[2]) > 24:
+            problems.append(f"{where}: '{part}' is not HH-HH")
+            continue
+        out.append({"from": int(m[1]), "to": int(m[2])})
+    return out
+
+
+def catch(text):
+    """'snare or thrown stone' -> ['snare', 'thrown_stone']; 'none ...' -> []."""
+    if text.startswith("none"):
+        return []
+    return [c.strip().replace(" ", "_") for c in text.split(" or ") if c.strip()]
+
+
+def animals(rows, problems):
+    out = []
+    for i, r in enumerate(rows, 2):
+        where = f"animals.csv:{i}"
+
+        def opt(key, where=where):
+            return number(r[key], f"{where} {key}", problems) if r[key] != "" else None
+
+        out.append(
+            {
+                "id": r["id"],
+                "name_key": f"animal.{r['id']}",
+                "hp": opt("hp"),
+                "walk_ms": opt("walk_ms"),
+                "flee_ms": opt("flee_ms"),
+                "sense_m": opt("sense_m"),
+                "flee": flee(r["flee_m"], f"{where} flee_m", problems),
+                "active_hours": hours(r["active_hours"], f"{where} active_hours", problems),
+                "biomes": [b for b in r["biomes"].split(";") if b],
+                "drops": drops(r["drops"], f"{where} drops", problems),
+                "catch": catch(r["catch"]),
+                "max_active_phone": number(r["max_active_phone"], f"{where} max_active_phone", problems),
+                "max_active_desktop": number(r["max_active_desktop"], f"{where} max_active_desktop", problems),
+                "scene": "",
+            }
+        )
+    return {"animals": out}
+
+
 def loot(rows, problems):
     """'item:weight:min-max|nothing:20:0-0' per table (04 §1.4)."""
     out = []
@@ -350,6 +418,9 @@ def main():
             "nodes.json": nodes(read(csv_dir, "nodes.csv"), problems),
             "loot.json": loot(read(csv_dir, "loot.csv"), problems),
         }
+        animal_rows = read(csv_dir, "animals.csv", required=False)
+        if animal_rows:
+            outputs["animals.json"] = animals(animal_rows, problems)
     except Problems as e:
         problems = e.args[0]
     if problems:

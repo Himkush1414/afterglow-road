@@ -9,6 +9,8 @@ piece.fire_pit,Fire pit,sample
 piece.wall,Wall,sample
 node.rock_pile,Rock pile,sample
 tree.small_tree,Small tree,sample
+animal.critter,Critter,sample
+animal.swimmer,Swimmer,sample
 item.twig.desc,A thin dry stick.,sample
 item.rock.desc,A fist-sized stone.,sample
 item.fiber.desc,Plant fibre for string.,sample
