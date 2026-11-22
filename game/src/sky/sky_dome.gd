@@ -24,13 +24,27 @@ const KEYS: Array[String] = [
 	"moon_dir",
 	"stars",
 	"star_angle",
+	"cloud_cover",
+	"cloud_darkness",
 ]
+## Cloud noise textures: side in pixels and FastNoiseLite settings
+## (frequency per pixel, octaves, seed).
+const NOISE_SIDE := 512
+const CUMULUS_NOISE := [0.008, 5, 11]
+const CIRRUS_NOISE := [0.006, 4, 23]
 
 var errors: PackedStringArray = []
 var material: ShaderMaterial
 var sky: Sky
-## Cloud cover 0..1, set by the weather; dims the stars.
+## Set by the weather: cloud cover 0..1 (also dims the stars), darkness of
+## the cloud undersides 0..1, and the wind in m/s on the map plane (x east,
+## y south) that the clouds drift with.
 var cloud_cover := 0.0
+var cloud_darkness := 0.0
+var wind := Vector2.ZERO
+## Tiling noise of the two cloud layers.
+var cumulus_texture: NoiseTexture2D
+var cirrus_texture: NoiseTexture2D
 ## Parameter updates so far (one per game minute shown).
 var updates := 0
 
@@ -38,6 +52,11 @@ var _clock: GameClock
 var _ramp: SkyRamp
 var _next := {}
 var _shown_gmin := -1
+## Cloud drift (metres) at the shaders' time _drift_t0, continued since
+## with _drift_wind.
+var _drift := Vector2.ZERO
+var _drift_t0 := -1.0
+var _drift_wind := Vector2.ZERO
 
 
 ## Builds the sky for `clock`, coloured by the ramp of `lights`, with a
@@ -69,6 +88,12 @@ func setup(clock: GameClock, lights: SkyLights, radiance_size: int) -> bool:
 		"rendering/limits/time/time_rollover_secs", 3600.0
 	)
 	material.set_shader_parameter("time_rollover_s", rollover)
+	cumulus_texture = noise_texture(CUMULUS_NOISE)
+	cirrus_texture = noise_texture(CIRRUS_NOISE)
+	material.set_shader_parameter("cumulus_tex", cumulus_texture)
+	material.set_shader_parameter("cirrus_tex", cirrus_texture)
+	_drift = Vector2.ZERO
+	_drift_t0 = -1.0
 	_next.clear()
 	_shown_gmin = -1
 	_measure_time.call_deferred()
@@ -94,8 +119,12 @@ func show_minute(gmin: int) -> void:
 		material.set_shader_parameter("next_" + key, now[key])
 	_next = now
 	var scale := maxf(_clock.time_scale, 1e-3)
+	var t0 := ShaderClock.now()
+	_advance_drift(t0)
+	material.set_shader_parameter("cloud_offset", _drift)
+	material.set_shader_parameter("cloud_wind", wind)
 	material.set_shader_parameter("blend_s", _clock.gmin_real_s() / scale)
-	material.set_shader_parameter("blend_t0", ShaderClock.now())
+	material.set_shader_parameter("blend_t0", t0)
 	updates += 1
 	if gmin % MEASURE_EVERY_GMIN == 0:
 		_measure_time.call_deferred()
@@ -118,7 +147,44 @@ func values_at(gmin: float) -> Dictionary:
 		SkyLights.direction(_clock.moon_elevation_deg(hours, p), _clock.moon_azimuth_deg(hours, p)),
 		"stars": fade * (1.0 - cloud_cover),
 		"star_angle": star_angle(gmin),
+		"cloud_cover": cloud_cover,
+		"cloud_darkness": cloud_darkness,
 	}
+
+
+## Cloud drift in metres at the shaders' time `t`: the drift handed to the
+## shader last, moved on by the wind it was handed with.
+func drift_at(t: float) -> Vector2:
+	if _drift_t0 < 0.0:
+		return _drift
+	var rollover := ShaderClock.rollover_s()
+	var dt := fposmod(t - _drift_t0, rollover)
+	if dt > rollover * 0.5:
+		dt = 0.0
+	return _drift + _drift_wind * dt
+
+
+func _advance_drift(t: float) -> void:
+	_drift = drift_at(t)
+	_drift_t0 = t
+	_drift_wind = wind
+
+
+## A seamless 512² noise texture from [frequency, octaves, seed].
+static func noise_texture(spec: Array) -> NoiseTexture2D:
+	var noise := FastNoiseLite.new()
+	noise.noise_type = FastNoiseLite.TYPE_PERLIN
+	noise.fractal_type = FastNoiseLite.FRACTAL_FBM
+	noise.frequency = float(spec[0])
+	noise.fractal_octaves = int(spec[1])
+	noise.seed = int(spec[2])
+	var tex := NoiseTexture2D.new()
+	tex.width = NOISE_SIDE
+	tex.height = NOISE_SIDE
+	tex.seamless = true
+	tex.generate_mipmaps = true
+	tex.noise = noise
+	return tex
 
 
 func _measure_time() -> void:

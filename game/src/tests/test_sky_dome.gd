@@ -142,3 +142,27 @@ func test_shader_clock_reads_the_wall_clock_plus_its_offset() -> void:
 	var want := fposmod(Time.get_ticks_usec() / 1e6 + ShaderClock.offset_s, rollover)
 	check_near(ShaderClock.now(), want, 0.05, "now")
 	check(ShaderClock.now() >= 0.0 and ShaderClock.now() < rollover, "wrapped")
+
+
+func test_cloud_drift_stays_continuous_when_the_wind_changes() -> void:
+	_dome.wind = Vector2(2.0, 0.0)
+	_dome._advance_drift(10.0)
+	check(_dome.drift_at(13.0).is_equal_approx(Vector2(6.0, 0.0)), "3 s at 2 m/s")
+	_dome.wind = Vector2(0.0, 1.0)
+	_dome._advance_drift(13.0)
+	check(_dome.drift_at(13.0).is_equal_approx(Vector2(6.0, 0.0)), "no jump at the change")
+	check(_dome.drift_at(15.0).is_equal_approx(Vector2(6.0, 2.0)), "then the new wind")
+	var rollover := ShaderClock.rollover_s()
+	_dome._advance_drift(rollover - 1.0)
+	var before := _dome.drift_at(rollover - 1.0)
+	check(_dome.drift_at(1.0).is_equal_approx(before + Vector2(0.0, 2.0)), "across the rollover")
+
+
+func test_cloud_noise_and_cover() -> void:
+	for tex: NoiseTexture2D in [_dome.cumulus_texture, _dome.cirrus_texture]:
+		check(tex.seamless and tex.width == 512 and tex.height == 512, "512² seamless noise")
+	check(_dome.material.get_shader_parameter("cumulus_tex") == _dome.cumulus_texture, "bound")
+	_dome.cloud_cover = 0.6
+	_dome.cloud_darkness = 0.3
+	var v := _dome.values_at(720.0)
+	check_eq([v.cloud_cover, v.cloud_darkness], [0.6, 0.3], "weather inputs reach the shader")

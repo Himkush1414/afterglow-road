@@ -5,7 +5,8 @@ extends Node3D
 ## shader's blend between two minutes lines up with ShaderClock.
 ## Needs a display:
 ##   tools/godot.sh res://scenes/debug/sky_check.tscn [--rendering-method mobile] \
-##       -- [--times HH:MM,...] [--day 1] [--radiance 128] [--out <abs dir>]
+##       -- [--times HH:MM,...] [--day 1] [--radiance 128] [--cover 0..1]
+##       [--darkness 0..1] [--wind x,z] [--out <abs dir>]
 ## Prints one line per frame (with the longest frame while it settled),
 ## then RESULT PASS or FAIL (exit code 0 or 1).
 
@@ -73,6 +74,11 @@ func _run() -> void:
 	add_child(cam)
 	cam.make_current()
 	_add_props(cam)
+	dome.cloud_cover = float(_arg(args, "--cover", "0"))
+	dome.cloud_darkness = float(_arg(args, "--darkness", "0"))
+	var w := _arg(args, "--wind", "0,0").split(",")
+	dome.wind = Vector2(float(w[0]), float(w[1]))
+	lights.cloud_cover = dome.cloud_cover
 	var vp := get_viewport()
 	var out := _arg(args, "--out", "")
 	var method := RenderingServer.get_current_rendering_method()
@@ -109,12 +115,17 @@ func _run() -> void:
 		)
 		if out != "":
 			DirAccess.make_dir_recursive_absolute(out)
-			img.save_png(out.path_join("sky_%s_%s.png" % [method, t.replace(":", "")]))
+			var tag := (
+				"" if dome.cloud_cover == 0.0 else "_c%02d" % roundi(dome.cloud_cover * 100.0)
+			)
+			img.save_png(out.path_join("sky_%s_%s%s.png" % [method, t.replace(":", ""), tag]))
 	await ShaderClock.measure(self)
-	var w := await _blend_halfway(dome, cam, vp, float(_arg(args, "--blend-s", str(BLEND_S))))
-	var blend_ok := absf(w - 0.5) <= BLEND_TOL
+	var half := await _blend_halfway(dome, cam, vp, float(_arg(args, "--blend-s", str(BLEND_S))))
+	var blend_ok := absf(half - 0.5) <= BLEND_TOL
 	bad += int(not blend_ok)
-	print("blend halfway: %.3f (want 0.5 +- %.2f)%s" % [w, BLEND_TOL, "" if blend_ok else "  FAIL"])
+	print(
+		"blend halfway: %.3f (want 0.5 +- %.2f)%s" % [half, BLEND_TOL, "" if blend_ok else "  FAIL"]
+	)
 	OS.remove_logger(log)
 	bad += int(log.errors > 0)
 	print(
@@ -136,8 +147,8 @@ func _blend_halfway(dome: SkyDome, cam: Camera3D, vp: Viewport, blend_s: float) 
 	m.set_shader_parameter("next_zenith", Color.WHITE)
 	for key: String in ["prev_sun_dir", "next_sun_dir", "prev_moon_dir", "next_moon_dir"]:
 		m.set_shader_parameter(key, Vector3.DOWN)
-	m.set_shader_parameter("prev_stars", 0.0)
-	m.set_shader_parameter("next_stars", 0.0)
+	for key: String in ["prev_stars", "next_stars", "prev_cloud_cover", "next_cloud_cover"]:
+		m.set_shader_parameter(key, 0.0)
 	cam.basis = Basis.from_euler(Vector3(PI * 0.5, 0.0, 0.0))
 	await RenderingServer.frame_post_draw
 	m.set_shader_parameter("blend_s", blend_s)

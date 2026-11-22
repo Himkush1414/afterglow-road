@@ -1,7 +1,9 @@
 shader_type sky;
 // The sky (08 §2.2): gradient from the colour ramp, the horizon warmed toward
 // the sun, sun disc and halo, the moon lit from the sun's direction, and
-// procedural stars with a milky band that turn about the celestial pole.
+// procedural stars with a milky band that turn about the celestial pole, and
+// two cloud layers (high cirrus, low domain-warped cumulus) from tiling noise
+// textures, drifting with the wind.
 // SkyDome sets each value as a prev_/next_ pair once per game minute; the
 // shader blends them over blend_s real seconds from blend_t0 (shader TIME,
 // measured by ShaderClock).
@@ -23,6 +25,10 @@ uniform float next_stars = 0.0;
 // Star rotation about the pole, radians.
 uniform float prev_star_angle = 0.0;
 uniform float next_star_angle = 0.0;
+uniform float prev_cloud_cover = 0.0;
+uniform float next_cloud_cover = 0.0;
+uniform float prev_cloud_darkness = 0.0;
+uniform float next_cloud_darkness = 0.0;
 uniform float blend_t0 = 0.0;
 uniform float blend_s = 2.0;
 uniform float time_rollover_s = 3600.0;
@@ -42,15 +48,68 @@ uniform float band_intensity = 0.06;
 // The milky band: the great circle whose plane has this normal (in star space).
 uniform vec3 band_normal = vec3(0.35, 0.2, 0.915);
 
-float blend_w() {
+uniform sampler2D cumulus_tex : filter_linear_mipmap, repeat_enable;
+uniform sampler2D cirrus_tex : filter_linear_mipmap, repeat_enable;
+// Cloud drift in metres at blend_t0, and the wind (m/s) it continues with.
+uniform vec2 cloud_offset = vec2(0.0);
+uniform vec2 cloud_wind = vec2(0.0);
+uniform float cumulus_height_m = 1500.0;
+uniform float cumulus_tile_m = 2000.0;
+uniform float cirrus_height_m = 8000.0;
+uniform float cirrus_tile_m = 6000.0;
+uniform float cirrus_drift = 0.3;
+
+// Real seconds since blend_t0 on the wrapped TIME; a start slightly ahead of
+// TIME counts as 0.
+float since_t0() {
 	float d = TIME - blend_t0;
-	// Wrapped at the rollover; a start slightly ahead of TIME waits at 0.
 	if (d < -0.5 * time_rollover_s) {
 		d += time_rollover_s;
 	} else if (d > 0.5 * time_rollover_s) {
 		d -= time_rollover_s;
 	}
-	return clamp(d / max(blend_s, 1e-3), 0.0, 1.0);
+	return max(d, 0.0);
+}
+
+float blend_w() {
+	return clamp(since_t0() / max(blend_s, 1e-3), 0.0, 1.0);
+}
+
+// Cloud colour (rgb) and opacity (a) of both layers along `dir`.
+vec4 clouds(vec3 dir, vec3 sun_dir, vec3 sun_colour, vec3 zenith, vec3 horizon, float cover,
+		float dark) {
+	if (dir.y <= 0.0 || cover <= 0.0) {
+		return vec4(0.0);
+	}
+	vec2 drift = cloud_offset + cloud_wind * since_t0();
+	float fade = smoothstep(0.0, 0.08, dir.y);
+	vec2 flat_dir = dir.xz / (dir.y + 0.05);
+	// Light: the sun's colour by day, the sky's by night; a warm rim toward a
+	// low sun; undersides darker with the weather's darkness.
+	float day = smoothstep(-0.12, 0.1, sun_dir.y);
+	vec3 lit = mix(zenith * 1.6 + vec3(0.01), sun_colour * 0.9 + horizon * 0.35, day);
+	float low_sun = (1.0 - smoothstep(0.05, 0.4, sun_dir.y)) * day;
+	float toward = pow(max(dot(dir, sun_dir), 0.0), 6.0);
+
+	vec2 uv_ci = (flat_dir * cirrus_height_m + drift * cirrus_drift) / cirrus_tile_m;
+	float ci = texture(cirrus_tex, uv_ci * vec2(1.0, 0.35)).r;
+	float ci_a = smoothstep(1.0 - 0.75 * cover, 1.05, ci) * 0.55 * fade;
+	vec3 ci_col = lit * 1.05 + sun_colour * toward * low_sun * 0.8;
+
+	vec2 uv_cu = (flat_dir * cumulus_height_m + drift) / cumulus_tile_m;
+	vec2 warp = texture(cirrus_tex, uv_cu * 0.5 + 0.37).rg - 0.5;
+	float n = texture(cumulus_tex, uv_cu + warp * 0.18).r;
+	float edge = 1.0 - cover;
+	float cu_a = smoothstep(edge - 0.08, edge + 0.12, n) * fade;
+	float thick = smoothstep(edge, edge + 0.35, n);
+	vec3 under = lit * (0.6 - 0.4 * dark);
+	vec3 cu_col = mix(lit, under, thick);
+	cu_col += sun_colour * toward * low_sun * (1.0 - thick) * 1.2;
+
+	// Cumulus over cirrus, premultiplied; returned straight for mix().
+	vec3 pm = cu_col * cu_a + ci_col * ci_a * (1.0 - cu_a);
+	float a = cu_a + ci_a * (1.0 - cu_a);
+	return vec4(a > 1e-4 ? pm / a : vec3(0.0), a);
 }
 
 vec3 rotate_about(vec3 v, vec3 axis, float a) {
@@ -131,6 +190,8 @@ void sky() {
 	vec3 moon_dir = normalize(mix(prev_moon_dir, next_moon_dir, w));
 	float star_fade = mix(prev_stars, next_stars, w);
 	float star_angle = mix(prev_star_angle, next_star_angle, w);
+	float cover = mix(prev_cloud_cover, next_cloud_cover, w);
+	float dark = mix(prev_cloud_darkness, next_cloud_darkness, w);
 
 	vec3 dir = EYEDIR;
 	vec2 view_h = normalize(dir.xz + vec2(1e-5));
@@ -158,6 +219,9 @@ void sky() {
 
 	float disc = smoothstep(radians(sun_radius_deg) * 1.1, radians(sun_radius_deg) * 0.9, ang);
 	col += sun_colour * sun_intensity * disc * step(-0.02, sun_dir.y);
+
+	vec4 c = clouds(dir, sun_dir, sun_colour, zenith, horizon, cover, dark);
+	col = mix(col, c.rgb, c.a);
 
 	COLOR = col;
 }
