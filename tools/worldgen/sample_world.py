@@ -16,20 +16,20 @@ from . import water as water_io
 from .grid import Grid
 
 SKETCH = {
-    "size_m": 256,
+    "size_m": 512,
     "sample_m": 2,
     "sea_level_y": 0,
     "height_encoding": {"scale": 0.02, "offset_m": 64.0},
-    "origin_offset_m": 128,
+    "origin_offset_m": 256,
     "world_seed": 5,
-    # root quadtree nodes of 128 m (2 x 2), as the full map has 4,096 m roots
-    "derive": {"minmax_node_m": 64, "minmax_lods": [0, 1]},
+    # one full region; root quadtree nodes of 256 m (2 x 2), as the full map has 4,096 m roots
+    "derive": {"minmax_node_m": 64, "minmax_lods": [0, 2]},
 }
 BIOME_CELL_M = 16
 
 
 def heights():
-    """A smooth made-up field: a slope, a hill and a valley, 129 x 129 samples."""
+    """A smooth made-up field: a slope, a hill and a valley, 257 x 257 samples."""
     n = SKETCH["size_m"] // SKETCH["sample_m"] + 1
     x, z = np.meshgrid(np.arange(n) * 2.0, np.arange(n) * 2.0)
     return heights_at(x, z)
