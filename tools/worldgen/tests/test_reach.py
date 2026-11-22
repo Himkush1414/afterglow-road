@@ -75,6 +75,18 @@ class PocketStageTest(unittest.TestCase):
         outer = [ln for ln in lines if "outer" in ln]
         self.assertTrue(outer and "FAIL" not in outer[0], lines)
 
+    def test_place_file_heights(self):
+        ctx = copy.copy(self.ctx)
+        ctx.sketch = copy.deepcopy(self.ctx.sketch)
+        ctx.sketch["pois"].append({"id": "pond_middle", "x": 1000.0, "z": 1000.0, "y": 0.0})
+        doc = reach.pois_document(ctx)
+        by = {p["id"]: p for p in doc["pois"]}
+        self.assertEqual(len(doc["pois"]), len(ctx.sketch["pois"]))
+        self.assertAlmostEqual(by["pond_middle"]["y"], 50.0, places=3)  # the lake surface, not its bed
+        j, i = reach.cell_of(ctx.grid, 1700.0, 1200.0)
+        self.assertAlmostEqual(by["farm"]["y"], round(float(ctx.layers["height"][j, i]), 3))
+        self.assertEqual(set(by["farm"]), {"id", "x", "z", "y", "region"})
+
     def test_a_planted_pit_is_found_and_filled(self):
         ctx = copy.copy(self.ctx)
         ctx.layers = {"height": self.ctx.layers["height"].copy()}

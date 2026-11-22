@@ -32,7 +32,7 @@ def check_dir(path, sk):
     if set(meta) != META_KEYS:
         errors.append(f"meta.json: keys {sorted(set(meta) ^ META_KEYS)} differ")
     sizes, macro_px = expected_sizes(sk)
-    want = set(sizes) | {"macro.png", "water.json", "roads.json"}
+    want = set(sizes) | {"macro.png", "water.json", "roads.json", "pois.json"}
     trees = "trees/index.json" in meta.get("sha256", {})
     if trees:  # optional until every world places trees
         want |= {"trees/index.json", "regions/index.json"}
@@ -75,4 +75,6 @@ def check_dir(path, sk):
                 errors.append("water.json: top-level keys differ")
             if name == "roads.json" and (set(doc) != {"ways"} or any(set(w) != {"id", "type", "width_m", "points"} for w in doc["ways"])):
                 errors.append("roads.json: keys differ")
+            if name == "pois.json" and (set(doc) != {"pois"} or any(set(p) != {"id", "x", "z", "y", "region"} for p in doc["pois"])):
+                errors.append("pois.json: keys differ")
     return errors

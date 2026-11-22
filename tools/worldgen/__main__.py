@@ -139,7 +139,7 @@ def generate(args):
             derive_mod.apply_layer_colours(sk, json.load(f))
     ctx = run(sk, Grid.full(sk["size_m"], float(sk["sample_m"])), sk["world_seed"])
     os.makedirs(args.out, exist_ok=True)
-    from . import derive
+    from . import derive, reach
 
     encoded = files.encode_height(ctx.layers["height"], sk)
     mask = derive.mask_rgba(ctx)
@@ -199,6 +199,7 @@ def generate(args):
         "macro.png": derive.macro_png(ctx, mask),
         "water.json": water_io.dumps(water_io.document(sk)).encode("ascii"),
         "roads.json": water_io.dumps(roads_io.document(ctx)).encode("ascii"),
+        "pois.json": water_io.dumps(reach.pois_document(ctx)).encode("ascii"),
     }
     for line in tree_lines:
         print(line)
