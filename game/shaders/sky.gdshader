@@ -91,12 +91,13 @@ vec4 clouds(vec3 dir, vec3 sun_dir, vec3 sun_colour, vec3 zenith, vec3 horizon, 
 	float low_sun = (1.0 - smoothstep(0.05, 0.4, sun_dir.y)) * day;
 	float toward = pow(max(dot(dir, sun_dir), 0.0), 6.0);
 
-	vec2 uv_ci = (flat_dir * cirrus_height_m + drift * cirrus_drift) / cirrus_tile_m;
+	// Anchored to world XZ under the eye, so the cumulus matches its ground shadow.
+	vec2 uv_ci = (POSITION.xz + flat_dir * cirrus_height_m + drift * cirrus_drift) / cirrus_tile_m;
 	float ci = texture(cirrus_tex, uv_ci * vec2(1.0, 0.35)).r;
 	float ci_a = smoothstep(1.0 - 0.75 * cover, 1.05, ci) * 0.55 * fade;
 	vec3 ci_col = lit * 1.05 + sun_colour * toward * low_sun * 0.8;
 
-	vec2 uv_cu = (flat_dir * cumulus_height_m + drift) / cumulus_tile_m;
+	vec2 uv_cu = (POSITION.xz + flat_dir * cumulus_height_m + drift) / cumulus_tile_m;
 	vec2 warp = texture(cirrus_tex, uv_cu * 0.5 + 0.37).rg - 0.5;
 	float n = texture(cumulus_tex, uv_cu + warp * 0.18).r;
 	float edge = 1.0 - cover;
