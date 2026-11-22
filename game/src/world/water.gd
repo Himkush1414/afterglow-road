@@ -15,7 +15,7 @@ const SHADER_DESKTOP := "res://shaders/water_desktop.gdshader"
 ## and a ring around it out to FAR_M.
 const SEA_GRID_M := 512.0
 const SEA_GRID_QUADS := 64
-const SEA_FAR_M := 12000.0
+const SEA_FAR_M := 60000.0
 ## River ribbons are cut into one mesh per region of REGION_M.
 const REGION_M := 512.0
 ## Points either side used to smooth a river's grade for its flow speed.
