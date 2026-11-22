@@ -79,10 +79,53 @@ func minute() -> int:
 
 ## Sun elevation in degrees at clock time `hours` (08 §1.2).
 func sun_elevation_deg(hours: float) -> float:
+	return _elevation(_sun_hour_angle(hours), float(_cfg.sun_declination_deg))
+
+
+## Sun azimuth in degrees from north, clockwise, at clock time `hours`.
+func sun_azimuth_deg(hours: float) -> float:
+	return _azimuth(_sun_hour_angle(hours), float(_cfg.sun_declination_deg))
+
+
+## Moon phase at `gmin` game minutes: 0 new, 0.5 full, repeating every
+## moon_cycle_days game days.
+func moon_phase(gmin: float) -> float:
+	var days := gmin / GMIN_PER_DAY
+	return fposmod(float(_cfg.moon_phase_at_start) + days / float(_cfg.moon_cycle_days), 1.0)
+
+
+## Moon elevation in degrees at clock time `hours` and phase `p`.
+func moon_elevation_deg(hours: float, p: float) -> float:
+	return _elevation(_sun_hour_angle(hours) - 360.0 * p, float(_cfg.moon_declination_deg))
+
+
+## Moon azimuth in degrees from north, clockwise.
+func moon_azimuth_deg(hours: float, p: float) -> float:
+	return _azimuth(_sun_hour_angle(hours) - 360.0 * p, float(_cfg.moon_declination_deg))
+
+
+## Lit fraction of the moon's disc at phase `p`.
+static func moon_illumination(p: float) -> float:
+	return 0.5 * (1.0 - cos(TAU * p))
+
+
+func _sun_hour_angle(hours: float) -> float:
+	return 15.0 * (hours - float(_cfg.solar_noon_h))
+
+
+func _elevation(hour_angle_deg: float, dec_deg: float) -> float:
 	var lat := deg_to_rad(float(_cfg.latitude_deg))
-	var dec := deg_to_rad(float(_cfg.sun_declination_deg))
-	var h := deg_to_rad(15.0 * (hours - float(_cfg.solar_noon_h)))
+	var dec := deg_to_rad(dec_deg)
+	var h := deg_to_rad(hour_angle_deg)
 	return rad_to_deg(asin(sin(lat) * sin(dec) + cos(lat) * cos(dec) * cos(h)))
+
+
+func _azimuth(hour_angle_deg: float, dec_deg: float) -> float:
+	var lat := deg_to_rad(float(_cfg.latitude_deg))
+	var dec := deg_to_rad(dec_deg)
+	var h := deg_to_rad(hour_angle_deg)
+	var a := rad_to_deg(atan2(sin(h), cos(h) * sin(lat) - tan(dec) * cos(lat)))
+	return fposmod(180.0 + a, 360.0)
 
 
 ## Day phase at clock time `hours`.

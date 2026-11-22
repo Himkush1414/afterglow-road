@@ -1,6 +1,7 @@
 extends TestCase
 ## GameClock: the T-08-2 rule with test tuning values (not the game's),
-## scale, pause, hour and phase signals, sun elevation, save data.
+## scale, pause, hour and phase signals, sun and moon positions (T-08-1 and
+## T-08-3 in the general form; T-08-3 also on the loaded content), save data.
 
 const CFG := {
 	"gmin_real_s": 1.5,
@@ -11,6 +12,9 @@ const CFG := {
 	"night_below_deg": -10.0,
 	"golden_from_deg": 0.0,
 	"day_from_deg": 6.0,
+	"moon_cycle_days": 6,
+	"moon_phase_at_start": 0.25,
+	"moon_declination_deg": -10.0,
 }
 
 var _c: GameClock
@@ -88,6 +92,76 @@ func test_sun_elevation_follows_the_formula() -> void:
 	check_eq(_c.phase_at(noon - h0 - 0.01), GameClock.Phase.DAWN)
 	check_eq(_c.phase_at(noon + h0 + 0.01), GameClock.Phase.DUSK)
 	check_eq(_c.phase_at(noon - h0 + 0.01), GameClock.Phase.GOLDEN)
+
+
+func test_sun_azimuth() -> void:
+	var lat := deg_to_rad(float(CFG.latitude_deg))
+	var dec := deg_to_rad(float(CFG.sun_declination_deg))
+	var noon: float = CFG.solar_noon_h
+	check_near(_c.sun_azimuth_deg(noon), 180.0, 1e-6, "south at noon")
+	var h0 := rad_to_deg(acos(-tan(lat) * tan(dec))) / 15.0
+	# At rise and set: cos A = sin δ / cos φ.
+	var rise_az := rad_to_deg(acos(sin(dec) / cos(lat)))
+	check_near(_c.sun_azimuth_deg(noon - h0), rise_az, 1e-6, "rises north of east")
+	check_near(_c.sun_azimuth_deg(noon + h0), 360.0 - rise_az, 1e-6, "sets north of west")
+	check_near(_c.sun_azimuth_deg(noon + 12.0), 0.0, 1e-6, "north at midnight")
+	check(_c.sun_azimuth_deg(noon - 3.0) < 180.0, "east of south in the morning")
+
+
+func test_moon_phase_cycle_and_light() -> void:
+	var cycle := float(CFG.moon_cycle_days) * GameClock.GMIN_PER_DAY
+	check_near(_c.moon_phase(0.0), float(CFG.moon_phase_at_start), 1e-12, "start phase")
+	for g: float in [0.0, 333.3, 4000.0, 12345.6]:
+		check_near(_c.moon_phase(g + cycle), _c.moon_phase(g), 1e-9, "repeats after a cycle")
+		check_near(_c.moon_phase(g + 3.0 * cycle), _c.moon_phase(g), 1e-9, "and after three")
+	check_near(_c.moon_phase(cycle * 0.25), 0.5, 1e-12, "full a quarter cycle later")
+	check_near(GameClock.moon_illumination(0.0), 0.0, 1e-12, "new")
+	check_near(GameClock.moon_illumination(0.5), 1.0, 1e-12, "full")
+	check_near(GameClock.moon_illumination(0.25), 0.5, 1e-12, "half")
+	var midnight := float(CFG.solar_noon_h) + 12.0
+	var top := 90.0 - float(CFG.latitude_deg) + float(CFG.moon_declination_deg)
+	check_near(_c.moon_azimuth_deg(midnight, 0.5), 180.0, 1e-6, "full moon south at midnight")
+	check_near(_c.moon_elevation_deg(midnight, 0.5), top, 1e-6, "and at its highest")
+
+
+## Clock hours (16 to 23) where the full moon (phase held at 0.5) rises,
+## and where the sun sets, found by bisection on the elevation.
+func _full_moon_rise_and_sunset(c: GameClock) -> Vector2:
+	var moon := func(t: float) -> float: return c.moon_elevation_deg(t, 0.5)
+	var sun := func(t: float) -> float: return -c.sun_elevation_deg(t)
+	return Vector2(_rising_root(moon, 12.0, 24.0), _rising_root(sun, 12.0, 24.0))
+
+
+func _rising_root(f: Callable, a: float, b: float) -> float:
+	if float(f.call(a)) >= 0.0 or float(f.call(b)) < 0.0:
+		return NAN
+	for i in 60:
+		var m := (a + b) * 0.5
+		if float(f.call(m)) < 0.0:
+			a = m
+		else:
+			b = m
+	return (a + b) * 0.5
+
+
+func test_full_moon_rises_at_sunset() -> void:
+	# T-08-3 in the general form: with the moon's declination opposite the
+	# sun's, the full moon crosses 0° within 20 game minutes of sunset.
+	var r := _full_moon_rise_and_sunset(_c)
+	check(absf(r.x - r.y) * 60.0 <= 20.0, "rise %.3f h, sunset %.3f h" % [r.x, r.y])
+
+
+func test_full_moon_rises_at_sunset_on_the_content() -> void:
+	var cfg := ContentDB.tuning("clock")
+	if not check(not cfg.is_empty(), "content has a clock group"):
+		return
+	var c := GameClock.new()
+	c.configure(cfg)
+	var r := _full_moon_rise_and_sunset(c)
+	check(absf(r.x - r.y) * 60.0 <= 20.0, "rise %.3f h, sunset %.3f h" % [r.x, r.y])
+	var cycle := float(cfg.moon_cycle_days) * GameClock.GMIN_PER_DAY
+	check_near(c.moon_phase(777.0 + cycle), c.moon_phase(777.0), 1e-9, "repeats after a cycle")
+	c.free()
 
 
 func test_jumps_announce_once() -> void:

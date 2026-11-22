@@ -7,7 +7,10 @@
 		"solar_noon_h": 12.0,
 		"night_below_deg": -6.0,
 		"golden_from_deg": 0.0,
-		"day_from_deg": 6.0
+		"day_from_deg": 6.0,
+		"moon_cycle_days": 10,
+		"moon_phase_at_start": 0.0,
+		"moon_declination_deg": 0.0
 	},
 	"save": {
 		"autosave_s": 120
