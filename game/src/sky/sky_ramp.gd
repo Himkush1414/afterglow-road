@@ -3,7 +3,8 @@ extends RefCounted
 ## The sky colour ramp (08 §2.3): rows by sun elevation, linearly
 ## interpolated, held at the first and last row beyond the ends. A row
 ## without a sun colour takes the nearest one above it (or below, at the
-## top); a row without a horizon colour toward the sun takes its sun colour.
+## top); a row without a horizon colour toward the sun takes its own sun
+## colour, or its plain horizon when it has none (no warm side at night).
 ## Colours are "#RRGGBB" strings in the data and sRGB Colors here.
 
 const COLOURS: Array[String] = ["zenith", "horizon", "horizon_sun", "sun_colour"]
@@ -40,6 +41,8 @@ func setup(ramp: Array) -> bool:
 		errors.append("ramp: no row has a sun_colour")
 		return false
 	for i in rows.size():
+		if not rows[i].has("horizon_sun"):
+			rows[i].horizon_sun = rows[i].get("sun_colour", rows[i].horizon)
 		if not rows[i].has("sun_colour"):
 			var src: int = given[-1]
 			for g in given:
@@ -47,8 +50,6 @@ func setup(ramp: Array) -> bool:
 					src = g
 					break
 			rows[i].sun_colour = rows[src].sun_colour
-		if not rows[i].has("horizon_sun"):
-			rows[i].horizon_sun = rows[i].sun_colour
 	return errors.is_empty()
 
 
