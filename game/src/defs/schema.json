@@ -1181,6 +1181,313 @@
 					"type": "string"
 				}
 			}
+		},
+		"tuning_vitals": {
+			"type": "object",
+			"fields": {
+				"hunger_per_gh": {
+					"type": "number",
+					"min": 0
+				},
+				"drain_working_mult": {
+					"type": "number",
+					"min": 0
+				},
+				"drain_sprinting_mult": {
+					"type": "number",
+					"min": 0
+				},
+				"drain_asleep_mult": {
+					"type": "number",
+					"min": 0
+				}
+			}
+		},
+		"tuning_gathering": {
+			"type": "object",
+			"fields": {
+				"snare_chance": {
+					"type": "number",
+					"min": 0,
+					"max": 1
+				}
+			}
+		},
+		"tuning_movement": {
+			"type": "object",
+			"fields": {
+				"jog_ms": {
+					"type": "number",
+					"min": 0.01
+				}
+			}
+		},
+		"tuning_inventory": {
+			"type": "object",
+			"fields": {
+				"backpack_kg": {
+					"type": "number",
+					"min": 0.01
+				}
+			}
+		},
+		"loop_qty": {
+			"type": "object",
+			"fields": {
+				"item": {
+					"type": "id",
+					"ref": [
+						"items",
+						"units"
+					]
+				},
+				"qty": {
+					"type": "int",
+					"min": 0
+				}
+			}
+		},
+		"loop_tree_count": {
+			"type": "object",
+			"fields": {
+				"tree": {
+					"type": "id",
+					"ref": "trees"
+				},
+				"count": {
+					"type": "int",
+					"min": 0
+				}
+			}
+		},
+		"loop_station_need": {
+			"type": "object",
+			"fields": {
+				"station": {
+					"type": "id",
+					"ref": "pieces"
+				},
+				"any_of": {
+					"type": "list",
+					"of": {
+						"type": "id",
+						"ref": [
+							"items",
+							"units"
+						]
+					},
+					"min_len": 1
+				}
+			}
+		},
+		"loop_station_give": {
+			"type": "object",
+			"fields": {
+				"station": {
+					"type": "id",
+					"ref": "pieces"
+				},
+				"items": {
+					"type": "list",
+					"of": {
+						"type": "id",
+						"ref": [
+							"items",
+							"units"
+						]
+					},
+					"min_len": 1
+				}
+			}
+		},
+		"loop_essential": {
+			"type": "object",
+			"fields": {
+				"id": {
+					"type": "id"
+				},
+				"kind": {
+					"type": "string",
+					"enum": [
+						"item",
+						"piece"
+					]
+				}
+			}
+		},
+		"tuning_loop": {
+			"type": "object",
+			"fields": {
+				"reference_day_gh": {
+					"type": "object",
+					"fields": {
+						"awake": {
+							"type": "number",
+							"min": 0
+						},
+						"asleep": {
+							"type": "number",
+							"min": 0
+						},
+						"working": {
+							"type": "number",
+							"min": 0
+						},
+						"sprinting": {
+							"type": "number",
+							"min": 0
+						}
+					}
+				},
+				"snare": {
+					"type": "object",
+					"fields": {
+						"animal": {
+							"type": "id",
+							"ref": "animals"
+						},
+						"drop": {
+							"type": "id",
+							"ref": [
+								"items",
+								"units"
+							]
+						},
+						"food": {
+							"type": "id",
+							"ref": [
+								"items",
+								"units"
+							]
+						},
+						"share_min": {
+							"type": "number",
+							"min": 0
+						},
+						"share_max": {
+							"type": "number",
+							"min": 0
+						}
+					}
+				},
+				"travel": {
+					"type": "object",
+					"fields": {
+						"from": {
+							"type": "id"
+						},
+						"to": {
+							"type": "id"
+						},
+						"gh_min": {
+							"type": "number",
+							"min": 0
+						},
+						"gh_max": {
+							"type": "number",
+							"min": 0
+						},
+						"join_m": {
+							"type": "number",
+							"min": 0
+						}
+					}
+				},
+				"beacon": {
+					"type": "object",
+					"fields": {
+						"piece": {
+							"type": "id",
+							"ref": "pieces"
+						},
+						"concrete_recipe": {
+							"type": "id",
+							"ref": "recipes"
+						},
+						"at_summit": {
+							"type": "list",
+							"of": {
+								"type": "loop_qty"
+							}
+						},
+						"summit_trees": {
+							"type": "list",
+							"of": {
+								"type": "loop_tree_count"
+							}
+						},
+						"on_hand": {
+							"type": "list",
+							"of": {
+								"type": "id",
+								"ref": [
+									"items",
+									"units"
+								]
+							}
+						},
+						"carried_alone": {
+							"type": "list",
+							"of": {
+								"type": "id",
+								"ref": [
+									"items",
+									"units"
+								]
+							}
+						},
+						"trips_max": {
+							"type": "int",
+							"min": 1
+						}
+					}
+				},
+				"recover": {
+					"type": "object",
+					"fields": {
+						"base": {
+							"type": "list",
+							"of": {
+								"type": "id",
+								"ref": [
+									"items",
+									"units"
+								]
+							},
+							"min_len": 1
+						},
+						"abundant_min_count": {
+							"type": "int",
+							"min": 0
+						},
+						"station_needs": {
+							"type": "list",
+							"of": {
+								"type": "loop_station_need"
+							}
+						},
+						"station_gives": {
+							"type": "list",
+							"of": {
+								"type": "loop_station_give"
+							}
+						},
+						"essential": {
+							"type": "list",
+							"of": {
+								"type": "loop_essential"
+							},
+							"min_len": 1
+						},
+						"renewable": {
+							"type": "list",
+							"of": {
+								"type": "id"
+							}
+						}
+					}
+				}
+			}
 		}
 	},
 	"files": {
@@ -1203,6 +1510,26 @@
 					},
 					"water": {
 						"type": "tuning_water"
+					},
+					"vitals": {
+						"type": "tuning_vitals",
+						"optional": true
+					},
+					"gathering": {
+						"type": "tuning_gathering",
+						"optional": true
+					},
+					"movement": {
+						"type": "tuning_movement",
+						"optional": true
+					},
+					"inventory": {
+						"type": "tuning_inventory",
+						"optional": true
+					},
+					"loop": {
+						"type": "tuning_loop",
+						"optional": true
 					}
 				}
 			}
