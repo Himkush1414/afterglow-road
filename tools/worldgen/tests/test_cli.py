@@ -121,7 +121,11 @@ class GenerateCommandTest(unittest.TestCase):
                 with open(os.path.join(out, "meta.json"), encoding="utf-8") as f:
                     metas.append(json.load(f))
             self.assertEqual(metas[0]["sha256"], metas[1]["sha256"])
-            self.assertEqual(set(metas[0]["sha256"]), {"height.bin", "normal.bin", "biome.bin", "mask.bin", "minmax.bin", "macro.png", "water.json", "roads.json"})
+            self.assertEqual(set(metas[0]["sha256"]), {"height.bin", "normal.bin", "biome.bin", "mask.bin", "minmax.bin", "macro.png", "water.json", "roads.json", "pois.json"})
+            with open(os.path.join(d, "a", "pois.json"), encoding="ascii") as f:
+                pois = json.load(f)["pois"]
+            self.assertEqual([q["id"] for q in pois], ["village", "farm"])
+            self.assertTrue(all(q["y"] > 0.0 for q in pois), pois)
             r = cli("check-files", "--sketch", s, "--dir", os.path.join(d, "a"))
             self.assertEqual(r.returncode, 0, r.stdout)
             self.assertIn("FILE CHECK: PASS", r.stdout)

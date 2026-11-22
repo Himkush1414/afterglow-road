@@ -312,3 +312,16 @@ def report(ctx, walk=None):
     n = int(len(np.unique(w.labels[pocket])))
     row(f"walkable pockets outside the boundary band: {n} ({int(pocket.sum())} cells)", n == 0)
     return lines, bad
+
+
+def pois_document(ctx):
+    """The place file (04 §2): every place of the table with its final
+    height: the ground, a bridge deck, or the water surface where it lies in
+    water."""
+    surface, depth, _ = walk_surface(ctx)
+    top = surface + depth
+    out = []
+    for p in ctx.sketch["pois"]:
+        j, i = cell_of(ctx.grid, p["x"], p["z"])
+        out.append({"id": p["id"], "x": p["x"], "z": p["z"], "y": round(float(top[j, i]), 3), "region": p.get("region", "")})
+    return {"pois": out}
