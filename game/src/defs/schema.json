@@ -1074,6 +1074,113 @@
 					"max": 1
 				}
 			}
+		},
+		"animal_flee": {
+			"type": "object",
+			"fields": {
+				"mode": {
+					"type": "string",
+					"enum": [
+						"run",
+						"tree",
+						"fly",
+						"curl",
+						"hole",
+						"none"
+					]
+				},
+				"m": {
+					"type": "number",
+					"min": 0,
+					"nullable": true
+				}
+			}
+		},
+		"animal_hours": {
+			"type": "object",
+			"fields": {
+				"from": {
+					"type": "int",
+					"min": 0,
+					"max": 24
+				},
+				"to": {
+					"type": "int",
+					"min": 0,
+					"max": 24
+				}
+			}
+		},
+		"animal": {
+			"type": "object",
+			"fields": {
+				"id": {
+					"type": "id"
+				},
+				"name_key": {
+					"type": "string"
+				},
+				"hp": {
+					"type": "int",
+					"min": 1,
+					"nullable": true
+				},
+				"walk_ms": {
+					"type": "number",
+					"min": 0,
+					"nullable": true
+				},
+				"flee_ms": {
+					"type": "number",
+					"min": 0,
+					"nullable": true
+				},
+				"sense_m": {
+					"type": "number",
+					"min": 0,
+					"nullable": true
+				},
+				"flee": {
+					"type": "animal_flee"
+				},
+				"active_hours": {
+					"type": "list",
+					"of": {
+						"type": "animal_hours"
+					},
+					"min_len": 1
+				},
+				"biomes": {
+					"type": "list",
+					"of": {
+						"type": "id"
+					},
+					"min_len": 1
+				},
+				"drops": {
+					"type": "list",
+					"of": {
+						"type": "drop"
+					}
+				},
+				"catch": {
+					"type": "list",
+					"of": {
+						"type": "id"
+					}
+				},
+				"max_active_phone": {
+					"type": "int",
+					"min": 0
+				},
+				"max_active_desktop": {
+					"type": "int",
+					"min": 0
+				},
+				"scene": {
+					"type": "string"
+				}
+			}
 		}
 	},
 	"files": {
@@ -1214,6 +1321,24 @@
 			},
 			"collections": {
 				"nodes": "nodes"
+			}
+		},
+		"animals.json": {
+			"required": true,
+			"spec": {
+				"type": "object",
+				"fields": {
+					"animals": {
+						"type": "list",
+						"of": {
+							"type": "animal"
+						},
+						"min_len": 1
+					}
+				}
+			},
+			"collections": {
+				"animals": "animals"
 			}
 		},
 		"loot.json": {

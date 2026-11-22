@@ -51,6 +51,12 @@ id,output,qty,station,tool_class,inputs,time,time_unit,unlock,notes
 rec_a,thing_a,2,piece_b,chop/cut,tool_a:1,6,swings,item:kit_a+station:piece_b,also gives thing_a:3
 rec_b,tool_a,1,hand,,thing_a:2,4,s,start,
 T
+cat >"${csv}/animals.csv" <<'T'
+id,name,hp,walk_ms,flee_ms,sense_m,flee_m,active_hours,biomes,drops,catch,max_active_phone,max_active_desktop
+ani_a,A,8,1.5,9.0,18,35,05-10;22-02,b_one;b_two,thing_a:2|tool_a:1,snare or thrown stone,4,8
+ani_b,B,,,,,fly 60,00-24,b_one,,none (cannot be harvested),0,0
+ani_c,C,5,2.0,6.0,14,tree,06-19,b_one,thing_a:1,thrown stone,3,6
+T
 echo '{"kept": true}' >"${out}/other.json"
 
 if python3 "${tool}" "${csv}" "${out}" >/dev/null; then pass "converts"; else fail "converts"; fi
@@ -64,9 +70,14 @@ rec={r['id']:r for r in json.load(open('${out}/recipes.json'))['recipes']}
 tr={r['id']:r for r in json.load(open('${out}/trees.json'))['trees']}
 nd={r['id']:r for r in json.load(open('${out}/nodes.json'))['nodes']}
 lt=json.load(open('${out}/loot.json'))['tables']
+an={r['id']:r for r in json.load(open('${out}/animals.json'))['animals']}
 by={i['id']:i for i in items['items']}
 sys.exit(0 if ($2) else 1)"; then pass "$1"; else fail "$1"; fi
 }
+check "animal hours as spans" "an['ani_a']['active_hours']==[{'from':5,'to':10},{'from':22,'to':2}]"
+check "animal flee distance and modes" "an['ani_a']['flee']=={'mode':'run','m':35} and an['ani_b']['flee']=={'mode':'fly','m':60} and an['ani_c']['flee']=={'mode':'tree','m':None}"
+check "animal catch methods" "an['ani_a']['catch']==['snare','thrown_stone'] and an['ani_b']['catch']==[]"
+check "animal without a body" "an['ani_b']['hp'] is None and an['ani_b']['drops']==[] and an['ani_a']['drops'][1]['item']=='tool_a'"
 check "material flag is a bool" "mats['materials'][0]['flammable'] is True"
 check "fuel object" "by['thing_a']['fuel']=={'gmin':7,'class':'K'}"
 check "no fuel without class" "by['tool_a']['fuel'] is None"

@@ -13,7 +13,7 @@ const UI_TABLE := "res://ui/i18n/ui.csv"
 const UI_SCENES := "res://ui"
 const KEY_PATTERN := "^[a-z0-9_]+(\\.[a-z0-9_]+)*$"
 ## Collections whose entries name text: collection -> also needs "<key>.desc".
-const TEXT_KEYS := {"items": true, "pieces": true, "nodes": false, "trees": false}
+const TEXT_KEYS := {"items": true, "pieces": true, "nodes": false, "trees": false, "animals": false}
 
 var root := ""
 var schema_path := SCHEMA_PATH
@@ -180,6 +180,10 @@ func node(id: StringName) -> NodeDef:
 	return (_defs.get("nodes", {}) as Dictionary).get(id)
 
 
+func animal(id: StringName) -> AnimalDef:
+	return (_defs.get("animals", {}) as Dictionary).get(id)
+
+
 func loot(id: StringName) -> LootTable:
 	return (_defs.get("loot", {}) as Dictionary).get(id)
 
@@ -214,6 +218,7 @@ func _build_defs() -> void:
 		"recipes": RecipeDef.from_dict,
 		"trees": TreeDef.from_dict,
 		"nodes": NodeDef.from_dict,
+		"animals": AnimalDef.from_dict,
 		"loot": LootTable.from_dict,
 	}
 	for name: String in builders:
