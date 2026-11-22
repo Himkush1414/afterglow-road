@@ -155,5 +155,39 @@
 		"wave_range_m": 200,
 		"normal_tile_m": 8.0,
 		"roughness": 0.05
+	},
+	"sky": {
+		"ramp": [
+			{
+				"elev_deg": -10,
+				"zenith": "#000010",
+				"horizon": "#101020",
+				"sun_energy": 0,
+				"ambient_energy": 0.3
+			},
+			{
+				"elev_deg": 0,
+				"zenith": "#203060",
+				"horizon": "#C08060",
+				"sun_colour": "#FFA060",
+				"sun_energy": 0.5,
+				"ambient_energy": 0.6
+			},
+			{
+				"elev_deg": 40,
+				"zenith": "#3060C0",
+				"horizon": "#C0D0E0",
+				"sun_colour": "#FFFFF0",
+				"sun_energy": 3.0,
+				"ambient_energy": 1.0
+			}
+		],
+		"moon_colour": "#C0C8FF",
+		"moon_energy_base": 0.05,
+		"moon_energy_illum": 0.2,
+		"moon_cloud_dim": 0.5,
+		"sun_shadow_above_deg": 0,
+		"overcast_sun_dim": 0.5,
+		"overcast_colour": "#909090"
 	}
 }
