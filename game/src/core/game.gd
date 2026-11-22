@@ -15,6 +15,7 @@ var slot := ""
 var play_seconds := 0.0
 
 @onready var clock: GameClock = $Clock
+@onready var weather: Weather = $Weather
 @onready var sky_lights: SkyLights = $SkyLights
 @onready var sky_dome: SkyDome = $SkyDome
 @onready var world: WorldData = $WorldData
@@ -30,7 +31,7 @@ func _enter_tree() -> void:
 
 func _exit_tree() -> void:
 	SaveGame.active_slot = ""
-	for name: String in ["clock", "ids"]:
+	for name: String in ["clock", "ids", "weather"]:
 		SaveGame.unregister_section(name)
 	SaveGame.meta_source = func() -> Dictionary: return {}
 	SaveGame.region_source = func() -> Dictionary: return {}
@@ -46,6 +47,8 @@ func _ready() -> void:
 		var size := 128 if radiance == null else int(radiance)
 		if not sky_dome.setup(clock, sky_lights, size, ContentDB.tuning("environment")):
 			Log.error("sky", "; ".join(sky_dome.errors))
+		weather.sky_dome = sky_dome
+		weather.sky_lights = sky_lights
 		var forward := RenderingServer.get_current_rendering_method() == "forward_plus"
 		sky_dome.volumetric = forward and Quality.value("volumetric_fog") == true
 	if not world.load_dir(WorldData.default_dir()):
@@ -61,6 +64,7 @@ func _ready() -> void:
 		elif terrain.is_ready():
 			water.build(terrain.height_texture())
 		streamer.setup(world)
+		weather.terrain = terrain
 		sky_dome.find_glow_target(world)
 		SaveGame.region_source = streamer.deltas
 	if App.is_dev():
@@ -71,6 +75,7 @@ func _ready() -> void:
 		console.register(
 			"perf", func(_a: PackedStringArray) -> String: return perf.toggle(), "perf"
 		)
+		console.register("weather", _weather_command, "weather <state>")
 
 
 ## Focus loss and OS pause stop a single-player game behind the pause menu;
@@ -104,6 +109,7 @@ func start_new(new_slot: String) -> Error:
 	Rng.save_seed = rng.randi()
 	Ids.set_counter(Ids.FIRST_DYNAMIC)
 	clock.new_game()
+	weather.new_game(clock.now_gmin)
 	return SaveGame.save_slot(slot)
 
 
@@ -121,9 +127,18 @@ func _begin(new_slot: String) -> void:
 	slot = new_slot
 	clock.configure(ContentDB.tuning("clock"))
 	SaveGame.register_section("clock", clock.save_data, clock.load_data)
+	if not weather.configure(ContentDB.tuning("weather"), clock):
+		Log.error("weather", "; ".join(weather.errors))
 	SaveGame.register_section("ids", func() -> Variant: return {"next": Ids.counter()}, _load_ids)
+	SaveGame.register_section("weather", weather.save_data, weather.load_data)
 	SaveGame.meta_source = _meta
 	SaveGame.active_slot = slot
+
+
+func _weather_command(args: PackedStringArray) -> String:
+	if args.size() != 1 or not weather.force(args[0], clock.now_gmin):
+		return "usage: weather <%s>" % "|".join(weather.state_ids())
+	return "weather set to %s" % args[0]
 
 
 func _load_ids(data: Variant) -> bool:

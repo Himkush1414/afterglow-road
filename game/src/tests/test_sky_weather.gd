@@ -221,3 +221,26 @@ func test_save_round_trip() -> void:
 	bad.state = "snow"
 	check(not other.load_data(bad), "unknown state refused")
 	other.free()
+
+
+func test_push_drives_the_sky_and_force_switches() -> void:
+	var dome := SkyDome.new()
+	var lights := SkyLights.new()
+	_w.sky_dome = dome
+	_w.sky_lights = lights
+	_w.new_game(0.0)
+	_w.push(10.0)
+	check_near(dome.cloud_cover, 0.1, 1e-9, "cover")
+	check_near(dome.visibility_m, 10000.0, 1e-9, "visibility")
+	check(dome.mist_allowed, "mist allowed in the mist state")
+	check(dome.wind.length() > 0.0 and dome.wind.x > 0.0, "wind toward the north-east side")
+	check_near(lights.cloud_cover, 0.1, 1e-9, "lights cover")
+	check(_w.force("wet", 20.0), "forced")
+	check(not _w.force("snow", 20.0), "unknown refused")
+	_w.push(40.0)
+	check_eq(_w.state, "wet")
+	check_near(dome.cloud_cover, 0.9, 1e-9, "blended in after 20 minutes")
+	check(not dome.mist_allowed, "no mist outside the mist state")
+	check_eq(_w.state_ids(), ["sun", "grey", "wet", "mist"] as Array[String])
+	lights.free()
+	dome.free()

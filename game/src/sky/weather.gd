@@ -9,6 +9,10 @@ extends Node
 ## order, so sleeping through weather works.
 
 var errors: PackedStringArray = []
+## What the weather drives, once per game minute (each may be null).
+var sky_dome: SkyDome
+var sky_lights: SkyLights
+var terrain: Terrain
 var state := ""
 var next_change_gmin := 0.0
 ## Direction the wind blows from (compass degrees) and its base speed (m/s).
@@ -26,6 +30,7 @@ var _prev_wind_dir := 0.0
 var _prev_wind_speed := 0.0
 var _blend_from := -INF
 var _last_gmin := -1.0
+var _pushed_gmin := -1
 
 
 ## Takes the "weather" tuning group and the clock (sun height for drying).
@@ -105,6 +110,53 @@ func update(gmin: float) -> void:
 	if gmin > _last_gmin:
 		_wet(_last_gmin, gmin)
 		_last_gmin = gmin
+
+
+func _process(_delta: float) -> void:
+	if _clock == null or not is_configured() or not _clock.is_configured() or state == "":
+		return
+	update(_clock.now_gmin)
+	var g := int(_clock.now_gmin)
+	if g != _pushed_gmin:
+		push(float(g))
+
+
+## Hands the blended parameters at `gmin` to the sky, the lights and the
+## terrain: cloud cover and darkness, visibility, dawn mist allowed in the
+## mist state, wind, ground wetness.
+func push(gmin: float) -> void:
+	_pushed_gmin = int(gmin)
+	var p := params(gmin)
+	if sky_dome != null:
+		sky_dome.cloud_cover = float(p.cloud_cover)
+		sky_dome.cloud_darkness = float(p.cloud_darkness)
+		sky_dome.visibility_m = float(p.visibility_m)
+		sky_dome.mist_allowed = state == _cfg.mist_state
+		sky_dome.wind = wind_vector(p)
+	if sky_lights != null:
+		sky_lights.cloud_cover = float(p.cloud_cover)
+	if terrain != null and terrain.is_ready():
+		terrain.set_wetness(ground_wetness)
+
+
+## Switches to state `id` at `gmin` now (debug console), blending as for a
+## rolled change; the next roll stays where it was. False for an unknown id.
+func force(id: String, gmin: float) -> bool:
+	if not _states.has(id):
+		return false
+	update(gmin)
+	_prev_state = state
+	_prev_wind_dir = wind_dir_deg
+	_prev_wind_speed = wind_speed
+	_blend_from = gmin
+	state = id
+	_pick_wind(_stream(gmin))
+	_pushed_gmin = -1
+	return true
+
+
+func state_ids() -> Array[String]:
+	return _order.duplicate()
 
 
 ## The state rolled at change time `t` coming from state `from`, with the
