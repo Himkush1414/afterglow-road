@@ -1113,6 +1113,171 @@
 				}
 			}
 		},
+		"weather_state": {
+			"type": "object",
+			"fields": {
+				"id": {
+					"type": "id"
+				},
+				"cloud_cover": {
+					"type": "number",
+					"min": 0,
+					"max": 1
+				},
+				"cloud_darkness": {
+					"type": "number",
+					"min": 0,
+					"max": 1
+				},
+				"rain": {
+					"type": "number",
+					"min": 0,
+					"max": 1
+				},
+				"wind_min_ms": {
+					"type": "number",
+					"min": 0
+				},
+				"wind_max_ms": {
+					"type": "number",
+					"min": 0
+				},
+				"gustiness": {
+					"type": "number",
+					"min": 0,
+					"max": 1
+				},
+				"temp_day_c": {
+					"type": "number"
+				},
+				"temp_night_c": {
+					"type": "number"
+				},
+				"visibility_m": {
+					"type": "number",
+					"min": 1
+				},
+				"lightning": {
+					"type": "bool"
+				}
+			}
+		},
+		"weather_row": {
+			"type": "object",
+			"fields": {
+				"from": {
+					"type": "id"
+				},
+				"p": {
+					"type": "list",
+					"of": {
+						"type": "number",
+						"min": 0,
+						"max": 1
+					}
+				}
+			}
+		},
+		"tuning_weather": {
+			"type": "object",
+			"fields": {
+				"states": {
+					"type": "list",
+					"min_len": 1,
+					"of": {
+						"type": "weather_state"
+					}
+				},
+				"transitions": {
+					"type": "list",
+					"of": {
+						"type": "weather_row"
+					}
+				},
+				"roll_every_gmin": {
+					"type": "number",
+					"min": 1
+				},
+				"blend_gmin": {
+					"type": "number",
+					"min": 0
+				},
+				"fog_state": {
+					"type": "id"
+				},
+				"fog_start_from_h": {
+					"type": "number",
+					"min": 0,
+					"max": 24
+				},
+				"fog_start_to_h": {
+					"type": "number",
+					"min": 0,
+					"max": 24
+				},
+				"fog_end_h": {
+					"type": "number",
+					"min": 0,
+					"max": 24
+				},
+				"fallback_state": {
+					"type": "id"
+				},
+				"grace_state": {
+					"type": "id"
+				},
+				"grace_until_gmin": {
+					"type": "number",
+					"min": 0
+				},
+				"grace_then_state": {
+					"type": "id"
+				},
+				"rain_states": {
+					"type": "list",
+					"of": {
+						"type": "id"
+					}
+				},
+				"no_rain_before_gmin": {
+					"type": "number",
+					"min": 0
+				},
+				"no_rain_state": {
+					"type": "id"
+				},
+				"prevailing_from_deg": {
+					"type": "number",
+					"min": 0,
+					"max": 360
+				},
+				"turn_deg": {
+					"type": "number",
+					"min": 0,
+					"max": 180
+				},
+				"wet_full_gmin": {
+					"type": "number",
+					"min": 1
+				},
+				"dry_sun_gmin": {
+					"type": "number",
+					"min": 1
+				},
+				"dry_shade_gmin": {
+					"type": "number",
+					"min": 1
+				},
+				"sun_max_cover": {
+					"type": "number",
+					"min": 0,
+					"max": 1
+				},
+				"mist_state": {
+					"type": "id"
+				}
+			}
+		},
 		"tuning_environment": {
 			"type": "object",
 			"fields": {
@@ -1749,6 +1914,9 @@
 					},
 					"environment": {
 						"type": "tuning_environment"
+					},
+					"weather": {
+						"type": "tuning_weather"
 					},
 					"vitals": {
 						"type": "tuning_vitals",
