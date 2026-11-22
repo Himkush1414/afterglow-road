@@ -201,6 +201,13 @@ def generate(args):
         "roads.json": water_io.dumps(roads_io.document(ctx)).encode("ascii"),
         "pois.json": water_io.dumps(reach.pois_document(ctx)).encode("ascii"),
     }
+    if "outer" in sk:
+        from . import outer
+
+        for e in outer.check_layout(sk):
+            print(f"  {e}  FAIL")
+            bad += 1
+        out["outer.bin"] = files.compress(outer.outer_bytes(sk))
     for line in tree_lines:
         print(line)
     if tree_index is not None:

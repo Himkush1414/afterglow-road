@@ -18,7 +18,11 @@ def expected_sizes(sk):
     lo, hi = d["minmax_lods"]
     nodes0 = int(round(sk["size_m"] / d["minmax_node_m"]))
     nodes = sum((nodes0 >> level) ** 2 for level in range(lo, hi + 1))
-    return {"height.bin": n * n * 2, "normal.bin": t4 * t4 * 2, "biome.bin": t16 * t16, "mask.bin": t4 * t4 * 4, "minmax.bin": nodes * 4}, t4
+    sizes = {"height.bin": n * n * 2, "normal.bin": t4 * t4 * 2, "biome.bin": t16 * t16, "mask.bin": t4 * t4 * 4, "minmax.bin": nodes * 4}
+    if "outer" in sk:
+        k = int(sk["outer"]["cells"]) + 1
+        sizes["outer.bin"] = k * k * 2
+    return sizes, t4
 
 
 def check_dir(path, sk):
