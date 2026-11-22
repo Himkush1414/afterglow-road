@@ -82,3 +82,39 @@ cloud_time_rollover_s={
 "type": "float",
 "value": 3600.0
 }
+wind_dir={
+"type": "vec2",
+"value": Vector2(1, 0)
+}
+wind_base={
+"type": "float",
+"value": 0.0
+}
+wind_gust={
+"type": "float",
+"value": 0.0
+}
+wind_scroll={
+"type": "vec2",
+"value": Vector2(0, 0)
+}
+wind_time={
+"type": "float",
+"value": 0.0
+}
+wind_noise={
+"type": "sampler2D",
+"value": ""
+}
+wind_tile_m={
+"type": "float",
+"value": 180.0
+}
+wind_altitude_scale_m={
+"type": "float",
+"value": 1000.0
+}
+wind_max_ms={
+"type": "float",
+"value": 24.0
+}

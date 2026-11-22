@@ -338,5 +338,30 @@
 		"dry_shade_gmin": 180,
 		"sun_max_cover": 0.5,
 		"mist_state": "fair"
+	},
+	"wind": {
+		"tile_m": 120,
+		"noise_side": 128,
+		"noise_seed": 5,
+		"noise_frequency": 0.03,
+		"altitude_scale_m": 800,
+		"max_ms": 20,
+		"shelter_by_biome": [
+			1.0,
+			1.0,
+			0.6,
+			0.9
+		],
+		"ray_height_m": 1.0,
+		"ray_lengths_m": [
+			4,
+			10
+		],
+		"ray_weights": [
+			0.5,
+			0.3
+		],
+		"min_exposure": 0.15,
+		"blocker_layer": 9
 	}
 }
