@@ -1278,6 +1278,74 @@
 				}
 			}
 		},
+		"tuning_wind": {
+			"type": "object",
+			"fields": {
+				"tile_m": {
+					"type": "number",
+					"min": 1
+				},
+				"noise_side": {
+					"type": "int",
+					"min": 16,
+					"max": 2048
+				},
+				"noise_seed": {
+					"type": "int"
+				},
+				"noise_frequency": {
+					"type": "number",
+					"min": 0
+				},
+				"altitude_scale_m": {
+					"type": "number",
+					"min": 1
+				},
+				"max_ms": {
+					"type": "number",
+					"min": 0
+				},
+				"shelter_by_biome": {
+					"type": "list",
+					"min_len": 1,
+					"of": {
+						"type": "number",
+						"min": 0
+					}
+				},
+				"ray_height_m": {
+					"type": "number",
+					"min": 0
+				},
+				"ray_lengths_m": {
+					"type": "list",
+					"min_len": 1,
+					"of": {
+						"type": "number",
+						"min": 0
+					}
+				},
+				"ray_weights": {
+					"type": "list",
+					"min_len": 1,
+					"of": {
+						"type": "number",
+						"min": 0,
+						"max": 1
+					}
+				},
+				"min_exposure": {
+					"type": "number",
+					"min": 0,
+					"max": 1
+				},
+				"blocker_layer": {
+					"type": "int",
+					"min": 1,
+					"max": 32
+				}
+			}
+		},
 		"tuning_environment": {
 			"type": "object",
 			"fields": {
@@ -1917,6 +1985,9 @@
 					},
 					"weather": {
 						"type": "tuning_weather"
+					},
+					"wind": {
+						"type": "tuning_wind"
 					},
 					"vitals": {
 						"type": "tuning_vitals",
