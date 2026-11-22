@@ -206,5 +206,13 @@
 			"azimuth_max_deg": 90,
 			"ended_gain": 1.2
 		}
+	},
+	"environment": {
+		"exposure": 1.0,
+		"tonemap_white": 4.0,
+		"glow_intensity": 0.3,
+		"glow_threshold": 1.2,
+		"ambient_floor_colour": "#808890",
+		"ambient_floor_energy": 0.03
 	}
 }

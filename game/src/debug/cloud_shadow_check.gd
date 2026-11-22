@@ -53,7 +53,10 @@ func _run() -> void:
 	add_child(lights)
 	var dome := SkyDome.new()
 	add_child(dome)
-	if not lights.setup(clock, ContentDB.tuning("sky")) or not dome.setup(clock, lights, 128):
+	if (
+		not lights.setup(clock, ContentDB.tuning("sky"))
+		or not dome.setup(clock, lights, 128, ContentDB.tuning("environment"))
+	):
 		printerr("cloud shadow check: %s" % ", ".join(lights.errors + dome.errors))
 		get_tree().quit(2)
 		return

@@ -78,9 +78,13 @@ var _glow_end := -1000.0
 
 
 ## Builds the sky for `clock`, coloured by the ramp of `lights`, with a
-## radiance map of `radiance_size` pixels. False and `errors` when the size
-## is not supported or the ramp is empty.
-func setup(clock: GameClock, lights: SkyLights, radiance_size: int) -> bool:
+## radiance map of `radiance_size` pixels, and sets the environment from the
+## "environment" tuning group `env_cfg` (tone mapping, glow, ambient floor)
+## when given. False and `errors` when the size is not supported, the ramp
+## is empty or a colour does not parse.
+func setup(
+	clock: GameClock, lights: SkyLights, radiance_size: int, env_cfg: Dictionary = {}
+) -> bool:
 	errors.clear()
 	_clock = clock
 	_ramp = lights.ramp
@@ -117,6 +121,8 @@ func setup(clock: GameClock, lights: SkyLights, radiance_size: int) -> bool:
 	_drift = Vector2.ZERO
 	_drift_t0 = -1.0
 	_setup_glow(lights.sky_config().get("glow", {}))
+	if not env_cfg.is_empty():
+		_setup_environment(env_cfg)
 	_next.clear()
 	_shown_gmin = -1
 	_measure_time.call_deferred()
@@ -157,6 +163,9 @@ func show_minute(gmin: int) -> void:
 	RenderingServer.global_shader_parameter_set("cloud_shadow_cover", cloud_cover)
 	material.set_shader_parameter("blend_s", _clock.gmin_real_s() / scale)
 	material.set_shader_parameter("blend_t0", t0)
+	environment.ambient_light_energy = float(
+		_ramp.at(_clock.sun_elevation_deg(_hours(gmin))).ambient_energy
+	)
 	updates += 1
 	if gmin % MEASURE_EVERY_GMIN == 0:
 		_measure_time.call_deferred()
@@ -237,6 +246,27 @@ func find_glow_target(world: WorldData) -> void:
 		if p.id == _glow.target_poi:
 			glow_target = world.map_to_world(Vector3(float(p.x), float(p.y), float(p.z)))
 			has_glow_target = true
+
+
+func _hours(gmin: float) -> float:
+	return fmod(gmin, GameClock.GMIN_PER_DAY) / 60.0
+
+
+## Tone mapping AgX, exposure and white, glow, and the ambient floor
+## (08 §2.2, §2.4).
+func _setup_environment(cfg: Dictionary) -> void:
+	environment.tonemap_mode = Environment.TONE_MAPPER_AGX
+	environment.tonemap_exposure = float(cfg.exposure)
+	environment.tonemap_white = float(cfg.tonemap_white)
+	environment.glow_enabled = true
+	environment.glow_intensity = float(cfg.glow_intensity)
+	environment.glow_hdr_threshold = float(cfg.glow_threshold)
+	var c: Variant = cfg.ambient_floor_colour
+	if c is String and Color.html_is_valid(c):
+		var lin := Color.html(c).srgb_to_linear() * float(cfg.ambient_floor_energy)
+		material.set_shader_parameter("ambient_floor", Vector3(lin.r, lin.g, lin.b))
+	else:
+		errors.append("ambient_floor_colour: '%s' is not a #RRGGBB colour" % [c])
 
 
 func _setup_glow(cfg: Dictionary) -> void:

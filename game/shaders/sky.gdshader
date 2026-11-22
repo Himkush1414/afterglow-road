@@ -36,6 +36,9 @@ uniform float next_glow = 0.0;
 uniform float blend_t0 = 0.0;
 uniform float blend_s = 2.0;
 uniform float time_rollover_s = 3600.0;
+// Constant light added to the radiance map only (linear): ambient light
+// never falls to black (08 §2.4).
+uniform vec3 ambient_floor = vec3(0.0);
 // Unit vector to the celestial pole.
 uniform vec3 pole = vec3(0.0, 0.766, -0.643);
 
@@ -268,6 +271,10 @@ void sky() {
 	// On top of the clouds: it glows through overcast, dimmed by the cover.
 	if (!AT_CUBEMAP_PASS && glow_strength > 0.0) {
 		col += glow(dir, glow_strength);
+	}
+
+	if (AT_CUBEMAP_PASS) {
+		col += ambient_floor;
 	}
 
 	COLOR = col;
