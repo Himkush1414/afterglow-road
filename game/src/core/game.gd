@@ -16,6 +16,7 @@ var play_seconds := 0.0
 
 @onready var clock: GameClock = $Clock
 @onready var sky_lights: SkyLights = $SkyLights
+@onready var sky_dome: SkyDome = $SkyDome
 @onready var world: WorldData = $WorldData
 @onready var terrain: Terrain = $Terrain
 @onready var water: Water = $Water
@@ -40,6 +41,10 @@ func _exit_tree() -> void:
 func _ready() -> void:
 	if not sky_lights.setup(clock, ContentDB.tuning("sky")):
 		Log.error("sky", "; ".join(sky_lights.errors))
+	else:
+		var radiance: Variant = Quality.value("sky_radiance_size")
+		if not sky_dome.setup(clock, sky_lights, 128 if radiance == null else int(radiance)):
+			Log.error("sky", "; ".join(sky_dome.errors))
 	if not world.load_dir(WorldData.default_dir()):
 		Log.error("world", "; ".join(world.errors))
 	else:

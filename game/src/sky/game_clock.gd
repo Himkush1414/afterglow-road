@@ -77,6 +77,16 @@ func minute() -> int:
 	return int(fmod(now_gmin, 60.0))
 
 
+## Latitude of the sky in degrees, and real seconds per game minute at
+## time scale 1.
+func latitude_deg() -> float:
+	return float(_cfg.latitude_deg)
+
+
+func gmin_real_s() -> float:
+	return float(_cfg.gmin_real_s)
+
+
 ## Sun elevation in degrees at clock time `hours` (08 §1.2).
 func sun_elevation_deg(hours: float) -> float:
 	return _elevation(_sun_hour_angle(hours), float(_cfg.sun_declination_deg))
