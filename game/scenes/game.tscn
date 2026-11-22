@@ -9,6 +9,7 @@
 [ext_resource type="Script" path="res://src/world/streamer.gd" id="7"]
 [ext_resource type="Script" path="res://src/world/outer_ring.gd" id="8"]
 [ext_resource type="Script" path="res://src/sky/sky_lights.gd" id="9"]
+[ext_resource type="Script" path="res://src/sky/sky_dome.gd" id="10"]
 
 [node name="Game" type="Node3D"]
 script = ExtResource("1")
@@ -18,6 +19,9 @@ script = ExtResource("2")
 
 [node name="SkyLights" type="Node3D" parent="."]
 script = ExtResource("9")
+
+[node name="SkyDome" type="WorldEnvironment" parent="."]
+script = ExtResource("10")
 
 [node name="WorldData" type="Node" parent="."]
 script = ExtResource("4")
