@@ -25,6 +25,12 @@
       writes trees/<cx>_<cz>.bin and trees/index.json and reports the counts per
       biome and species (exit 1 when one is more than 2 % off).
 
+  python3 -m tools.worldgen check-world --sketch S.json --pois P.csv --buildings B.csv
+      Runs every stage on the full map and checks the final height field
+      (T-05-10): way grades, river incision below the uncarved terrain, the
+      named water lines ending below sea level, the highest point near the
+      peak place and below the largest encodable height. Exit 1 on a failure.
+
   python3 -m tools.worldgen check-files --sketch S.json --dir DIR
       Checks every world file in DIR against its format and its hash in
       meta.json. Exit 1 on any error.
@@ -212,6 +218,18 @@ def generate(args):
     return 1 if bad else 0
 
 
+def check_world(args):
+    from . import final_check
+
+    sk = sketch_io.load(args.sketch, args.pois, args.buildings)
+    ctx = run(sk, Grid.full(sk["size_m"], float(sk["sample_m"])), sk["world_seed"])
+    lines, bad = final_check.report(ctx)
+    for line in lines:
+        print(line)
+    print(f"WORLD CHECK: {'FAIL' if bad else 'PASS'} ({bad} failures, sample {sk['sample_m']:g} m)")
+    return 1 if bad else 0
+
+
 def check_files(args):
     from . import formats
 
@@ -247,11 +265,15 @@ def main(argv=None):
     gen.add_argument("--out", required=True)
     gen.add_argument("--layer-colours")
     gen.add_argument("--trees")
+    cw = sub.add_parser("check-world", help="check the final height field (T-05-10)")
+    cw.add_argument("--sketch", required=True)
+    cw.add_argument("--pois", required=True)
+    cw.add_argument("--buildings")
     cf = sub.add_parser("check-files", help="check written world files against their formats")
     cf.add_argument("--sketch", required=True)
     cf.add_argument("--dir", required=True)
     args = ap.parse_args(argv)
-    commands = {"check-pois": check_pois, "water": write_water, "roads": write_roads, "generate": generate, "check-files": check_files}
+    commands = {"check-pois": check_pois, "water": write_water, "roads": write_roads, "generate": generate, "check-world": check_world, "check-files": check_files}
     return commands[args.cmd](args)
 
 
