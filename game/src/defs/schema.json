@@ -994,6 +994,18 @@
 					"type": "number",
 					"min": 0,
 					"max": 1
+				},
+				"outer_layers": {
+					"type": "list",
+					"of": {
+						"type": "terrain_outer_layer"
+					},
+					"optional": true
+				},
+				"outer_skirt_m": {
+					"type": "number",
+					"min": 0,
+					"optional": true
 				}
 			}
 		},
@@ -1486,6 +1498,17 @@
 							}
 						}
 					}
+				}
+			}
+		},
+		"terrain_outer_layer": {
+			"type": "object",
+			"fields": {
+				"below_m": {
+					"type": "number"
+				},
+				"layer": {
+					"type": "id"
 				}
 			}
 		}

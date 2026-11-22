@@ -18,6 +18,7 @@ var play_seconds := 0.0
 @onready var world: WorldData = $WorldData
 @onready var terrain: Terrain = $Terrain
 @onready var water: Water = $Water
+@onready var outer_ring: OuterRing = $OuterRing
 @onready var streamer: Streamer = $Streamer
 
 
@@ -41,6 +42,9 @@ func _ready() -> void:
 	else:
 		if not terrain.setup(world):
 			Log.error("terrain", "; ".join(terrain.errors))
+		var layers: Array = ContentDB.tuning("terrain").get("layers", [])
+		if not outer_ring.setup(world, layers, terrain.layer_means):
+			Log.error("outer ring", "; ".join(outer_ring.errors))
 		if not water.setup(world):
 			Log.error("water", "; ".join(water.errors))
 		elif terrain.is_ready():

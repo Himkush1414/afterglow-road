@@ -25,6 +25,8 @@ var lod := TerrainLod.new()
 ## (made by setup).
 var collision: TerrainCollision
 var errors: PackedStringArray = []
+## Linear mean albedo per layer (empty without layer textures).
+var layer_means: Array[Color] = []
 ## Selections run so far and the instance count of the last one.
 var selections := 0
 var instances := 0
@@ -168,7 +170,10 @@ func _setup_surface(world: WorldData) -> bool:
 	var steepest := (
 		slope_layer[mini(slopes.size(), SLOPE_SLOTS) - 1] if not slopes.is_empty() else -1
 	)
-	var arrays := _layer_arrays(layers)
+	layer_means.clear()
+	var arrays := _layer_arrays(layers, layer_means)
+	if arrays.is_empty():
+		layer_means.clear()
 	var p := {
 		"biome_layer": table,
 		"slope_layer": slope_layer,
@@ -195,7 +200,7 @@ func _setup_surface(world: WorldData) -> bool:
 
 ## [albedo+height array, normal+roughness+AO array], or [] when a texture is
 ## missing or the sizes differ.
-static func _layer_arrays(layers: Array) -> Array[Texture2DArray]:
+static func _layer_arrays(layers: Array, means: Array[Color] = []) -> Array[Texture2DArray]:
 	var ah: Array[Image] = []
 	var nra: Array[Image] = []
 	var size := Vector2i.ZERO
@@ -218,6 +223,8 @@ static func _layer_arrays(layers: Array) -> Array[Texture2DArray]:
 				return []
 			img.generate_mipmaps()
 			(ah if k == 0 else nra).append(img)
+			if k == 0:
+				means.append(OuterRing.mean_colour(img))
 	if layers.is_empty():
 		return []
 	var out: Array[Texture2DArray] = []
