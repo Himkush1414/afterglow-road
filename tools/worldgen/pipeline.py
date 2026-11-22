@@ -42,6 +42,7 @@ class Context:
         self.lot_way_overlaps = []  # (lot, way) pairs whose footprint meets a way
         self.cuts = []  # benches and trenches cut into the ground
         self.settlement = None  # settlement plan: lots, streets, handled places
+        self.pocket_fill = None  # what the pocket stage changed
 
 
 def load_stages():
@@ -49,6 +50,7 @@ def load_stages():
     from . import roads, stages  # noqa: F401  (stages registers first: roads imports it)
     from . import lots  # noqa: F401  (after the roads)
     from . import cuts  # noqa: F401  (after the lots)
+    from . import reach  # noqa: F401  (last: needs the final ways and cuts)
 
 
 def run(sketch, grid, seed, stages=None, until=None, noise=True):
