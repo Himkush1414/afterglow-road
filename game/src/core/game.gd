@@ -58,6 +58,7 @@ func _ready() -> void:
 		elif terrain.is_ready():
 			water.build(terrain.height_texture())
 		streamer.setup(world)
+		sky_dome.find_glow_target(world)
 		SaveGame.region_source = streamer.deltas
 	if App.is_dev():
 		var console: DebugConsole = (load(CONSOLE_SCENE) as PackedScene).instantiate()

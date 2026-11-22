@@ -12,8 +12,11 @@ const RADIANCE_SIZES: Array[int] = [32, 64, 128, 256, 512, 1024, 2048]
 ## Sun elevations (degrees) where the stars start and finish fading in.
 const STARS_FROM_DEG := -6.0
 const STARS_FULL_DEG := -12.0
-## The shaders' clock is measured again this often (game minutes).
+## The shaders' clock is measured again this often (game minutes), and
+## after any frame longer than HITCH_S (a hitch moves TIME against the wall
+## clock; between hitches the offset holds to a few milliseconds).
 const MEASURE_EVERY_GMIN := 60
+const HITCH_S := 0.2
 ## Values blended by the shader, without their prev_/next_ prefix.
 const KEYS: Array[String] = [
 	"zenith",
@@ -26,7 +29,11 @@ const KEYS: Array[String] = [
 	"star_angle",
 	"cloud_cover",
 	"cloud_darkness",
+	"glow",
 ]
+## The glow band's azimuth and end are handed to the shader again only
+## when they move by more than this (degrees).
+const GLOW_STEP_DEG := 0.25
 ## Cloud noise textures: side in pixels and FastNoiseLite settings
 ## (frequency per pixel, octaves, seed).
 const NOISE_SIDE := 512
@@ -44,6 +51,12 @@ var sky: Sky
 var cloud_cover := 0.0
 var cloud_darkness := 0.0
 var wind := Vector2.ZERO
+## The glow band (08 §2.6): the point it leads to (engine coordinates),
+## whether one is known, and whether the story has ended (the band then
+## stops at the target and brightens).
+var glow_target := Vector3.ZERO
+var has_glow_target := false
+var story_ended := false
 ## Tiling noise of the two cloud layers.
 var cumulus_texture: NoiseTexture2D
 var cirrus_texture: NoiseTexture2D
@@ -59,6 +72,9 @@ var _shown_gmin := -1
 var _drift := Vector2.ZERO
 var _drift_t0 := -1.0
 var _drift_wind := Vector2.ZERO
+var _glow := {}
+var _glow_azimuth := -1000.0
+var _glow_end := -1000.0
 
 
 ## Builds the sky for `clock`, coloured by the ramp of `lights`, with a
@@ -100,18 +116,24 @@ func setup(clock: GameClock, lights: SkyLights, radiance_size: int) -> bool:
 	RenderingServer.global_shader_parameter_set("cloud_time_rollover_s", rollover)
 	_drift = Vector2.ZERO
 	_drift_t0 = -1.0
+	_setup_glow(lights.sky_config().get("glow", {}))
 	_next.clear()
 	_shown_gmin = -1
 	_measure_time.call_deferred()
 	return errors.is_empty()
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if _clock == null or not _clock.is_configured() or material == null:
 		return
+	if delta > HITCH_S:
+		_measure_time.call_deferred()
 	var g := int(_clock.now_gmin)
 	if g != _shown_gmin:
 		show_minute(g)
+	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
+	if cam != null:
+		follow_glow(cam.global_position)
 
 
 ## Hands the shader the values of game minute `gmin`, blending from the
@@ -159,7 +181,83 @@ func values_at(gmin: float) -> Dictionary:
 		"star_angle": star_angle(gmin),
 		"cloud_cover": cloud_cover,
 		"cloud_darkness": cloud_darkness,
+		"glow": glow_strength(e),
 	}
+
+
+## Glow band strength at sun elevation `sun_deg`: 0 with the sun up, full
+## at full_below_deg, dimmed by cloud cover, times ended_gain after the end.
+func glow_strength(sun_deg: float) -> float:
+	if _glow.is_empty():
+		return 0.0
+	var k := clampf(sun_deg / float(_glow.full_below_deg), 0.0, 1.0)
+	k *= 1.0 - float(_glow.cloud_dim) * cloud_cover
+	return k * (float(_glow.ended_gain) if story_ended else 1.0)
+
+
+## Compass azimuth (degrees) of the band's bright end seen from `viewer`
+## (engine coordinates): the bearing to the target, clamped to the tuning's
+## range; the middle of the range without a target.
+func glow_azimuth_deg(viewer: Vector3) -> float:
+	var lo := float(_glow.get("azimuth_min_deg", 0.0))
+	var hi := float(_glow.get("azimuth_max_deg", 0.0))
+	if not has_glow_target:
+		return (lo + hi) * 0.5
+	var to := glow_target - viewer
+	var bearing := rad_to_deg(atan2(to.x, -to.z))
+	var mid := (lo + hi) * 0.5
+	return clampf(mid + wrapf(bearing - mid, -180.0, 180.0), lo, hi)
+
+
+## Hands the shader the band's azimuth and end for `viewer` when they moved
+## by more than GLOW_STEP_DEG.
+func follow_glow(viewer: Vector3) -> void:
+	if _glow.is_empty() or material == null:
+		return
+	var az := glow_azimuth_deg(viewer)
+	if absf(az - _glow_azimuth) > GLOW_STEP_DEG:
+		_glow_azimuth = az
+		material.set_shader_parameter("glow_azimuth", deg_to_rad(az))
+	var end := 0.0
+	if story_ended and has_glow_target:
+		var to := glow_target - viewer
+		end = rad_to_deg(atan2(to.y, Vector2(to.x, to.z).length()))
+	if absf(end - _glow_end) > GLOW_STEP_DEG:
+		_glow_end = end
+		material.set_shader_parameter("glow_end_elev", deg_to_rad(maxf(end, 0.0)))
+
+
+## Finds the band's target place in the world's pois.json.
+func find_glow_target(world: WorldData) -> void:
+	has_glow_target = false
+	var doc: Variant = JSON.parse_string(world.read_text("pois.json"))
+	if _glow.is_empty() or not doc is Dictionary:
+		return
+	for p: Dictionary in doc.get("pois", []):
+		if p.id == _glow.target_poi:
+			glow_target = world.map_to_world(Vector3(float(p.x), float(p.y), float(p.z)))
+			has_glow_target = true
+
+
+func _setup_glow(cfg: Dictionary) -> void:
+	_glow = cfg
+	_glow_azimuth = -1000.0
+	_glow_end = -1000.0
+	if cfg.is_empty():
+		return
+	for key: String in ["centre_colour", "edge_colour"]:
+		var c: Variant = cfg[key]
+		if c is String and Color.html_is_valid(c):
+			material.set_shader_parameter("glow_" + key.trim_suffix("_colour"), Color.html(c))
+		else:
+			errors.append("glow.%s: '%s' is not a #RRGGBB colour" % [key, c])
+	# 08 §2.6 gives the width as the full width at half maximum.
+	material.set_shader_parameter("glow_sigma", deg_to_rad(float(cfg.width_deg)) / 2.3548)
+	material.set_shader_parameter(
+		"glow_scroll", Vector2(float(cfg.scroll_rad_s[0]), float(cfg.scroll_rad_s[1]))
+	)
+	material.set_shader_parameter("glow_intensity", float(cfg.intensity))
+	material.set_shader_parameter("glow_end_gain", float(cfg.target_end_gain))
 
 
 ## Cloud drift in metres at the shaders' time `t`: the drift handed to the

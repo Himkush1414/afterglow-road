@@ -3,7 +3,8 @@ shader_type sky;
 // the sun, sun disc and halo, the moon lit from the sun's direction, and
 // procedural stars with a milky band that turn about the celestial pole, and
 // two cloud layers (high cirrus, low domain-warped cumulus) from tiling noise
-// textures, drifting with the wind.
+// textures, drifting with the wind. The glow band (08 §2.6) is a soft band
+// on the great circle through the zenith and the horizon at glow_azimuth.
 // SkyDome sets each value as a prev_/next_ pair once per game minute; the
 // shader blends them over blend_s real seconds from blend_t0 (shader TIME,
 // measured by ShaderClock).
@@ -29,6 +30,9 @@ uniform float prev_cloud_cover = 0.0;
 uniform float next_cloud_cover = 0.0;
 uniform float prev_cloud_darkness = 0.0;
 uniform float next_cloud_darkness = 0.0;
+// Glow band strength: sun and cloud fade times the story gain.
+uniform float prev_glow = 0.0;
+uniform float next_glow = 0.0;
 uniform float blend_t0 = 0.0;
 uniform float blend_s = 2.0;
 uniform float time_rollover_s = 3600.0;
@@ -44,9 +48,22 @@ uniform float moon_intensity = 2.0;
 uniform float star_cells = 60.0;
 uniform float star_share = 0.09;
 uniform float star_intensity = 3.0;
-uniform float band_intensity = 0.06;
+uniform float milky_intensity = 0.06;
 // The milky band: the great circle whose plane has this normal (in star space).
-uniform vec3 band_normal = vec3(0.35, 0.2, 0.915);
+uniform vec3 milky_normal = vec3(0.35, 0.2, 0.915);
+
+// Compass azimuth (radians) of the band's bright end.
+uniform float glow_azimuth = 0.785;
+uniform vec3 glow_centre : source_color = vec3(0.75, 0.91, 0.75);
+uniform vec3 glow_edge : source_color = vec3(0.95, 0.85, 0.63);
+// Gaussian sigma of the band across, radians.
+uniform float glow_sigma = 0.1;
+uniform vec2 glow_scroll = vec2(0.004, 0.007);
+uniform float glow_intensity = 0.1;
+uniform float glow_end_gain = 2.5;
+// Elevation (radians) below which the bright end is cut off: 0 draws the
+// band down to the horizon; after the story's end it stops at the target.
+uniform float glow_end_elev = 0.0;
 
 uniform sampler2D cumulus_tex : filter_linear_mipmap, repeat_enable;
 uniform sampler2D cirrus_tex : filter_linear_mipmap, repeat_enable;
@@ -155,11 +172,35 @@ vec3 stars(vec3 dir) {
 	return tint * smoothstep(size, 0.0, d) * twinkle * (0.3 + h.y);
 }
 
-vec3 band(vec3 dir) {
-	float off = dot(dir, normalize(band_normal));
+vec3 milky(vec3 dir) {
+	float off = dot(dir, normalize(milky_normal));
 	float core = exp(-off * off / 0.006);
 	float clumps = noise3(dir * 6.0) * 0.6 + noise3(dir * 17.0) * 0.4;
-	return vec3(0.75, 0.8, 0.95) * core * clumps * band_intensity;
+	return vec3(0.75, 0.8, 0.95) * core * clumps * milky_intensity;
+}
+
+// The glow band: across, a Gaussian of glow_sigma from the great circle's
+// plane; along, from the bright end (t = 0, horizon at glow_azimuth) over
+// the zenith to the far end (t = 1), brightness falls from glow_end_gain
+// to 1; two noise layers scroll along it as filaments.
+vec3 glow(vec3 dir, float strength) {
+	vec3 end_dir = vec3(sin(glow_azimuth), 0.0, -cos(glow_azimuth));
+	vec3 n = normalize(cross(vec3(0.0, 1.0, 0.0), end_dir));
+	float off = asin(clamp(dot(dir, n), -1.0, 1.0));
+	float t_rad = atan(dir.y, dot(dir, end_dir));
+	if (dir.y < 0.0 || t_rad < glow_end_elev) {
+		return vec3(0.0);
+	}
+	float t = t_rad / PI;
+	float across = exp(-0.5 * (off / glow_sigma) * (off / glow_sigma));
+	float f1 = noise3(vec3(t_rad * 9.0 + TIME * glow_scroll.x * 9.0, off * 14.0, 3.0));
+	float f2 = noise3(vec3(t_rad * 23.0 - TIME * glow_scroll.y * 23.0, off * 31.0, 7.0));
+	// Subtle (±8%), so the end-to-end brightness rise stays readable.
+	float filaments = 1.0 + 0.05 * (2.0 * f1 - 1.0) + 0.03 * (2.0 * f2 - 1.0);
+	float gain = mix(glow_end_gain, 1.0, t);
+	vec3 colour = mix(glow_centre, glow_edge, clamp(abs(off) / (2.0 * glow_sigma), 0.0, 1.0));
+	float cut = smoothstep(glow_end_elev, glow_end_elev + 0.02, t_rad);
+	return colour * across * filaments * gain * glow_intensity * strength * cut;
 }
 
 // The moon: a sphere seen as a disc, lit from the sun's direction.
@@ -193,6 +234,7 @@ void sky() {
 	float star_angle = mix(prev_star_angle, next_star_angle, w);
 	float cover = mix(prev_cloud_cover, next_cloud_cover, w);
 	float dark = mix(prev_cloud_darkness, next_cloud_darkness, w);
+	float glow_strength = mix(prev_glow, next_glow, w);
 
 	vec3 dir = EYEDIR;
 	vec2 view_h = normalize(dir.xz + vec2(1e-5));
@@ -212,7 +254,7 @@ void sky() {
 
 	if (!AT_CUBEMAP_PASS && star_fade > 0.0 && dir.y > -0.05) {
 		vec3 star_dir = rotate_about(dir, normalize(pole), -star_angle);
-		col += (stars(star_dir) * star_intensity + band(star_dir)) * star_fade;
+		col += (stars(star_dir) * star_intensity + milky(star_dir)) * star_fade;
 	}
 
 	vec4 m = moon(dir, moon_dir, sun_dir);
@@ -223,6 +265,10 @@ void sky() {
 
 	vec4 c = clouds(dir, sun_dir, sun_colour, zenith, horizon, cover, dark);
 	col = mix(col, c.rgb, c.a);
+	// On top of the clouds: it glows through overcast, dimmed by the cover.
+	if (!AT_CUBEMAP_PASS && glow_strength > 0.0) {
+		col += glow(dir, glow_strength);
+	}
 
 	COLOR = col;
 }
