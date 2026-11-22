@@ -80,6 +80,11 @@ func apply(gmin: float) -> void:
 	moon.shadow_enabled = not sun_shadows
 
 
+## The "sky" tuning group given to `setup`.
+func sky_config() -> Dictionary:
+	return _cfg
+
+
 ## Unit vector toward a body at `elev_deg` above the horizon and `az_deg`
 ## from north, clockwise; north is −Z and east is +X.
 static func direction(elev_deg: float, az_deg: float) -> Vector3:

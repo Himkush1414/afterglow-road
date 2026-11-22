@@ -188,6 +188,23 @@
 		"moon_cloud_dim": 0.5,
 		"sun_shadow_above_deg": 0,
 		"overcast_sun_dim": 0.5,
-		"overcast_colour": "#909090"
+		"overcast_colour": "#909090",
+		"glow": {
+			"target_poi": "barn",
+			"centre_colour": "#C0D0FF",
+			"edge_colour": "#FFE0C0",
+			"width_deg": 10,
+			"scroll_rad_s": [
+				0.003,
+				0.005
+			],
+			"intensity": 0.1,
+			"target_end_gain": 2.0,
+			"full_below_deg": -8,
+			"cloud_dim": 0.5,
+			"azimuth_min_deg": 0,
+			"azimuth_max_deg": 90,
+			"ended_gain": 1.2
+		}
 	}
 }

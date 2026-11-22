@@ -166,3 +166,69 @@ func test_cloud_noise_and_cover() -> void:
 	_dome.cloud_darkness = 0.3
 	var v := _dome.values_at(720.0)
 	check_eq([v.cloud_cover, v.cloud_darkness], [0.6, 0.3], "weather inputs reach the shader")
+
+
+func _glow_dome() -> SkyDome:
+	var sky: Dictionary = SKY.duplicate(true)
+	sky.glow = {
+		"target_poi": "t",
+		"centre_colour": "#00FF00",
+		"edge_colour": "#FF0000",
+		"width_deg": 10,
+		"scroll_rad_s": [0.001, 0.002],
+		"intensity": 0.1,
+		"target_end_gain": 2.0,
+		"full_below_deg": -10,
+		"cloud_dim": 0.5,
+		"azimuth_min_deg": 20,
+		"azimuth_max_deg": 70,
+		"ended_gain": 1.5
+	}
+	_lights.setup(_clock, sky)
+	var dome := SkyDome.new()
+	check(dome.setup(_clock, _lights, 128), "setup: %s" % [dome.errors])
+	return dome
+
+
+func test_glow_strength_by_sun_clouds_and_story() -> void:
+	check_eq(_dome.glow_strength(-20.0), 0.0, "no glow configured")
+	var dome := _glow_dome()
+	check_eq(dome.glow_strength(5.0), 0.0, "sun up")
+	check_near(dome.glow_strength(-5.0), 0.5, 1e-9, "half way down")
+	check_near(dome.glow_strength(-30.0), 1.0, 1e-9, "full")
+	dome.cloud_cover = 1.0
+	check_near(dome.glow_strength(-30.0), 0.5, 1e-9, "dimmed by overcast")
+	dome.cloud_cover = 0.0
+	dome.story_ended = true
+	check_near(dome.glow_strength(-30.0), 1.5, 1e-9, "brighter after the end")
+	var sigma := float(dome.material.get_shader_parameter("glow_sigma"))
+	check_near(sigma * 2.3548, deg_to_rad(10.0), 1e-6, "width is the full width at half maximum")
+	dome.free()
+
+
+func test_glow_azimuth_follows_the_target_within_its_range() -> void:
+	var dome := _glow_dome()
+	check_near(dome.glow_azimuth_deg(Vector3.ZERO), 45.0, 1e-9, "no target: middle")
+	dome.has_glow_target = true
+	dome.glow_target = Vector3(100.0, 50.0, -100.0)  # north-east
+	check_near(dome.glow_azimuth_deg(Vector3.ZERO), 45.0, 1e-6, "north-east")
+	dome.glow_target = Vector3(100.0, 0.0, -10.0)  # nearly east
+	check_near(dome.glow_azimuth_deg(Vector3.ZERO), 70.0, 1e-6, "clamped high")
+	dome.glow_target = Vector3(-100.0, 0.0, -100.0)  # north-west
+	check_near(dome.glow_azimuth_deg(Vector3.ZERO), 20.0, 1e-6, "clamped low")
+	dome.glow_target = Vector3(100.0, 50.0, -100.0)
+	dome.follow_glow(Vector3.ZERO)
+	check_near(float(dome.material.get_shader_parameter("glow_azimuth")), PI / 4.0, 1e-6, "set")
+	dome.follow_glow(Vector3(0.1, 0.0, 0.0))
+	check_near(
+		float(dome.material.get_shader_parameter("glow_azimuth")),
+		PI / 4.0,
+		1e-6,
+		"small moves wait"
+	)
+	check_eq(dome.material.get_shader_parameter("glow_end_elev"), 0.0, "reaches the horizon")
+	dome.story_ended = true
+	dome.follow_glow(Vector3.ZERO)
+	var end := float(dome.material.get_shader_parameter("glow_end_elev"))
+	check_near(end, atan2(50.0, Vector2(100.0, 100.0).length()), 1e-6, "ends at the target")
+	dome.free()

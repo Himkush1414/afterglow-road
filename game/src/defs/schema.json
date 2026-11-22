@@ -1106,6 +1106,68 @@
 				},
 				"overcast_colour": {
 					"type": "string"
+				},
+				"glow": {
+					"type": "sky_glow",
+					"optional": true
+				}
+			}
+		},
+		"sky_glow": {
+			"type": "object",
+			"fields": {
+				"target_poi": {
+					"type": "id"
+				},
+				"centre_colour": {
+					"type": "string"
+				},
+				"edge_colour": {
+					"type": "string"
+				},
+				"width_deg": {
+					"type": "number",
+					"min": 0.1,
+					"max": 90
+				},
+				"scroll_rad_s": {
+					"type": "list",
+					"min_len": 2,
+					"of": {
+						"type": "number"
+					}
+				},
+				"intensity": {
+					"type": "number",
+					"min": 0
+				},
+				"target_end_gain": {
+					"type": "number",
+					"min": 0
+				},
+				"full_below_deg": {
+					"type": "number",
+					"min": -90,
+					"max": 0
+				},
+				"cloud_dim": {
+					"type": "number",
+					"min": 0,
+					"max": 1
+				},
+				"azimuth_min_deg": {
+					"type": "number",
+					"min": 0,
+					"max": 360
+				},
+				"azimuth_max_deg": {
+					"type": "number",
+					"min": 0,
+					"max": 360
+				},
+				"ended_gain": {
+					"type": "number",
+					"min": 0
 				}
 			}
 		},
