@@ -1138,6 +1138,39 @@
 				"ambient_floor_energy": {
 					"type": "number",
 					"min": 0
+				},
+				"fog_k": {
+					"type": "number",
+					"min": 0
+				},
+				"sky_fog_clear_m": {
+					"type": "number",
+					"min": 1
+				},
+				"sky_fog_full_m": {
+					"type": "number",
+					"min": 1
+				},
+				"mist_from_h": {
+					"type": "number",
+					"min": 0,
+					"max": 24
+				},
+				"mist_to_h": {
+					"type": "number",
+					"min": 0,
+					"max": 24
+				},
+				"mist_fade_h": {
+					"type": "number",
+					"min": 0
+				},
+				"mist_top_y": {
+					"type": "number"
+				},
+				"mist_mult": {
+					"type": "number",
+					"min": 0
 				}
 			}
 		},
