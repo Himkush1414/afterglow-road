@@ -138,3 +138,59 @@ func _exposure_at(pos: Vector3) -> float:
 	await tree.physics_frame
 	await tree.physics_frame
 	return _rain.exposure_at(pos)
+
+
+func test_the_volume_follows_the_eye_slanted_by_the_wind() -> void:
+	var cfg := CFG.duplicate()
+	(
+		cfg
+		. merge(
+			{
+				"fall_ms": 9.0,
+				"volume_m": [20, 12, 20],
+				"streak_width_m": 0.015,
+				"streak_length_m": 0.45,
+				"streak_alpha": 0.3,
+				"collision_size_m": 0.02,
+				"height_field_m": 32,
+				"height_field_res": 512,
+			}
+		)
+	)
+	check(_rain.configure(cfg), "configure: %s" % [_rain.errors])
+	_rain.set_process(false)
+	_rain.build_volume(800)
+	var p := _rain.particles
+	check_eq(p.amount, 800, "preset streaks")
+	check_near(_rain.lifetime(), 12.0 / 9.0, 1e-9, "falls through 12 m at 9 m/s")
+	check_eq(
+		_rain.height_field.resolution, GPUParticlesCollisionHeightField3D.RESOLUTION_512, "512 px"
+	)
+	check(_rain.height_field.follow_camera_enabled, "height field follows the camera")
+	check(not p.emitting, "dry: not emitting")
+	var wind := Wind.new()
+	check(wind.configure(WIND), "wind: %s" % [wind.errors])
+	wind.dir = Vector2(0.0, 1.0)  # blows toward +z
+	wind.base = 9.0
+	wind.gust = 0.0
+	_rain.wind = wind
+	_rain.intensity = 0.6
+	var eye := Vector3(100.0, 50.0, -30.0)
+	_rain.follow(eye)
+	var pm := p.process_material as ParticleProcessMaterial
+	var w := wind.speed_at(eye)
+	check_near(w, 9.45, 1e-9, "9 m/s raised 5% at 50 m")
+	var slant := rad_to_deg(atan(w / 9.0))
+	check_near(rad_to_deg(Vector3.DOWN.angle_to(pm.direction)), slant, 1e-4, "slant atan(w / 9)")
+	check(pm.direction.z > 0.0 and is_zero_approx(pm.direction.x), "slanted downwind")
+	check_near(pm.initial_velocity_min, sqrt(w * w + 81.0), 1e-4, "speed")
+	check_near(p.amount_ratio, 0.6, 1e-6, "amount follows the intensity")
+	check(p.emitting, "raining")
+	var drift := w * _rain.lifetime() * 0.5
+	check(
+		p.position.is_equal_approx(eye + Vector3(0.0, 6.0, -drift)),
+		"top above, upwind: %s" % p.position
+	)
+	var bad := cfg.duplicate()
+	bad.volume_m = [20, 12]
+	check(not _rain.configure(bad), "volume needs 3 sizes")
