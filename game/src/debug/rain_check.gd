@@ -4,11 +4,11 @@ extends Node3D
 ## roof 3 m up. Each bright pixel is projected to the floor.
 ## With collisions (default on Forward+): from an eye under the roof, rain
 ## seen over the floor under the roof stays at most 1/200 of the rain seen
-## outside it (calm and with wind); splashes alone: none under the roof;
-## then from an eye 5 m up outside the roof (reached by moving the camera,
-## so the height field must follow it), none past the splash radius.
-## Fallback (default on Mobile): under the roof nothing is drawn; from the
-## eye 5 m up outside, rain is drawn and splashes lie within the radius.
+## outside it (calm and with wind). Fallback (default on Mobile): under the
+## roof no rain is drawn; from an eye 5 m up outside, rain is drawn.
+## Splashes alone, both modes: none drawn from under the roof; from the eye
+## 5 m up outside (reached by moving the camera), seen and none past the
+## splash radius.
 ## Needs a display:
 ##   tools/godot.sh res://scenes/debug/rain_check.tscn [--rendering-method mobile] \
 ##       -- [--collide | --fallback] [--streaks 3000] [--out <dir>]
@@ -103,19 +103,17 @@ func _run() -> void:
 	wind.base = 0.0
 	var rcfg := ContentDB.tuning("rain")
 	var radius := float(rcfg.splash_radius_m)
-	# Highest a droplet is drawn: start (one drop step after the bounce of a
-	# splash drop), rise and size.
-	var start := 0.0
-	if collide:
-		start = float(rcfg.fall_ms) * float(rcfg.splash_bounce) / rain.splash_drops.fixed_fps
-	var rise := start + pow(float(rcfg.splash_speed_ms), 2.0) / 19.6 + float(rcfg.splash_size_m)
-	if collide:
-		_view(UNDER)
-		var c := await _shots("splash_under", Vector3.ZERO, INF)
-		_report(
-			c.z > 50 and c.x == 0,
-			"splashes from under the roof: seen %d, under the roof %d" % [c.z, c.x]
+	# Highest a droplet is drawn: its rise and size.
+	var rise := pow(float(rcfg.splash_speed_ms), 2.0) / 19.6 + float(rcfg.splash_size_m)
+	_view(UNDER)
+	var u := await _shots("splash_under", Vector3.ZERO, INF)
+	_report(
+		u == Vector3i.ZERO and not rain.splashes.visible,
+		(
+			"splashes from under the roof: hidden %s, points %d"
+			% [not rain.splashes.visible, u.x + u.z]
 		)
+	)
 	_view(HIGH)
 	var eye: Vector3 = HIGH[0]
 	var reach := radius * eye.y / (eye.y - rise) + 0.25
