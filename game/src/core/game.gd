@@ -17,6 +17,8 @@ var play_seconds := 0.0
 @onready var clock: GameClock = $Clock
 @onready var weather: Weather = $Weather
 @onready var wind: Wind = $Wind
+@onready var rain: Rain = $Rain
+@onready var lightning: Lightning = $Lightning
 @onready var sky_lights: SkyLights = $SkyLights
 @onready var sky_dome: SkyDome = $SkyDome
 @onready var world: WorldData = $WorldData
@@ -67,6 +69,7 @@ func _ready() -> void:
 		streamer.setup(world)
 		weather.terrain = terrain
 		wind.world = world
+		rain.world = world
 		sky_dome.find_glow_target(world)
 		SaveGame.region_source = streamer.deltas
 	if App.is_dev():
@@ -134,6 +137,21 @@ func _begin(new_slot: String) -> void:
 	if not wind.configure(ContentDB.tuning("wind")):
 		Log.error("wind", "; ".join(wind.errors))
 	weather.wind = wind
+	if not rain.configure(ContentDB.tuning("rain")):
+		Log.error("rain", "; ".join(rain.errors))
+	else:
+		rain.wind = wind
+		var streaks: Variant = Quality.value("rain_streaks")
+		if streaks == null:  # no preset applied yet (headless): the chosen one's value
+			streaks = (Quality.presets().get(Quality.chosen(), {}) as Dictionary).get(
+				"rain_streaks"
+			)
+		if streaks != null:
+			rain.build_volume(int(streaks))
+		weather.rain = rain
+	if not lightning.configure(ContentDB.tuning("lightning")):
+		Log.error("lightning", "; ".join(lightning.errors))
+	weather.lightning = lightning
 	SaveGame.register_section("ids", func() -> Variant: return {"next": Ids.counter()}, _load_ids)
 	SaveGame.register_section("weather", weather.save_data, weather.load_data)
 	SaveGame.meta_source = _meta
