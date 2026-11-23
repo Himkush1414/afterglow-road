@@ -227,9 +227,13 @@ func test_push_drives_the_sky_and_force_switches() -> void:
 	var dome := SkyDome.new()
 	var lights := SkyLights.new()
 	var wind := Wind.new()
+	var rain := Rain.new()
+	var lightning := Lightning.new()
 	_w.sky_dome = dome
 	_w.sky_lights = lights
 	_w.wind = wind
+	_w.rain = rain
+	_w.lightning = lightning
 	_w.new_game(0.0)
 	_w.push(10.0)
 	var p := _w.params(10.0)
@@ -249,7 +253,11 @@ func test_push_drives_the_sky_and_force_switches() -> void:
 	check_near(dome.cloud_cover, 0.9, 1e-9, "blended in after 20 minutes")
 	check(not dome.mist_allowed, "no mist outside the mist state")
 	check_near(wind.base, float(_w.params(40.0).wind_speed), 1e-9, "wind follows the new state")
+	check_near(rain.intensity, 1.0, 1e-9, "rain follows the new state")
+	check(lightning.active, "storm-like state turns lightning on")
 	check_eq(_w.state_ids(), ["sun", "grey", "wet", "mist"] as Array[String])
+	lightning.free()
+	rain.free()
 	wind.free()
 	lights.free()
 	dome.free()

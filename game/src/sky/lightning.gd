@@ -97,7 +97,7 @@ func set_from_weather(p: Dictionary) -> void:
 
 
 func set_active(on: bool) -> void:
-	if on and not active:
+	if on and not active and is_configured():
 		next_strike_s = time_s + _interval()
 	elif not on:
 		next_strike_s = INF
