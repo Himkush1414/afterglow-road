@@ -385,7 +385,14 @@
 		"streak_alpha": 0.3,
 		"collision_size_m": 0.02,
 		"height_field_m": 24,
-		"height_field_res": 256
+		"height_field_res": 256,
+		"splash_share": 0.2,
+		"splash_s": 0.3,
+		"splash_size_m": 0.05,
+		"splash_speed_ms": 1.5,
+		"splash_radius_m": 6,
+		"splash_bounce": 0.2,
+		"shelter_check_s": 0.25
 	},
 	"lightning": {
 		"seed_key": 7,

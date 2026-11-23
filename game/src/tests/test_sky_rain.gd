@@ -154,6 +154,13 @@ func test_the_volume_follows_the_eye_slanted_by_the_wind() -> void:
 				"collision_size_m": 0.02,
 				"height_field_m": 32,
 				"height_field_res": 512,
+				"splash_share": 0.25,
+				"splash_s": 0.3,
+				"splash_size_m": 0.04,
+				"splash_speed_ms": 1.8,
+				"splash_radius_m": 8.0,
+				"splash_bounce": 0.2,
+				"shelter_check_s": 0.25,
 			}
 		)
 	)
@@ -168,6 +175,19 @@ func test_the_volume_follows_the_eye_slanted_by_the_wind() -> void:
 	)
 	check(_rain.height_field.follow_camera_enabled, "height field follows the camera")
 	check(not p.emitting, "dry: not emitting")
+	check_eq(_rain.splashes.amount, 200, "splashes: a quarter of the streaks")
+	var sd := _rain.splash_drops
+	check_eq(sd.amount, 200, "splash drops: a quarter of the streaks")
+	check(sd.get_node(sd.sub_emitter) == _rain.splashes, "splash drops throw splashes")
+	var spm := sd.process_material as ParticleProcessMaterial
+	check_eq(spm.sub_emitter_mode, ParticleProcessMaterial.SUB_EMITTER_AT_COLLISION, "on contact")
+	check_eq(spm.collision_mode, ParticleProcessMaterial.COLLISION_RIGID, "bounce away once")
+	check_eq(spm.emission_shape, ParticleProcessMaterial.EMISSION_SHAPE_RING, "a disc")
+	check_eq(spm.emission_ring_radius, 8.0, "of the splash radius")
+	check_eq(spm.emission_ring_inner_radius, 0.0, "filled")
+	check(sd.draw_pass_1 == null, "never drawn")
+	var mat := (_rain.splashes.draw_pass_1 as QuadMesh).material as ShaderMaterial
+	check_eq(mat.get_shader_parameter("radius_m"), 8.0, "drawn within 8 m")
 	var wind := Wind.new()
 	check(wind.configure(WIND), "wind: %s" % [wind.errors])
 	wind.dir = Vector2(0.0, 1.0)  # blows toward +z
@@ -191,6 +211,73 @@ func test_the_volume_follows_the_eye_slanted_by_the_wind() -> void:
 		p.position.is_equal_approx(eye + Vector3(0.0, 6.0, -drift)),
 		"top above, upwind: %s" % p.position
 	)
+	check(_rain.splashes.position.is_equal_approx(eye), "splashes around the eye")
+	check(sd.position.is_equal_approx(p.position), "splash drops fall with the rain")
+	check(spm.direction.is_equal_approx(pm.direction), "same slant")
+	_rain.build_volume(400)
+	check_eq(String(_rain.splashes.name), "Splashes", "rebuilt with the same names")
+	var sd2 := _rain.splash_drops
+	check(sd2.get_node(sd2.sub_emitter) == _rain.splashes, "relinked")
 	var bad := cfg.duplicate()
 	bad.volume_m = [20, 12]
 	check(not _rain.configure(bad), "volume needs 3 sizes")
+
+
+func test_the_fallback_hides_under_a_roof_and_splashes_on_the_ground() -> void:
+	var cfg := CFG.duplicate()
+	(
+		cfg
+		. merge(
+			{
+				"fall_ms": 9.0,
+				"volume_m": [20, 12, 20],
+				"streak_width_m": 0.015,
+				"streak_length_m": 0.45,
+				"streak_alpha": 0.3,
+				"collision_size_m": 0.02,
+				"height_field_m": 32,
+				"height_field_res": 512,
+				"splash_share": 0.25,
+				"splash_s": 0.3,
+				"splash_size_m": 0.04,
+				"splash_speed_ms": 1.8,
+				"splash_radius_m": 8.0,
+				"splash_bounce": 0.2,
+				"shelter_check_s": 0.25,
+			}
+		)
+	)
+	check(_rain.configure(cfg), "configure: %s" % [_rain.errors])
+	_rain.set_process(false)
+	_rain.build_volume(800, false)
+	check(not _rain.collides, "fallback")
+	check(
+		_rain.height_field == null and _rain.splash_drops == null,
+		"no height field, no splash drops"
+	)
+	var pm := _rain.particles.process_material as ParticleProcessMaterial
+	check_eq(pm.collision_mode, ParticleProcessMaterial.COLLISION_DISABLED, "drops do not collide")
+	var spm := _rain.splashes.process_material as ParticleProcessMaterial
+	check_eq(spm.emission_shape, ParticleProcessMaterial.EMISSION_SHAPE_RING, "splash disc")
+	check_eq(spm.emission_ring_radius, 8.0, "of the splash radius")
+	check(_rain.splashes.sub_emitter.is_empty(), "splashes emit on their own")
+	_rain.ground_of = func(_p: Vector3) -> float: return 2.5
+	_rain.intensity = 1.0
+	_rain.follow(Vector3(10.0, 4.1, -3.0))
+	check(
+		_rain.splashes.position.is_equal_approx(Vector3(10.0, 2.5, -3.0)),
+		"on the ground under the eye"
+	)
+	check(_rain.splashes.emitting, "splashing while it rains")
+	_roof(Vector3(0.0, 3.0, 0.0), 2)
+	var tree := Engine.get_main_loop() as SceneTree
+	await tree.physics_frame
+	await tree.physics_frame
+	_rain.shelter(Vector3(0.0, 1.6, 0.0))
+	check(not _rain.particles.visible and not _rain.splashes.visible, "hidden under the roof")
+	_rain.shelter(Vector3(10.0, 1.6, 0.0))
+	check(_rain.particles.visible and _rain.splashes.visible, "shown in the open")
+	_rain.build_volume(800, true)
+	_rain.shelter(Vector3(0.0, 1.6, 0.0))
+	check(_rain.particles.visible, "with collisions the roof stops the drops instead")
+	check(_rain.height_field != null and _rain.splash_drops != null, "rebuilt with collisions")

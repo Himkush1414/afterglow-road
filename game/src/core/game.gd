@@ -147,7 +147,9 @@ func _begin(new_slot: String) -> void:
 				"rain_streaks"
 			)
 		if streaks != null:
-			rain.build_volume(int(streaks))
+			# Mobile: A-17 fallback (no height field collisions).
+			var collide := RenderingServer.get_current_rendering_method() == "forward_plus"
+			rain.build_volume(int(streaks), collide)
 		weather.rain = rain
 	if not lightning.configure(ContentDB.tuning("lightning")):
 		Log.error("lightning", "; ".join(lightning.errors))
