@@ -374,5 +374,20 @@
 		],
 		"canopy_cover": 0.5,
 		"canopy_factor": 0.5
+	},
+	"lightning": {
+		"seed_key": 7,
+		"interval_min_s": 10,
+		"interval_max_s": 30,
+		"flash_energy": 4,
+		"flash_s": 0.2,
+		"pulses": 2,
+		"distance_min_m": 300,
+		"distance_max_m": 3000,
+		"sound_ms": 340,
+		"flash_elevation_deg": 25,
+		"bolt_draw_m": 800,
+		"bolt_top_deg": 15,
+		"bolt_width_deg": 3
 	}
 }
