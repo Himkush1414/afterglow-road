@@ -246,8 +246,10 @@ func follow_glow(viewer: Vector3) -> void:
 ## Finds the band's target place in the world's pois.json.
 func find_glow_target(world: WorldData) -> void:
 	has_glow_target = false
+	if _glow.is_empty() or not world.has_layer("pois.json"):
+		return
 	var doc: Variant = JSON.parse_string(world.read_text("pois.json"))
-	if _glow.is_empty() or not doc is Dictionary:
+	if not doc is Dictionary:
 		return
 	for p: Dictionary in doc.get("pois", []):
 		if p.id == _glow.target_poi:
