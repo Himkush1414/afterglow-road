@@ -1990,6 +1990,66 @@
 					"max": 1
 				}
 			}
+		},
+		"tuning_lightning": {
+			"type": "object",
+			"fields": {
+				"seed_key": {
+					"type": "int"
+				},
+				"interval_min_s": {
+					"type": "number",
+					"min": 0
+				},
+				"interval_max_s": {
+					"type": "number",
+					"min": 0
+				},
+				"flash_energy": {
+					"type": "number",
+					"min": 0
+				},
+				"flash_s": {
+					"type": "number",
+					"min": 0.001
+				},
+				"pulses": {
+					"type": "int",
+					"min": 1,
+					"max": 16
+				},
+				"distance_min_m": {
+					"type": "number",
+					"min": 0
+				},
+				"distance_max_m": {
+					"type": "number",
+					"min": 0
+				},
+				"sound_ms": {
+					"type": "number",
+					"min": 1
+				},
+				"flash_elevation_deg": {
+					"type": "number",
+					"min": 0,
+					"max": 89
+				},
+				"bolt_draw_m": {
+					"type": "number",
+					"min": 1
+				},
+				"bolt_top_deg": {
+					"type": "number",
+					"min": 0,
+					"max": 89
+				},
+				"bolt_width_deg": {
+					"type": "number",
+					"min": 0,
+					"max": 89
+				}
+			}
 		}
 	},
 	"files": {
@@ -2027,6 +2087,9 @@
 					},
 					"rain": {
 						"type": "tuning_rain"
+					},
+					"lightning": {
+						"type": "tuning_lightning"
 					},
 					"vitals": {
 						"type": "tuning_vitals",
