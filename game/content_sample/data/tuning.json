@@ -373,7 +373,19 @@
 			3
 		],
 		"canopy_cover": 0.5,
-		"canopy_factor": 0.5
+		"canopy_factor": 0.5,
+		"fall_ms": 8,
+		"volume_m": [
+			16,
+			10,
+			16
+		],
+		"streak_width_m": 0.02,
+		"streak_length_m": 0.4,
+		"streak_alpha": 0.3,
+		"collision_size_m": 0.02,
+		"height_field_m": 24,
+		"height_field_res": 256
 	},
 	"lightning": {
 		"seed_key": 7,
