@@ -6,10 +6,10 @@ extends Node3D
 ## forest canopy it is scaled down. The visible rain is a GPU particle
 ## volume that follows the camera and falls at fall_ms slanted by the wind
 ## (atan(w / fall_ms)). With collisions (Forward+) a camera-following height
-## field stops drops at roofs and splashes rise where drops land. Without
-## (Mobile, A-17 fallback: its height field is not re-captured after it
-## moves) the volume hides while the camera's rain exposure is 0 and the
-## splashes rise from a disc on the ground under the camera. All numbers
+## field stops drops at roofs. Without (Mobile, A-17 fallback: its height
+## field is not re-captured after it moves) the volume hides while the
+## camera's rain exposure is 0. Splashes rise from a disc on the ground
+## under the camera and hide while the camera is sheltered. All numbers
 ## come from the "rain" tuning.
 
 const STREAK_SHADER := """
@@ -68,12 +68,8 @@ var canopy_of: Callable
 ## The particle volume (null until build_volume).
 var particles: GPUParticles3D
 var height_field: GPUParticlesCollisionHeightField3D
-## Droplets thrown up where drops land (sub-emitter of `splash_drops`).
+## Droplets thrown up from a ground disc around the camera.
 var splashes: GPUParticles3D
-## Undrawn drops over a disc of the splash radius that bounce off on their first
-## contact (splash_bounce: enough to leave contact, so one splash each) and
-## throw a splash there (drops hidden on contact cannot sub-emit).
-var splash_drops: GPUParticles3D
 ## False when the volume was built without collisions (fallback).
 var collides := true
 ## Ground height under an engine position for fallback splashes; defaults
@@ -83,7 +79,6 @@ var ground_of: Callable
 var _cfg := {}
 var _mask := 0
 var _pm: ParticleProcessMaterial
-var _splash_pm: ParticleProcessMaterial
 var _shelter_wait := 0.0
 
 
@@ -126,12 +121,11 @@ func set_from_weather(p: Dictionary) -> void:
 ## quality preset's rain_streaks); with `collide` also the roof height field
 ## and the splash drops, else the fallback (see the class note).
 func build_volume(streaks: int, collide := true) -> void:
-	for n: Node in [particles, height_field, splashes, splash_drops]:
+	for n: Node in [particles, height_field, splashes]:
 		if n != null:
 			remove_child(n)  # frees the names for the new nodes
 			n.queue_free()
 	height_field = null
-	splash_drops = null
 	collides = collide
 	var size := _volume()
 	_pm = ParticleProcessMaterial.new()
@@ -170,8 +164,6 @@ func build_volume(streaks: int, collide := true) -> void:
 	if not collide:
 		follow(Vector3.ZERO)
 		return
-	splash_drops = _build_splash_drops(streaks)
-	add_child(splash_drops)
 	height_field = GPUParticlesCollisionHeightField3D.new()
 	var hf := float(_cfg.height_field_m)
 	height_field.size = Vector3(hf, hf, hf)
@@ -212,26 +204,20 @@ func follow(eye: Vector3) -> void:
 	_pm.initial_velocity_max = v.length()
 	particles.amount_ratio = clampf(intensity, 0.0, 1.0)
 	particles.emitting = intensity > 0.0
-	splashes.position = eye
-	if not collides:
-		splashes.position.y = _ground(eye)
-		splashes.amount_ratio = particles.amount_ratio
-		splashes.emitting = particles.emitting
-		return
-	splash_drops.position = particles.position
-	_splash_pm.direction = _pm.direction
-	_splash_pm.initial_velocity_min = v.length()
-	_splash_pm.initial_velocity_max = v.length()
-	splash_drops.amount_ratio = particles.amount_ratio
-	splash_drops.emitting = particles.emitting
+	splashes.position = Vector3(eye.x, _ground(eye), eye.z)
+	splashes.amount_ratio = particles.amount_ratio
+	splashes.emitting = particles.emitting
+	if height_field != null:
+		# The built-in camera following moves it in x and z only.
+		height_field.position.y = eye.y
 
 
-## Fallback only: hides the volume and the splashes while `eye` is
-## sheltered (rain exposure 0); always shown with collisions.
+## Hides the splashes while `eye` is sheltered (rain exposure 0), and the
+## volume too without collisions (with them the height field stops drops).
 func shelter(eye: Vector3) -> void:
-	var shown := collides or exposure_at(eye) > 0.0
-	particles.visible = shown
-	splashes.visible = shown
+	var open := exposure_at(eye) > 0.0
+	particles.visible = collides or open
+	splashes.visible = open
 
 
 func _process(delta: float) -> void:
@@ -255,33 +241,6 @@ func _ground(eye: Vector3) -> float:
 	return eye.y
 
 
-func _build_splash_drops(streaks: int) -> GPUParticles3D:
-	var r := float(_cfg.splash_radius_m)
-	_splash_pm = _pm.duplicate() as ParticleProcessMaterial
-	_splash_pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_RING
-	_splash_pm.emission_ring_axis = Vector3.UP
-	_splash_pm.emission_ring_radius = r
-	_splash_pm.emission_ring_inner_radius = 0.0
-	_splash_pm.emission_ring_height = 0.0
-	_splash_pm.emission_ring_cone_angle = 90.0
-	_splash_pm.collision_mode = ParticleProcessMaterial.COLLISION_RIGID
-	_splash_pm.collision_bounce = float(_cfg.splash_bounce)
-	_splash_pm.collision_friction = 0.0
-	_splash_pm.sub_emitter_mode = ParticleProcessMaterial.SUB_EMITTER_AT_COLLISION
-	_splash_pm.sub_emitter_amount_at_collision = 1
-	var p := GPUParticles3D.new()
-	p.name = "SplashDrops"
-	p.amount = maxi(int(streaks * float(_cfg.splash_share)), 1)
-	p.lifetime = lifetime()
-	p.preprocess = lifetime()
-	p.process_material = _splash_pm
-	p.collision_base_size = float(_cfg.collision_size_m)
-	p.visibility_aabb = particles.visibility_aabb
-	p.draw_pass_1 = null
-	p.sub_emitter = NodePath("../Splashes")
-	return p
-
-
 func _build_splashes(streaks: int) -> GPUParticles3D:
 	var pm := ParticleProcessMaterial.new()
 	pm.direction = Vector3.UP
@@ -295,13 +254,12 @@ func _build_splashes(streaks: int) -> GPUParticles3D:
 	var ramp := GradientTexture1D.new()
 	ramp.gradient = fade
 	pm.color_ramp = ramp
-	if not collides:  # no splash drops: rise from a disc on the ground
-		pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_RING
-		pm.emission_ring_axis = Vector3.UP
-		pm.emission_ring_radius = float(_cfg.splash_radius_m)
-		pm.emission_ring_inner_radius = 0.0
-		pm.emission_ring_height = 0.0
-		pm.emission_ring_cone_angle = 90.0
+	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_RING
+	pm.emission_ring_axis = Vector3.UP
+	pm.emission_ring_radius = float(_cfg.splash_radius_m)
+	pm.emission_ring_inner_radius = 0.0
+	pm.emission_ring_height = 0.0
+	pm.emission_ring_cone_angle = 90.0
 	var p := GPUParticles3D.new()
 	p.name = "Splashes"
 	p.amount = maxi(int(streaks * float(_cfg.splash_share)), 1)
