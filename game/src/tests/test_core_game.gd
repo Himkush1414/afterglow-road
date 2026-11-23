@@ -29,6 +29,10 @@ func test_new_game_enters_the_world_and_saves() -> void:
 	var start := float(ContentDB.tuning("clock").start_gmin)
 	check_near(clock.now_gmin, start, 1.0, "clock at the start time")
 	check(SaveGame.has_save("slot_1"), "saved at once")
+	var game := Game.current
+	check(game.wind.is_configured(), "wind configured")
+	check(game.weather.wind == game.wind, "weather drives the wind")
+	check(game.wind.world == game.world, "wind reads the world's biomes")
 	var meta: Dictionary = SaveGame.read_meta("slot_1")
 	check_eq([int(meta.day), meta.difficulty], [1, "standard"])
 	check_eq(Game.newest_slot(), "slot_1")

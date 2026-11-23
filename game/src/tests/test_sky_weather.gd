@@ -226,10 +226,17 @@ func test_save_round_trip() -> void:
 func test_push_drives_the_sky_and_force_switches() -> void:
 	var dome := SkyDome.new()
 	var lights := SkyLights.new()
+	var wind := Wind.new()
 	_w.sky_dome = dome
 	_w.sky_lights = lights
+	_w.wind = wind
 	_w.new_game(0.0)
 	_w.push(10.0)
+	var p := _w.params(10.0)
+	check_near(wind.base, float(p.wind_speed), 1e-9, "wind base speed")
+	check_near(wind.gust, float(p.gustiness), 1e-9, "wind gustiness")
+	check(wind.dir.is_normalized(), "wind direction is a unit vector")
+	check(wind.dir.dot(dome.wind.normalized()) > 0.9999, "wind and sky blow the same way")
 	check_near(dome.cloud_cover, 0.1, 1e-9, "cover")
 	check_near(dome.visibility_m, 10000.0, 1e-9, "visibility")
 	check(dome.mist_allowed, "mist allowed in the mist state")
@@ -241,6 +248,8 @@ func test_push_drives_the_sky_and_force_switches() -> void:
 	check_eq(_w.state, "wet")
 	check_near(dome.cloud_cover, 0.9, 1e-9, "blended in after 20 minutes")
 	check(not dome.mist_allowed, "no mist outside the mist state")
+	check_near(wind.base, float(_w.params(40.0).wind_speed), 1e-9, "wind follows the new state")
 	check_eq(_w.state_ids(), ["sun", "grey", "wet", "mist"] as Array[String])
+	wind.free()
 	lights.free()
 	dome.free()
