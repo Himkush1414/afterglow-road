@@ -1954,6 +1954,42 @@
 					"type": "id"
 				}
 			}
+		},
+		"tuning_rain": {
+			"type": "object",
+			"fields": {
+				"ray_start_m": {
+					"type": "number",
+					"min": 0
+				},
+				"ray_length_m": {
+					"type": "number",
+					"min": 0
+				},
+				"tilt_deg_per_ms": {
+					"type": "number",
+					"min": 0
+				},
+				"block_layers": {
+					"type": "list",
+					"min_len": 1,
+					"of": {
+						"type": "int",
+						"min": 1,
+						"max": 32
+					}
+				},
+				"canopy_cover": {
+					"type": "number",
+					"min": 0,
+					"max": 1
+				},
+				"canopy_factor": {
+					"type": "number",
+					"min": 0,
+					"max": 1
+				}
+			}
 		}
 	},
 	"files": {
@@ -1988,6 +2024,9 @@
 					},
 					"wind": {
 						"type": "tuning_wind"
+					},
+					"rain": {
+						"type": "tuning_rain"
 					},
 					"vitals": {
 						"type": "tuning_vitals",

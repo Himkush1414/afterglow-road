@@ -11,6 +11,7 @@ const TREE_CHUNK_M := 128.0
 const TREE_CHUNKS_PER_SIDE := 64
 ## Biome cell size in metres (04 §2).
 const BIOME_CELL_M := 16.0
+const MASK_CELL_M := 4.0
 
 var errors: PackedStringArray = []
 var size_m := 0.0
@@ -26,6 +27,8 @@ var _dir := ""
 var _hashes := {}
 ## folder -> its parsed index.json (files with sha256 and count)
 var _indexes := {}
+var _mask := PackedByteArray()
+var _mask_read := false
 
 
 ## The world folder of the active content.
@@ -40,6 +43,8 @@ func load_dir(dir: String) -> bool:
 	errors.clear()
 	_heights = PackedByteArray()
 	_biomes = PackedByteArray()
+	_mask = PackedByteArray()
+	_mask_read = false
 	var meta_text := FileAccess.get_file_as_string(dir + "/meta.json")
 	var meta: Variant = JSON.parse_string(meta_text)
 	if not meta is Dictionary:
@@ -185,6 +190,34 @@ func biome_at(x: float, z: float) -> int:
 	var i := clampi(floori((x + origin_offset_m) / BIOME_CELL_M), 0, biome_cells - 1)
 	var j := clampi(floori((z + origin_offset_m) / BIOME_CELL_M), 0, biome_cells - 1)
 	return _biomes[j * biome_cells + i]
+
+
+## Side of the mask layer in texels (4 m cells, 04 §2).
+func mask_side() -> int:
+	return int(round(size_m / MASK_CELL_M))
+
+
+## Decoded mask.bin (RGBA8: way, wetness, rock, tree cover), read once and
+## kept; empty when the world has no mask (the sample world) or it fails its
+## check (then `errors` says why).
+func mask() -> PackedByteArray:
+	if not _mask_read and has_layer("mask.bin"):
+		var side := mask_side()
+		_mask = read_layer("mask.bin", side * side * 4)
+	_mask_read = true
+	return _mask
+
+
+## Tree cover 0..1 at engine (x, z): the mask's A channel of the 4 m cell
+## containing the point; 0 without a mask.
+func tree_cover_at(x: float, z: float) -> float:
+	var m := mask()
+	if m.is_empty():
+		return 0.0
+	var side := mask_side()
+	var i := clampi(floori((x + origin_offset_m) / MASK_CELL_M), 0, side - 1)
+	var j := clampi(floori((z + origin_offset_m) / MASK_CELL_M), 0, side - 1)
+	return m[(j * side + i) * 4 + 3] / 255.0
 
 
 ## Region (rx, rz) of an engine position.

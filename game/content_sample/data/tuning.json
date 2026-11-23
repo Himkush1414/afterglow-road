@@ -363,5 +363,16 @@
 		],
 		"min_exposure": 0.15,
 		"blocker_layer": 9
+	},
+	"rain": {
+		"ray_start_m": 0.1,
+		"ray_length_m": 30,
+		"tilt_deg_per_ms": 0.5,
+		"block_layers": [
+			2,
+			3
+		],
+		"canopy_cover": 0.5,
+		"canopy_factor": 0.5
 	}
 }

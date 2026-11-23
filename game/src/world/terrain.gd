@@ -129,10 +129,8 @@ func _setup_surface(world: WorldData) -> bool:
 	var cfg := ContentDB.tuning("terrain")
 	var cells := world.biome_cells
 	var biomes := world.read_layer("biome.bin", cells * cells)
-	var mask_px := int(round(world.size_m / LAYER_TEXEL_M))
-	var mask := PackedByteArray()
-	if world.has_layer("mask.bin"):
-		mask = world.read_layer("mask.bin", mask_px * mask_px * 4)
+	var mask_px := world.mask_side()
+	var mask := world.mask()
 	if not world.errors.is_empty():
 		errors.append_array(world.errors)
 		return false
