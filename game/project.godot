@@ -118,3 +118,19 @@ wind_max_ms={
 "type": "float",
 "value": 24.0
 }
+rain_intensity={
+"type": "float",
+"value": 0.0
+}
+rain_ripple_cell_m={
+"type": "float",
+"value": 1.0
+}
+rain_ripple_period_s={
+"type": "float",
+"value": 1.0
+}
+rain_ripple_strength={
+"type": "float",
+"value": 0.0
+}

@@ -2056,6 +2056,18 @@
 				"shelter_check_s": {
 					"type": "number",
 					"min": 0.01
+				},
+				"ripple_cell_m": {
+					"type": "number",
+					"min": 0.01
+				},
+				"ripple_period_s": {
+					"type": "number",
+					"min": 0.01
+				},
+				"ripple_strength": {
+					"type": "number",
+					"min": 0
 				}
 			}
 		},

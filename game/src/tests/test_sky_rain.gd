@@ -118,6 +118,10 @@ func test_tree_cover_from_the_world_mask() -> void:
 func test_weather_input() -> void:
 	_rain.set_from_weather({"rain": 0.6})
 	check_near(_rain.intensity, 0.6, 1e-9)
+	var g: Variant = RenderingServer.global_shader_parameter_get("rain_intensity")
+	if g != null:  # the headless renderer may not keep globals
+		check_near(float(g), 0.6, 1e-6, "water shaders get the intensity")
+	_rain.set_from_weather({"rain": 0.0})
 
 
 func _roof(pos: Vector3, layer: int, size := Vector3(6.0, 0.2, 6.0)) -> void:
