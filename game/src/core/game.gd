@@ -16,6 +16,7 @@ var play_seconds := 0.0
 
 @onready var clock: GameClock = $Clock
 @onready var weather: Weather = $Weather
+@onready var wind: Wind = $Wind
 @onready var sky_lights: SkyLights = $SkyLights
 @onready var sky_dome: SkyDome = $SkyDome
 @onready var world: WorldData = $WorldData
@@ -65,6 +66,7 @@ func _ready() -> void:
 			water.build(terrain.height_texture())
 		streamer.setup(world)
 		weather.terrain = terrain
+		wind.world = world
 		sky_dome.find_glow_target(world)
 		SaveGame.region_source = streamer.deltas
 	if App.is_dev():
@@ -129,6 +131,9 @@ func _begin(new_slot: String) -> void:
 	SaveGame.register_section("clock", clock.save_data, clock.load_data)
 	if not weather.configure(ContentDB.tuning("weather"), clock):
 		Log.error("weather", "; ".join(weather.errors))
+	if not wind.configure(ContentDB.tuning("wind")):
+		Log.error("wind", "; ".join(wind.errors))
+	weather.wind = wind
 	SaveGame.register_section("ids", func() -> Variant: return {"next": Ids.counter()}, _load_ids)
 	SaveGame.register_section("weather", weather.save_data, weather.load_data)
 	SaveGame.meta_source = _meta

@@ -13,6 +13,7 @@ var errors: PackedStringArray = []
 var sky_dome: SkyDome
 var sky_lights: SkyLights
 var terrain: Terrain
+var wind: Wind
 var state := ""
 var next_change_gmin := 0.0
 ## Direction the wind blows from (compass degrees) and its base speed (m/s).
@@ -121,9 +122,9 @@ func _process(_delta: float) -> void:
 		push(float(g))
 
 
-## Hands the blended parameters at `gmin` to the sky, the lights and the
-## terrain: cloud cover and darkness, visibility, dawn mist allowed in the
-## mist state, wind, ground wetness.
+## Hands the blended parameters at `gmin` to the sky, the lights, the wind
+## and the terrain: cloud cover and darkness, visibility, dawn mist allowed
+## in the mist state, wind direction, speed and gustiness, ground wetness.
 func push(gmin: float) -> void:
 	_pushed_gmin = int(gmin)
 	var p := params(gmin)
@@ -135,6 +136,8 @@ func push(gmin: float) -> void:
 		sky_dome.wind = wind_vector(p)
 	if sky_lights != null:
 		sky_lights.cloud_cover = float(p.cloud_cover)
+	if wind != null:
+		wind.set_from_weather(p)
 	if terrain != null and terrain.is_ready():
 		terrain.set_wetness(ground_wetness)
 
