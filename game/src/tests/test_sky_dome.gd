@@ -327,3 +327,16 @@ func test_fog_reaches_the_environment() -> void:
 	dome.show_minute(6 * 60 + 2)
 	check(env.volumetric_fog_enabled and is_equal_approx(env.volumetric_fog_density, 0.002), "on")
 	dome.free()
+
+
+func test_a_world_without_places_has_no_glow_target() -> void:
+	var dome := _glow_dome()
+	var world := WorldData.new()
+	check(world.load_dir(ContentDB.SAMPLE_ROOT + "/world"), "sample world: %s" % [world.errors])
+	check(not world.has_layer("pois.json"), "the sample world lists no places")
+	dome.has_glow_target = true
+	dome.find_glow_target(world)
+	check(not dome.has_glow_target, "no target")
+	check_eq(world.errors, PackedStringArray(), "nothing read")
+	world.free()
+	dome.free()
