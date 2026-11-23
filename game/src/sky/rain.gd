@@ -100,6 +100,14 @@ func configure(cfg: Dictionary) -> bool:
 			_mask |= 1 << (int(layer) - 1)
 	if (cfg.get("volume_m", [0, 0, 0]) as Array).size() != 3:
 		errors.append("rain: volume_m needs 3 sizes")
+	if cfg.has("ripple_cell_m"):
+		RenderingServer.global_shader_parameter_set("rain_ripple_cell_m", float(cfg.ripple_cell_m))
+		RenderingServer.global_shader_parameter_set(
+			"rain_ripple_period_s", float(cfg.ripple_period_s)
+		)
+		RenderingServer.global_shader_parameter_set(
+			"rain_ripple_strength", float(cfg.ripple_strength)
+		)
 	return errors.is_empty()
 
 
@@ -107,9 +115,11 @@ func is_configured() -> bool:
 	return not _cfg.is_empty()
 
 
-## Takes the weather's blended parameters (rain intensity).
+## Takes the weather's blended parameters (rain intensity) and hands the
+## intensity to the water shaders (ripples).
 func set_from_weather(p: Dictionary) -> void:
 	intensity = float(p.rain)
+	RenderingServer.global_shader_parameter_set("rain_intensity", intensity)
 
 
 ## Builds the particle volume with `streaks` drops at full intensity (the

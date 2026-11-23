@@ -21,6 +21,12 @@ uniform bool flowing = false;
 uniform sampler2D normal_a : hint_normal, filter_linear_mipmap, repeat_enable;
 uniform sampler2D normal_b : hint_normal, filter_linear_mipmap, repeat_enable;
 
+// Rain ripples (08 §4.5), set by Rain: intensity 0..1 and the ring look.
+global uniform float rain_intensity;
+global uniform float rain_ripple_cell_m;
+global uniform float rain_ripple_period_s;
+global uniform float rain_ripple_strength;
+
 // Set in each shader's vertex(): world position and flow speed (UV2.x).
 varying vec3 v_world;
 varying float v_speed;
@@ -38,6 +44,27 @@ float ground_y(vec2 xz) {
 	float a = mix(ground_at_texel(i), ground_at_texel(i + ivec2(1, 0)), f.x);
 	float b = mix(ground_at_texel(i + ivec2(0, 1)), ground_at_texel(i + ivec2(1, 1)), f.x);
 	return mix(a, b, f.y);
+}
+
+// Normal tilt of rain ripples at `xz`: one ring per cell of
+// rain_ripple_cell_m, from a random point at a random phase, growing to half
+// a cell and fading over rain_ripple_period_s; a share of cells equal to the
+// rain intensity rings in each period.
+vec2 rain_ripple(vec2 xz, float time) {
+	if (rain_intensity <= 0.0) {
+		return vec2(0.0);
+	}
+	vec2 g = xz / rain_ripple_cell_m;
+	vec2 cell = floor(g);
+	vec2 h = fract(sin(vec2(dot(cell, vec2(127.1, 311.7)), dot(cell, vec2(269.5, 183.3)))) * 43758.5453);
+	float t = time / rain_ripple_period_s + h.x;
+	float age = fract(t);
+	float pick = fract(sin(dot(cell + floor(t), vec2(12.9898, 78.233))) * 43758.5453);
+	vec2 d = g - (cell + 0.25 + 0.5 * h);
+	float x = (length(d) - age * 0.5) * 24.0;
+	float ring = sin(clamp(x, -3.14159, 3.14159));
+	float amp = (1.0 - age) * step(pick, rain_intensity) * rain_ripple_strength;
+	return normalize(d + vec2(1e-5)) * ring * amp;
 }
 
 void water_fragment(vec2 uv, float time, out vec3 albedo, out vec3 normal_map, out float rough) {
@@ -60,6 +87,7 @@ void water_fragment(vec2 uv, float time, out vec3 albedo, out vec3 normal_map, o
 	vec3 nb = texture(normal_b, ub).rgb * 2.0 - 1.0;
 	vec3 n = normalize(vec3(na.xy + nb.xy, na.z * nb.z));
 	n.xy *= clamp(0.4 + 0.3 * wind_speed, 0.2, 1.5) * (1.0 - foam * 0.7);
+	n.xy += rain_ripple(v_world.xz, time);
 	normal_map = normalize(n) * 0.5 + 0.5;
 	rough = mix(roughness_value, 0.6, foam);
 }

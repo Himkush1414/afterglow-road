@@ -392,7 +392,10 @@
 		"splash_speed_ms": 1.5,
 		"splash_radius_m": 6,
 		"splash_bounce": 0.2,
-		"shelter_check_s": 0.25
+		"shelter_check_s": 0.25,
+		"ripple_cell_m": 0.8,
+		"ripple_period_s": 1.0,
+		"ripple_strength": 0.5
 	},
 	"lightning": {
 		"seed_key": 7,
