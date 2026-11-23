@@ -2125,6 +2125,62 @@
 					"max": 89
 				}
 			}
+		},
+		"review_set": {
+			"type": "object",
+			"fields": {
+				"place": {
+					"type": "id"
+				},
+				"heading_deg": {
+					"type": "number"
+				},
+				"pitch_deg": {
+					"type": "number",
+					"min": -89,
+					"max": 89
+				},
+				"eye_m": {
+					"type": "number",
+					"min": 0
+				},
+				"fov_deg": {
+					"type": "number",
+					"min": 1,
+					"max": 179
+				},
+				"times": {
+					"type": "list",
+					"min_len": 1,
+					"of": {
+						"type": "string"
+					}
+				},
+				"weathers": {
+					"type": "list",
+					"min_len": 1,
+					"of": {
+						"type": "id"
+					}
+				},
+				"presets": {
+					"type": "map",
+					"values": {
+						"type": "id"
+					}
+				}
+			}
+		},
+		"tuning_review": {
+			"type": "object",
+			"fields": {
+				"sets": {
+					"type": "map",
+					"values": {
+						"type": "review_set"
+					}
+				}
+			}
 		}
 	},
 	"files": {
@@ -2184,6 +2240,10 @@
 					},
 					"loop": {
 						"type": "tuning_loop",
+						"optional": true
+					},
+					"review": {
+						"type": "tuning_review",
 						"optional": true
 					}
 				}
