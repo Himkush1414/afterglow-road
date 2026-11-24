@@ -38,6 +38,7 @@ func _run() -> void:
 		func(id: String) -> Dictionary: return ContentDB.entry("trees", id)
 	)
 	_field = TreeField.new()
+	_field.t2_shadows = presets[args[0]].get("t2_tree_shadows", false) == true
 	add_child(_field)
 	if not _field.setup(_world, defs, ContentDB.tuning("trees"), tiers):
 		printerr("tree far check: %s" % ", ".join(_field.errors))
@@ -92,6 +93,31 @@ func _run() -> void:
 		(
 			"trees within %.0f m: %d, outside a built tile: %d; instances %d (tiles hold %d)%s"
 			% [t3_end, in_range, missing, _field.instances, drawn, _flag(cover_ok)]
+		)
+	)
+	# Mid tier: every tree between the T1 and T2 ends lies in a built chunk.
+	var t1_end := float(tiers[TreeField.T1])
+	var t2_end := float(tiers[TreeField.T2])
+	var mid := 0
+	var mid_missing := 0
+	var chunks := _field.built_chunks()
+	for cz in side:
+		for cx in side:
+			var chunk := Vector2i(cx, cz)
+			var raw := _field.chunk_records(chunk)
+			for i in raw.size() / TreeField.RECORD_BYTES:
+				var r := TreeField.decode(raw, chunk, i)
+				var d := Vector2(r.map.x - map.x, r.map.y - map.z).length()
+				if d < t1_end or d > t2_end:
+					continue
+				mid += 1
+				mid_missing += int(not chunks.has(chunk))
+	var mid_ok := mid_missing == 0 and (mid > 0 or t2_end <= t1_end)
+	bad += int(not mid_ok)
+	print(
+		(
+			"mid tier: %d chunks, %d instances; trees %.0f-%.0f m: %d, outside a chunk: %d%s"
+			% [chunks.size(), _field.mid_instances, t1_end, t2_end, mid, mid_missing, _flag(mid_ok)]
 		)
 	)
 	print(

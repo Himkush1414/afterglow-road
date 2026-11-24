@@ -91,3 +91,17 @@ func test_streaming_builds_and_frees_a_tile() -> void:
 	_field.update_for(_world.map_to_world(Vector3(256.0, 0.0, 512.0 + 2400.0 + 300.0)))
 	check_eq(_field.built_tiles(), [], "freed beyond the range + keep margin")
 	check_eq(_field.instances, 0)
+
+
+func test_mid_tier_chunks_reach_into_the_t2_range() -> void:
+	if not _setup():
+		return
+	var centre := _world.map_to_world(Vector3(256.0, 0.0, 256.0))
+	check_eq(_field.mid_chunks(centre).size(), 16, "all 16 chunks of the sample reach into T2")
+	check_eq(_field.chunk_buffers(Vector2i(0, 0)), {}, "no models in the sample: no T2 instances")
+	_field.tiers_m = [40.0, 300.0, 450.0, 2400.0]
+	var chunks := _field.mid_chunks(centre)
+	check(not chunks.has(Vector2i(1, 1)), "a chunk wholly inside T1 is left out")
+	check(chunks.has(Vector2i(0, 0)), "a chunk reaching past T1 is kept")
+	_field.tiers_m = [40.0, 120.0, 120.0, 2400.0]
+	check_eq(_field.mid_chunks(centre), [], "an empty T2 range has no chunks")
