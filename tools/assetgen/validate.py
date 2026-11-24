@@ -10,7 +10,10 @@ each within the triangle budget of its size (T-22-2) and with a bark and a
 leaves surface (bark only when the model's shape preset has no clumps) that all
 carry RGBA vertex colours (COLOR_0, VEC4); and a _t3 billboard quad (2
 triangles, "billboard" surface, vertex colours) whose atlas cell is listed,
-unique and inside the grid in <models>/<category>_models.json.
+unique and inside the grid in <models>/<category>_models.json, and holds
+part of a tree in the billboard atlas <content>/assets/texture_sets/trees/
+hi/<category>_billboards_ca.png (+ _n.png with the same coverage; the lo
+set at half size, T-22-8).
 Engine side (unless --no-engine): the imported models are checked headless
 by res://src/tools/check_tree_models.gd.
 Prints each error, then RESULT PASS / FAIL; exit code 0 / 1.
@@ -29,6 +32,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 TIERS = ("t0", "t1", "t2")
 SURFACES = ("bark", "leaves")
 MODEL_DIR = os.path.join("assets", "models", "trees")
+TEXTURE_DIR = os.path.join("assets", "texture_sets", "trees")
 TIMEOUT_S = 300
 
 
@@ -73,6 +77,8 @@ def check_trees(content):
             errors.append(f"{stem}: billboard cell {entry['cell']} also used by {seen[entry['cell']]}")
         else:
             seen[entry["cell"]] = stem
+    if found and manifest["grid"]:
+        errors += check_atlas(os.path.join(content, TEXTURE_DIR), category, manifest)
     for name in found:
         tree = expected.get(name) or next((t for i, t in defs.items() if name.startswith(f"{category}_{i}_")), None)
         if tree is None:
@@ -81,6 +87,40 @@ def check_trees(content):
         shape = shapes.get(tree["id"]) or shape_for(preset, {"id": tree["id"]}, tree)
         surfaces = SURFACES if "clumps" in shape else SURFACES[:1]
         errors += check_model(os.path.join(model_dir, name), name[: -len(".glb")], preset["budgets"][tree["size"]], surfaces)
+    return errors
+
+
+def check_atlas(texture_dir, category, manifest):
+    """Errors of the billboard atlas: files, sizes, matching coverage, and a
+    covered pixel in every listed cell."""
+    import numpy as np
+    from PIL import Image
+
+    errors, images = [], {}
+    for kind in ("ca", "n"):
+        for d in ("hi", "lo"):
+            path = os.path.join(texture_dir, d, f"{category}_billboards_{kind}.png")
+            if not os.path.exists(path):
+                errors.append(f"{d}/{category}_billboards_{kind}.png: missing")
+                continue
+            with Image.open(path) as im:
+                images[(kind, d)] = np.asarray(im.convert("RGBA"))
+    if errors:
+        return errors
+    g = manifest["grid"]
+    hi = images[("ca", "hi")]
+    if hi.shape[0] != hi.shape[1] or hi.shape[0] % g:
+        return [f"billboard atlas {hi.shape[1]} x {hi.shape[0]} does not split into {g} x {g} cells"]
+    for kind in ("ca", "n"):
+        if images[(kind, "lo")].shape[:2] != (hi.shape[0] // 2, hi.shape[1] // 2):
+            errors.append(f"lo/{category}_billboards_{kind}.png is not half of the hi size")
+    if images[("n", "hi")].shape != hi.shape or not np.array_equal(images[("n", "hi")][..., 3], hi[..., 3]):
+        errors.append("billboard colour and normal atlases differ in coverage")
+    n = hi.shape[0] // g
+    for stem, entry in sorted(manifest["models"].items()):
+        c = entry["cell"]
+        if 0 <= c < g * g and not (hi[(c // g) * n : (c // g + 1) * n, (c % g) * n : (c % g + 1) * n, 3] >= 128).any():
+            errors.append(f"{stem}: billboard cell {c} is empty")
     return errors
 
 
