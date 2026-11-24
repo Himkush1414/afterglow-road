@@ -42,9 +42,16 @@ class ValidateTreesTest(unittest.TestCase):
         os.makedirs(os.path.join(d, "data"))
         os.makedirs(os.path.join(d, validate.MODEL_DIR))
         with open(os.path.join(d, "assetgen", "trees.json"), "w") as f:
-            json.dump({"category": "tree", "budgets": {"mature": BUDGETS}, "models": [{"id": "a_mature", "seed": 1}]}, f)
+            json.dump({
+                "category": "tree", "budgets": {"mature": BUDGETS, "dead": BUDGETS},
+                "species": {"a": {"clumps": {}}, "bare": {}},
+                "models": [{"id": "a_mature", "seed": 1}, {"id": "snag", "seed": 1}],
+            }, f)
         with open(os.path.join(d, "data", "trees.json"), "w") as f:
-            json.dump({"trees": [{"id": "a_mature", "size": "mature", "variants": variants}]}, f)
+            json.dump({"trees": [
+                {"id": "a_mature", "species": "a", "size": "mature", "variants": variants},
+                {"id": "snag", "species": "bare", "size": "dead", "variants": 1},
+            ]}, f)
         return os.path.join(d, validate.MODEL_DIR)
 
     def test_complete_models_pass(self):
@@ -52,6 +59,7 @@ class ValidateTreesTest(unittest.TestCase):
             models = self._content(d)
             for n in (1, 2):
                 _write_glb(os.path.join(models, f"tree_a_mature_{n}.glb"), _good(f"tree_a_mature_{n}"))
+            _write_glb(os.path.join(models, "tree_snag_1.glb"), [(m, prims[:1]) for m, prims in _good("tree_snag_1")])
             self.assertEqual(validate.check_trees(d), [])
             m = glb.meshes(os.path.join(models, "tree_a_mature_1.glb"))
             self.assertEqual(m["tree_a_mature_1_t0"]["triangles"], 75)
@@ -66,10 +74,11 @@ class ValidateTreesTest(unittest.TestCase):
             _write_glb(os.path.join(models, "tree_a_mature_1.glb"), bad)
             one = [("tree_a_mature_2_t0", [("bark", 5, True)])] + _good("tree_a_mature_2")[1:]  # one surface
             _write_glb(os.path.join(models, "tree_a_mature_2.glb"), one)
+            _write_glb(os.path.join(models, "tree_snag_1.glb"), _good("tree_snag_1"))  # leaves on a leafless species
             errors = validate.check_trees(d)
-            for fragment in ("120 triangles (budget 100)", "_t1 leaves: no RGBA", "no _t2 mesh", "tree_a_mature_3.glb: missing", "surfaces ['bark']"):
+            for fragment in ("120 triangles (budget 100)", "_t1 leaves: no RGBA", "no _t2 mesh", "tree_a_mature_3.glb: missing", "surfaces ['bark'], expected ['bark', 'leaves']", "snag_1_t0: surfaces ['bark', 'leaves'], expected ['bark']"):
                 self.assertTrue(any(fragment in e for e in errors), (fragment, errors))
-            self.assertEqual(len(errors), 5, errors)
+            self.assertEqual(len(errors), 8, errors)
 
 
 if __name__ == "__main__":

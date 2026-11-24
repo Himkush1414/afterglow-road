@@ -8,7 +8,10 @@ Each preset model (a tree id and a seed) gives `variants` files
 named <category>_<id>_<n>_t0 / _t1 / _t2, each with two surfaces: "bark"
 (tapered tubes for the trunk and limbs, cylinder UVs in metres) and "leaves"
 (clumped cards with soft normals pointing away from the crown centre, UVs into
-a cell of the species leaf atlas).
+a cell of the species leaf atlas). A species preset without "clumps" makes
+leafless models (bark only); "lie_length_m" lays the trunk on the ground;
+"stems" > 1 grows several trunks from the base (shrubs). A preset model
+may name a "shape" other than its species (two shapes of one species).
 
 All tiers share one skeleton and one set of clump positions, so their
 silhouettes match; they differ in tube resolution, branch depth and card
@@ -108,17 +111,28 @@ def point_at(branch, t):
 def skeleton(rnd, tree, sp):
     height, trunk_r = tree["height_m"], tree["trunk_r_m"]
     trunk_spec = sp["trunk"]
-    trunk = Branch(0, 0.0)
-    lean = math.radians(rnd.uniform(0.0, trunk_spec.get("lean_deg", 0.0)))
-    az = rnd.uniform(0.0, 2.0 * math.pi)
-    direction = Vector((math.sin(lean) * math.cos(az), math.sin(lean) * math.sin(az), math.cos(lean)))
-    grow(rnd, trunk, Vector(), direction, height * trunk_spec["top"], trunk_r, trunk_r * trunk_spec["taper"], trunk_spec, 0.0)
-    flare = trunk_spec.get("flare", 0.0)
-    for i, z in enumerate(p.z for p in trunk.points):
-        if z < 0.1 * height:
-            trunk.radii[i] *= 1.0 + flare * (1.0 - z / (0.1 * height))
-    branches = [trunk]
-    parents = [trunk]
+    lying = "lie_length_m" in trunk_spec
+    stems = []
+    for k in range(trunk_spec.get("stems", 1)):
+        trunk = Branch(0, 0.0)
+        if lying:  # on the ground along a random heading, resting on its side
+            az = rnd.uniform(0.0, 2.0 * math.pi)
+            direction = Vector((math.cos(az), math.sin(az), 0.0))
+            start, length = Vector((0.0, 0.0, trunk_r)) - direction * trunk_spec["lie_length_m"] * 0.5, trunk_spec["lie_length_m"]
+        else:
+            spread = trunk_spec.get("stem_spread_deg", 0.0) if k else 0.0
+            lean = math.radians(spread + rnd.uniform(0.0, trunk_spec.get("lean_deg", 0.0)))
+            az = rnd.uniform(0.0, 2.0 * math.pi)
+            direction = Vector((math.sin(lean) * math.cos(az), math.sin(lean) * math.sin(az), math.cos(lean)))
+            start, length = Vector(), height * trunk_spec["top"] * (rnd.uniform(0.75, 1.0) if k else 1.0)
+        grow(rnd, trunk, start, direction, length, trunk_r, trunk_r * trunk_spec["taper"], trunk_spec, 0.0)
+        flare = 0.0 if lying else trunk_spec.get("flare", 0.0)
+        for i, z in enumerate(p.z for p in trunk.points):
+            if z < 0.1 * height:
+                trunk.radii[i] *= 1.0 + flare * (1.0 - z / (0.1 * height))
+        stems.append(trunk)
+    branches = list(stems)
+    parents = list(stems)
     for level, spec in enumerate(sp["levels"], start=1):
         kids = []
         for parent in parents:
@@ -128,7 +142,7 @@ def skeleton(rnd, tree, sp):
                 t = spec["from"] + (spec["to"] - spec["from"]) * u
                 p, pd, pr, preach = point_at(parent, t)
                 angle = math.radians(rnd.uniform(*spec["angle_deg"]))
-                if level == 1:
+                if level == 1 and not lying:
                     azi = i * 2.39996 + rnd.uniform(-0.3, 0.3)  # golden angle spiral
                     axis = UP
                 else:
@@ -152,9 +166,9 @@ def skeleton(rnd, tree, sp):
 
 def clumps(rnd, branches, sp):
     """Clump centres on the outer part of every branch without children."""
-    cs = sp["clumps"]
+    cs = sp.get("clumps")
     out = []
-    for b in branches:
+    for b in branches if cs else []:
         if b.level == 0 or b.children:
             continue
         length = b.reach[-1] - b.reach[0]
@@ -168,7 +182,15 @@ def clumps(rnd, branches, sp):
 
 def fit(branches, cl, tree, sp):
     """Scales the tree so its top is at height_m and the crown radius (95th
-    percentile of clump distance from the trunk axis) is canopy_r_m."""
+    percentile of clump distance from the trunk axis) is canopy_r_m. A
+    leafless tree is scaled to its height only; a lying trunk is kept."""
+    if "lie_length_m" in sp["trunk"]:
+        return
+    if not cl:
+        top = max(p.z for b in branches for p in b.points)
+        for p in (p for b in branches for p in b.points):
+            p.z *= tree["height_m"] / top
+        return
     cr = sp["clumps"]["radius_m"]
     top = max(max(p.z for b in branches for p in b.points), max(c["c"].z + cr for c in cl))
     dist = sorted(math.hypot(c["c"].x, c["c"].y) + cr for c in cl)
@@ -192,9 +214,9 @@ class Surface:
         return sum(len(f) - 2 for f in self.faces)
 
 
-def crown_frame(cl, cr):
-    lo = Vector([min(c["c"][i] for c in cl) - cr for i in range(3)])
-    hi = Vector([max(c["c"][i] for c in cl) + cr for i in range(3)])
+def crown_frame(points, cr):
+    lo = Vector([min(p[i] for p in points) - cr for i in range(3)])
+    hi = Vector([max(p[i] for p in points) + cr for i in range(3)])
     return (lo + hi) * 0.5, (hi - lo) * 0.5
 
 
@@ -280,20 +302,26 @@ def cards(s, rnd, cl, count, sp, max_reach, centre, half):
 
 
 def build_tier(rnd, branches, cl, tier, budget, tree, sp):
-    cr = sp["clumps"]["radius_m"]
-    centre, half = crown_frame(cl, cr)
+    if cl:
+        centre, half = crown_frame([c["c"] for c in cl], sp["clumps"]["radius_m"])
+    else:  # leafless: the frame of the branches stands in for the crown
+        centre, half = crown_frame([p for b in branches for p in b.points], 0.0)
     max_reach = max(b.reach[-1] for b in branches)
     bark = Surface()
     for b in branches:
         if b.level <= tier["levels"]:
             radial = tier["radial"] if b.level == 0 else max(3, tier["radial"] // (2 * b.level))
             tube(bark, b, radial, tier["ring_m"] * (1 + b.level), sp["uv_m"], max_reach, tree["height_m"], centre, half)
+    if bark.tris() > budget:
+        raise ValueError(f"{tree['id']} {tier}: bark uses {bark.tris()} of {budget} triangles")
+    if not cl:
+        return [bark]
     leaves = Surface()
     room = int(budget * sp["fill"]) - bark.tris()
     if room < 2:
         raise ValueError(f"{tree['id']} {tier}: bark uses {bark.tris()} of {budget} triangles")
     cards(leaves, rnd, cl, room // 2, sp, max_reach, centre, half)
-    return bark, leaves
+    return [bark, leaves]
 
 
 # ------------------------------------------------------------------- export
@@ -318,7 +346,7 @@ def to_object(name, surfaces):
     mesh = bpy.data.meshes.new(name)
     mesh.from_pydata([tuple(v) for v in verts], [], faces)
     mesh.update()
-    for name_k in ("bark", "leaves"):
+    for name_k in ("bark", "leaves")[: len(surfaces)]:
         mesh.materials.append(material(name_k))
     mesh.polygons.foreach_set("material_index", mats)
     mesh.polygons.foreach_set("use_smooth", [True] * len(faces))
@@ -362,7 +390,7 @@ def main():
         if only and model["id"] != only:
             continue
         tree = defs[model["id"]]
-        sp = preset["species"][tree["species"]]
+        sp = preset["species"][model.get("shape", tree["species"])]
         budgets = preset["budgets"][tree["size"]]
         for n in range(1, tree["variants"] + 1):
             rnd = random.Random(f"{model['id']}:{model['seed']}:{n}")
@@ -372,11 +400,11 @@ def main():
             name = f"{preset['category']}_{model['id']}_{n}"
             objs, counts = [], []
             for k, tier_name in enumerate(TIERS):
-                bark, leaves = build_tier(rnd, branches, cl, sp["tiers"][k], budgets[k], tree, sp)
-                objs.append(to_object(f"{name}_{tier_name}", [bark, leaves]))
-                counts.append(f"{tier_name} {bark.tris()}+{leaves.tris()}")
+                surfaces = build_tier(rnd, branches, cl, sp["tiers"][k], budgets[k], tree, sp)
+                objs.append(to_object(f"{name}_{tier_name}", surfaces))
+                counts.append(f"{tier_name} " + "+".join(str(x.tris()) for x in surfaces))
             export(objs, os.path.join(out, name + ".glb"))
-            print(f"trees: wrote {name}.glb ({', '.join(counts)} triangles bark+leaves)")
+            print(f"trees: wrote {name}.glb ({', '.join(counts)} triangles per surface)")
 
 
 main()

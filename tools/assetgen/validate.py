@@ -7,7 +7,8 @@ T-22-3 (tree models), file side: every model the tree preset
 tree definition (<content>/data/trees.json); every
 <content>/assets/models/trees/tree_*.glb has the meshes _t0, _t1 and _t2,
 each within the triangle budget of its size (T-22-2) and with a bark and a
-leaves surface that both carry RGBA vertex colours (COLOR_0, VEC4).
+leaves surface (bark only when the model's shape preset has no clumps) that all
+carry RGBA vertex colours (COLOR_0, VEC4).
 Engine side (unless --no-engine): the imported models are checked headless
 by res://src/tools/check_tree_models.gd. The billboard atlas cell part of
 T-22-3 is added with the atlas baker.
@@ -39,11 +40,13 @@ def check_trees(content):
     category = preset["category"]
     errors = []
     expected = {}
+    shapes = {}
     for model in preset["models"]:
         tree = defs.get(model["id"])
         if tree is None:
             errors.append(f"preset model {model['id']}: no tree definition")
             continue
+        shapes[model["id"]] = model.get("shape", tree["species"])
         for n in range(1, tree["variants"] + 1):
             expected[f"{category}_{model['id']}_{n}.glb"] = tree
     found = sorted(f for f in os.listdir(model_dir) if f.startswith(category + "_") and f.endswith(".glb")) if os.path.isdir(model_dir) else []
@@ -54,11 +57,13 @@ def check_trees(content):
         if tree is None:
             errors.append(f"{name}: no tree definition")
             continue
-        errors += check_model(os.path.join(model_dir, name), name[: -len(".glb")], preset["budgets"][tree["size"]])
+        shape = shapes.get(tree["id"], tree["species"])
+        surfaces = SURFACES if "clumps" in preset["species"].get(shape, {}) else SURFACES[:1]
+        errors += check_model(os.path.join(model_dir, name), name[: -len(".glb")], preset["budgets"][tree["size"]], surfaces)
     return errors
 
 
-def check_model(path, stem, budgets):
+def check_model(path, stem, budgets, surfaces=SURFACES):
     errors = []
     meshes = glb.meshes(path)
     for tier, budget in zip(TIERS, budgets):
@@ -69,8 +74,8 @@ def check_model(path, stem, budgets):
         if mesh["triangles"] > budget:
             errors.append(f"{stem}_{tier}: {mesh['triangles']} triangles (budget {budget})")
         materials = [p["material"] for p in mesh["primitives"]]
-        if sorted(materials) != sorted(SURFACES):
-            errors.append(f"{stem}_{tier}: surfaces {materials}, expected {list(SURFACES)}")
+        if sorted(materials) != sorted(surfaces):
+            errors.append(f"{stem}_{tier}: surfaces {materials}, expected {list(surfaces)}")
         for p in mesh["primitives"]:
             if p["attributes"].get("COLOR_0") != "VEC4":
                 errors.append(f"{stem}_{tier} {p['material']}: no RGBA vertex colours")

@@ -1,7 +1,8 @@
 extends SceneTree
 ## Checks the imported tree models of one content tree (22 §7 T-22-3, engine
 ## side): every <root>/assets/models/trees/tree_*.glb has the meshes _t0, _t1
-## and _t2, each with a bark and a leaves surface carrying vertex colours,
+## and _t2, each with a bark and a leaves surface (or bark only, for leafless
+## models) carrying vertex colours,
 ## and the colours arrive unconverted (flutter weight G is 0 on bark and
 ## 0.5 or 1.0 on cards, as written by tools/assetgen/trees.py).
 ## Usage: godot --headless -s res://src/tools/check_tree_models.gd -- <res:// root>
@@ -9,7 +10,7 @@ extends SceneTree
 
 const MODEL_DIR := "assets/models/trees"
 const TIERS: Array[String] = ["t0", "t1", "t2"]
-const SURFACES := 2
+const SURFACES := 2  # bark, leaves; leafless models have bark only
 const TOLERANCE := 0.01
 
 
@@ -58,12 +59,15 @@ func check_model(path: String) -> PackedStringArray:
 			errors.append("%s: no _%s mesh" % [path, tier])
 			continue
 		var mesh: Mesh = (meshes[tier] as MeshInstance3D).mesh
-		if mesh.get_surface_count() != SURFACES:
+		if mesh.get_surface_count() < 1 or mesh.get_surface_count() > SURFACES:
 			errors.append(
-				"%s _%s: %d surfaces, not %d" % [path, tier, mesh.get_surface_count(), SURFACES]
+				(
+					"%s _%s: %d surfaces, not 1 or %d"
+					% [path, tier, mesh.get_surface_count(), SURFACES]
+				)
 			)
 			continue
-		for s in SURFACES:
+		for s in mesh.get_surface_count():
 			var arrays := mesh.surface_get_arrays(s)
 			var colors: PackedColorArray = (
 				arrays[Mesh.ARRAY_COLOR] if arrays[Mesh.ARRAY_COLOR] != null else PackedColorArray()
