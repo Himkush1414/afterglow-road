@@ -8,10 +8,11 @@ tree definition (<content>/data/trees.json); every
 <content>/assets/models/trees/tree_*.glb has the meshes _t0, _t1 and _t2,
 each within the triangle budget of its size (T-22-2) and with a bark and a
 leaves surface (bark only when the model's shape preset has no clumps) that all
-carry RGBA vertex colours (COLOR_0, VEC4).
+carry RGBA vertex colours (COLOR_0, VEC4); and a _t3 billboard quad (2
+triangles, "billboard" surface, vertex colours) whose atlas cell is listed,
+unique and inside the grid in <models>/<category>_models.json.
 Engine side (unless --no-engine): the imported models are checked headless
-by res://src/tools/check_tree_models.gd. The billboard atlas cell part of
-T-22-3 is added with the atlas baker.
+by res://src/tools/check_tree_models.gd.
 Prints each error, then RESULT PASS / FAIL; exit code 0 / 1.
 """
 import argparse
@@ -53,6 +54,25 @@ def check_trees(content):
     found = sorted(f for f in os.listdir(model_dir) if f.startswith(category + "_") and f.endswith(".glb")) if os.path.isdir(model_dir) else []
     for name in sorted(set(expected) - set(found)):
         errors.append(f"{name}: missing")
+    manifest_path = os.path.join(model_dir, f"{category}_models.json")
+    manifest = {"grid": 0, "models": {}}
+    if os.path.exists(manifest_path):
+        with open(manifest_path, encoding="utf-8") as f:
+            manifest = json.load(f)
+    elif found:
+        errors.append(f"{category}_models.json: missing")
+    seen = {}
+    for name in found:
+        stem = name[: -len(".glb")]
+        entry = manifest["models"].get(stem)
+        if entry is None:
+            errors.append(f"{stem}: no billboard cell in {category}_models.json")
+        elif not 0 <= entry["cell"] < manifest["grid"] ** 2:
+            errors.append(f"{stem}: billboard cell {entry['cell']} outside the {manifest['grid']} x {manifest['grid']} atlas")
+        elif entry["cell"] in seen:
+            errors.append(f"{stem}: billboard cell {entry['cell']} also used by {seen[entry['cell']]}")
+        else:
+            seen[entry["cell"]] = stem
     for name in found:
         tree = expected.get(name) or next((t for i, t in defs.items() if name.startswith(f"{category}_{i}_")), None)
         if tree is None:
@@ -80,6 +100,13 @@ def check_model(path, stem, budgets, surfaces=SURFACES):
         for p in mesh["primitives"]:
             if p["attributes"].get("COLOR_0") != "VEC4":
                 errors.append(f"{stem}_{tier} {p['material']}: no RGBA vertex colours")
+    quad = meshes.get(f"{stem}_t3")
+    if quad is None:
+        errors.append(f"{stem}: no _t3 mesh")
+    elif quad["triangles"] != 2 or [p["material"] for p in quad["primitives"]] != ["billboard"]:
+        errors.append(f"{stem}_t3: {quad['triangles']} triangles, surfaces {[p['material'] for p in quad['primitives']]}; expected 2, ['billboard']")
+    elif quad["primitives"][0]["attributes"].get("COLOR_0") != "VEC4":
+        errors.append(f"{stem}_t3: no RGBA vertex colours")
     return errors
 
 
