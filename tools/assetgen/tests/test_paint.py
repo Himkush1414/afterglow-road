@@ -53,6 +53,16 @@ class PaintTest(unittest.TestCase):
             self.assertEqual([m["name"] for m in manifest["materials"]], ["sample"])
             self.assertEqual(len(manifest["materials"][0]["mean_albedo"]), 3)
 
+    def test_stretched_noise_runs_down_the_image_and_tiles(self):
+        n = paint.value_noise(np.random.default_rng(1), 128, [32, 4])
+        across = np.abs(np.diff(n, axis=1)).mean()
+        down = np.abs(np.diff(n, axis=0)).mean()
+        self.assertGreater(across, 4.0 * down)
+        self.assertLessEqual(np.abs(n[:, 0] - n[:, -1]).max(), np.abs(np.diff(n, axis=1)).max())
+        self.assertLessEqual(np.abs(n[0] - n[-1]).max(), np.abs(np.diff(n, axis=0)).max())
+        square = paint.value_noise(np.random.default_rng(1), 64, 8)
+        self.assertTrue(np.array_equal(square, paint.value_noise(np.random.default_rng(1), 64, [8, 8])))
+
     def test_textures_tile(self):
         # the jump across the tile edge is no larger than jumps inside it
         ah, nra = paint.paint(MATERIAL, 64)
