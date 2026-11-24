@@ -33,6 +33,7 @@ const T1 := 1
 const NEAR_LINE_M := 16.0
 ## How far the camera can move between near-set rebuilds (a 16 m cell's diagonal).
 const NEAR_SLACK_M := 22.7
+const NEAR_SLICE_USEC := 700
 const T2 := 2
 const T3 := 3
 const CHUNK_RESELECT_M := 16.0
@@ -48,11 +49,17 @@ var instances := 0
 var tiers_m: Array = []
 ## Whether T2 trees cast sun shadows (quality preset), set before setup.
 var t2_shadows := false
+## Angular sectors the near set is split into around its build point, so
+## frustum and shadow-cascade culling can drop the ones out of view (quality
+## preset; 1 = no split). Set before setup.
+var near_sectors := 1
 ## Instances in the built T2 chunks.
 var mid_instances := 0
 ## Instances in the near set, per tier [T0, T1].
 var near_instances := [0, 0]
-## Main-thread time of the last near-set assignment (T-06-6), microseconds.
+## Longest main-thread slice of the last near-set assignment (T-06-6), in
+## microseconds; the assignment is spread over frames in slices of
+## NEAR_SLICE_USEC.
 var near_assign_usec := 0
 ## Map position the current near set was built around.
 var near_map := Vector3(INF, INF, INF)
@@ -80,13 +87,16 @@ var _pending_chunks := {}
 var _done_chunks := {}
 var _last_chunk_eye := Vector3(INF, INF, INF)
 var _wanted_chunks: Array[Vector2i] = []
-## Per model: [T0, T1, T1 shadow caster] MultiMeshInstance3D or null. Beyond
-## T0, shadows are cast with the T2 mesh (06 §A3): the T1 instances drawn
-## again as shadow-only T2 meshes.
+## Per model: MultiMeshInstance3D or null for each (kind, sector) at
+## kind * near_sectors + sector; kinds T0, T1, T1 shadow caster. Beyond T0,
+## shadows are cast with the T2 mesh (06 §A3): the T1 instances drawn again
+## as shadow-only T2 meshes.
 var _near: Array = []
 var _near_line := Vector2i(1 << 30, 1 << 30)
 var _near_task := -1
 var _near_result: Variant = null
+## A near set being assigned: [map, buffers, next model, instance totals].
+var _near_assigning: Array = []
 
 
 ## False with `errors` when the tree data cannot be read. `defs`: the tree
@@ -232,7 +242,10 @@ func built_chunks() -> Array:
 func is_settled() -> bool:
 	var tiles := _wanted.all(func(t: Vector2i) -> bool: return _tiles.has(t))
 	var chunks := _wanted_chunks.all(func(c: Vector2i) -> bool: return _chunks.has(c))
-	var near := _models.is_empty() or (_near_task < 0 and _near_line.x != 1 << 30)
+	var near := (
+		_models.is_empty()
+		or (_near_task < 0 and _near_assigning.is_empty() and _near_line.x != 1 << 30)
+	)
 	return _pending.is_empty() and _pending_chunks.is_empty() and tiles and chunks and near
 
 
@@ -247,10 +260,11 @@ func near_window(k: int) -> Vector2:
 	return Vector2(maxf(0.0, start - pad) if start > 0.0 else 0.0, end + pad)
 
 
-## Near-set buffers around a map position: per model index [[T0 buffer,
-## count], [T1 buffer, count]].
+## Near-set buffers around a map position: per model index an array of
+## [buffer, count] slots at tier * near_sectors + sector (tiers T0, T1).
 func near_buffers(map: Vector3) -> Dictionary:
 	var out := {}
+	var sectors := maxi(1, near_sectors)
 	var windows := [near_window(T0), near_window(T1)]
 	var reach: float = maxf((windows[0] as Vector2).y, (windows[1] as Vector2).y)
 	var lo := WorldData.tree_chunk_of_map(map - Vector3(reach, 0.0, reach))
@@ -272,9 +286,9 @@ func near_buffers(map: Vector3) -> Dictionary:
 				var v: Array = options[h % options.size()]
 				if int(v[3]) < 0:
 					continue
-				var entry: Array = out.get_or_add(
-					int(v[3]), [[PackedFloat32Array(), 0], [PackedFloat32Array(), 0]]
-				)
+				var entry: Array = out.get_or_add(int(v[3]), _empty_slots(2 * sectors))
+				var angle := atan2(r.map.y - map.z, r.map.x - map.x) + PI
+				var sector := mini(int(angle / TAU * sectors), sectors - 1)
 				var row := PackedFloat32Array()
 				for k in 2:
 					var w: Vector2 = windows[k]
@@ -282,11 +296,18 @@ func near_buffers(map: Vector3) -> Dictionary:
 						continue
 					if row.is_empty():
 						row = _instance_row(r, h, v)
-					var slot: Array = entry[k]
+					var slot: Array = entry[k * sectors + sector]
 					var buf: PackedFloat32Array = slot[0]
 					buf.append_array(row)
 					slot[0] = buf
 					slot[1] = int(slot[1]) + 1
+	return out
+
+
+static func _empty_slots(n: int) -> Array:
+	var out: Array = []
+	for i in n:
+		out.append([PackedFloat32Array(), 0])
 	return out
 
 
@@ -310,8 +331,10 @@ func _update_near(eye: Vector3) -> void:
 		_near_result = null
 		_mutex.unlock()
 		if result is Array:
-			near_map = result[0]
-			_assign_near(result[1])
+			_near_assigning = [result[0], result[1], 0, [0, 0]]
+			near_assign_usec = 0
+	if not _near_assigning.is_empty():
+		_assign_near_slice()
 	var line := Vector2i(floori(map.x / NEAR_LINE_M), floori(map.z / NEAR_LINE_M))
 	if line != _near_line and _near_task < 0:
 		_near_line = line
@@ -325,20 +348,23 @@ func _build_near(map: Vector3) -> void:
 	_mutex.unlock()
 
 
-func _assign_near(buffers: Dictionary) -> void:
+## Assigns the pending near set's models until the time slice is used.
+func _assign_near_slice() -> void:
 	var t0 := Time.get_ticks_usec()
-	near_instances = [0, 0]
-	for model in _models.size():
-		var entry: Array = buffers.get(
-			model, [[PackedFloat32Array(), 0], [PackedFloat32Array(), 0]]
-		)
-		for k in 3:
-			var slot: Array = entry[mini(k, 1)]
-			var node: MultiMeshInstance3D = (_near[model] as Array)[k]
+	var buffers: Dictionary = _near_assigning[1]
+	var totals: Array = _near_assigning[3]
+	var sectors := maxi(1, near_sectors)
+	var model: int = _near_assigning[2]
+	while model < _models.size() and Time.get_ticks_usec() - t0 < NEAR_SLICE_USEC:
+		var entry: Array = buffers.get(model, _empty_slots(2 * sectors))
+		for j in 3 * sectors:
+			var k := j / sectors
+			var slot: Array = entry[mini(k, 1) * sectors + j % sectors]
+			var node: MultiMeshInstance3D = (_near[model] as Array)[j]
 			if node == null:
 				if int(slot[1]) == 0:
 					continue
-				node = _near_node(model, k)
+				node = _near_node(model, k, j)
 			var mm := node.multimesh
 			if mm.instance_count != int(slot[1]):
 				mm.instance_count = int(slot[1])
@@ -346,18 +372,25 @@ func _assign_near(buffers: Dictionary) -> void:
 				mm.buffer = slot[0]
 			node.visible = int(slot[1]) > 0
 			if k < 2:
-				near_instances[k] += int(slot[1])
-	near_assign_usec = Time.get_ticks_usec() - t0
+				totals[k] += int(slot[1])
+		model += 1
+	_near_assigning[2] = model
+	near_assign_usec = maxi(near_assign_usec, Time.get_ticks_usec() - t0)
+	if model >= _models.size():
+		near_map = _near_assigning[0]
+		near_instances = totals
+		_near_assigning = []
 
 
-## k: 0 T0 (draws and casts), 1 T1 (draws only), 2 T1's shadow caster (T2 mesh).
-func _near_node(model: int, k: int) -> MultiMeshInstance3D:
+## k: 0 T0 (draws and casts), 1 T1 (draws only), 2 T1's shadow caster (T2
+## mesh); j: its slot (kind * near_sectors + sector).
+func _near_node(model: int, k: int, j: int) -> MultiMeshInstance3D:
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.use_custom_data = true
 	mm.mesh = _models[model].shadow if k == 2 else (_models[model].meshes as Array)[k]
 	var node := MultiMeshInstance3D.new()
-	node.name = "Near_%s_%s" % [_models[model].stem, ["t0", "t1", "t1_shadow"][k]]
+	node.name = "Near_%s_%s_%d" % [_models[model].stem, ["t0", "t1", "t1_shadow"][k], j]
 	node.multimesh = mm
 	node.cast_shadow = [
 		GeometryInstance3D.SHADOW_CASTING_SETTING_ON,
@@ -365,7 +398,7 @@ func _near_node(model: int, k: int) -> MultiMeshInstance3D:
 		GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY,
 	][k]
 	add_child(node)
-	(_near[model] as Array)[k] = node
+	(_near[model] as Array)[j] = node
 	return node
 
 
@@ -537,7 +570,9 @@ func _load_model(root: String, stem: String, e: Dictionary, d: Dictionary) -> in
 	_models.append(
 		{"stem": stem, "height_m": float(d.height_m), "meshes": meshes, "shadow": shadow}
 	)
-	_near.append([null, null, null])
+	var slots: Array = []
+	slots.resize(3 * maxi(1, near_sectors))
+	_near.append(slots)
 	return _models.size() - 1
 
 

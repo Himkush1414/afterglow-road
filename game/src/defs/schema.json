@@ -931,6 +931,12 @@
 				"region_budget_ms": {
 					"type": "number",
 					"min": 0
+				},
+				"tree_near_sectors": {
+					"type": "int",
+					"min": 1,
+					"max": 8,
+					"optional": true
 				}
 			}
 		},
