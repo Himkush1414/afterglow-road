@@ -21,7 +21,8 @@ A shape's "sizes" maps a tree size to overrides (tools/assetgen/shapes.py).
 
 All tiers share one skeleton and one set of clump positions, so their
 silhouettes match; they differ in tube resolution, branch depth and card
-count. The cards fill the triangle budget left after the bark.
+count. The cards fill the triangle budget left after the bark: the tier's
+maximum times its "fill" (the shape's "fill" when the tier has none).
 
 Vertex colour (COLOR_0, linear RGBA): R branch phase (0.02-1, 0 on the trunk),
 G flutter weight (0 bark, 0.5-1 from a card's inner to its outer edge),
@@ -327,12 +328,13 @@ def build_tier(rnd, branches, cl, tier, budget, tree, sp):
         if b.level <= tier["levels"]:
             radial = tier["radial"] if b.level == 0 else max(3, tier["radial"] // (2 * b.level))
             tube(bark, b, radial, tier["ring_m"] * (1 + b.level), sp["uv_m"], max_reach, tree["height_m"], centre, half)
-    if bark.tris() > budget:
-        raise ValueError(f"{tree['id']} {tier}: bark uses {bark.tris()} of {budget} triangles")
+    target = int(budget * tier.get("fill", sp["fill"]))  # a tier may use less than its maximum
+    if bark.tris() > target:
+        raise ValueError(f"{tree['id']} {tier}: bark uses {bark.tris()} of {target} triangles")
     if not cl:
         return [bark]
     leaves = Surface()
-    room = int(budget * sp["fill"]) - bark.tris()
+    room = target - bark.tris()
     if room < 2:
         raise ValueError(f"{tree['id']} {tier}: bark uses {bark.tris()} of {budget} triangles")
     cards(leaves, rnd, cl, room // 2, sp, max_reach, centre, half)
