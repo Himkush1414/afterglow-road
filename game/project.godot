@@ -134,3 +134,59 @@ rain_ripple_strength={
 "type": "float",
 "value": 0.0
 }
+tree_wind_ref_ms={
+"type": "float",
+"value": 1.0
+}
+tree_leaf_ref_ms={
+"type": "float",
+"value": 1.0
+}
+tree_bend_exponent={
+"type": "float",
+"value": 1.0
+}
+tree_height_exponent={
+"type": "float",
+"value": 1.0
+}
+tree_branch_amp_m={
+"type": "float",
+"value": 0.0
+}
+tree_branch_rate={
+"type": "float",
+"value": 0.0
+}
+tree_leaf_amp_m={
+"type": "float",
+"value": 0.0
+}
+tree_leaf_rate={
+"type": "float",
+"value": 0.0
+}
+tree_fade_band_m={
+"type": "float",
+"value": 0.0
+}
+tree_leaf_clamp={
+"type": "vec2",
+"value": Vector2(0, 0)
+}
+tree_leaf_wave={
+"type": "vec2",
+"value": Vector2(0, 0)
+}
+tree_tint={
+"type": "vec2",
+"value": Vector2(0, 0)
+}
+tree_tiers_m={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+tree_camera_pos={
+"type": "vec3",
+"value": Vector3(0, 0, 0)
+}
