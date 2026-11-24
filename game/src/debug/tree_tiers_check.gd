@@ -8,7 +8,7 @@ extends Node
 ##   the densest chunk takes ≤ 1 ms.
 ## - With a display: draw calls and triangles of a frame at the start point.
 ##   tools/godot.sh [--headless] res://scenes/debug/tree_tiers_check.tscn \
-##       -- <preset> <map x> <map z> <heading deg> [<frame.png>]
+##       -- <preset> <map x> <map z> <heading deg> [<frame.png> [<steps>]]
 ## Prints the results, then RESULT PASS or FAIL (exit 0 or 1).
 
 const STEPS := 12
@@ -22,6 +22,7 @@ var _world: WorldData
 var _field: TreeField
 var _tiers: Array = []
 var _band := 0.0
+var _preset := {}
 
 
 func _ready() -> void:
@@ -35,7 +36,8 @@ func _run() -> void:
 		printerr("tree tiers check: needs -- <preset> <map x> <map z> <heading> [<frame.png>]")
 		get_tree().quit(2)
 		return
-	_tiers = presets[args[0]].get("tree_tiers_m", [])
+	_preset = presets[args[0]]
+	_tiers = _preset.get("tree_tiers_m", [])
 	var cfg := ContentDB.tuning("trees")
 	_band = float(cfg.get("fade_band_m", 0.0))
 	_world = WorldData.new()
@@ -59,7 +61,8 @@ func _run() -> void:
 	var dir := Vector3(sin(h), 0.0, -cos(h))
 	var bad := 0
 	var worst_usec := 0
-	for step in STEPS:
+	var steps := int(args[5]) if args.size() >= 6 else STEPS
+	for step in steps:
 		var map := start + dir * STEP_M * step
 		await _settle(map)
 		worst_usec = maxi(worst_usec, _field.near_assign_usec)
@@ -94,7 +97,7 @@ func _run() -> void:
 		)
 	)
 	if DisplayServer.get_name() != "headless":
-		await _frame(start, h, args[4] if args.size() >= 5 else "")
+		await _frame(start, h, args[4] if args.size() >= 5 and args[4] != "-" else "")
 	print("RESULT %s" % ["PASS" if bad == 0 else "FAIL"])
 	get_tree().quit(0 if bad == 0 else 1)
 
@@ -194,6 +197,14 @@ func _frame(start: Vector3, heading: float, path: String) -> void:
 	var sun := DirectionalLight3D.new()
 	sun.rotation_degrees = Vector3(-45.0, rad_to_deg(heading) + 150.0, 0.0)
 	sun.shadow_enabled = true
+	# The preset's sun shadows (23 §3).
+	sun.directional_shadow_max_distance = float(_preset.get("shadow_distance_m", 100.0))
+	sun.directional_shadow_mode = ([
+		DirectionalLight3D.SHADOW_ORTHOGONAL,
+		DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS,
+		DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS,
+		DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS,
+	][clampi(int(_preset.get("shadow_cascades", 4)), 1, 4) - 1])
 	add_child(sun)
 	var env := WorldEnvironment.new()
 	env.environment = Environment.new()
