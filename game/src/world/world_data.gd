@@ -118,12 +118,15 @@ func read_text(file_name: String) -> String:
 ## Returns "" without an error when the index does not list the file (an
 ## empty region), and "" with an error when the index or file is changed.
 func read_indexed(folder: String, file_name: String) -> String:
-	if not _indexes.has(folder):
-		var doc: Variant = JSON.parse_string(read_text(folder + "/index.json"))
-		_indexes[folder] = doc if doc is Dictionary else {}
-	var files: Dictionary = (_indexes[folder] as Dictionary).get("files", {})
+	return read_indexed_bytes(folder, file_name).get_string_from_utf8()
+
+
+## Bytes of `file_name` in an indexed folder, checked as read_indexed does;
+## empty when the index does not list it or it is changed (with an error).
+func read_indexed_bytes(folder: String, file_name: String) -> PackedByteArray:
+	var files: Dictionary = index_of(folder).get("files", {})
 	if not files.has(file_name):
-		return ""
+		return PackedByteArray()
 	var path := "%s/%s/%s" % [_dir, folder, file_name]
 	var data := FileAccess.get_file_as_bytes(path)
 	var ctx := HashingContext.new()
@@ -131,8 +134,17 @@ func read_indexed(folder: String, file_name: String) -> String:
 	ctx.update(data)
 	if data.is_empty() or ctx.finish().hex_encode() != str(files[file_name].get("sha256", "")):
 		errors.append("%s: missing or differs from %s/index.json" % [path, folder])
-		return ""
-	return data.get_string_from_utf8()
+		return PackedByteArray()
+	return data
+
+
+## The parsed index.json of an indexed folder ({} when absent or changed).
+## Read once; call it on the main thread before reading files from workers.
+func index_of(folder: String) -> Dictionary:
+	if not _indexes.has(folder):
+		var doc: Variant = JSON.parse_string(read_text(folder + "/index.json"))
+		_indexes[folder] = doc if doc is Dictionary else {}
+	return _indexes[folder]
 
 
 ## True when meta.json lists `file_name` (optional layers may be absent).
