@@ -21,9 +21,10 @@ All tiers share one skeleton and one set of clump positions, so their
 silhouettes match; they differ in tube resolution, branch depth and card
 count. The cards fill the triangle budget left after the bark.
 
-Vertex colour (COLOR_0, linear RGBA): R branch phase (0-1, 0 on the trunk),
+Vertex colour (COLOR_0, linear RGBA): R branch phase (0.02-1, 0 on the trunk),
 G flutter weight (0 bark, 0.5-1 from a card's inner to its outer edge),
-B distance from the trunk along the branch (0-1), A ambient occlusion
+B distance from the trunk along the branch (0 on the trunk, 1 at the
+farthest branch tip), A ambient occlusion
 (analytic: bark darkens toward the ground and inside the crown, cards toward
 the crown centre).
 
@@ -44,6 +45,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from tools.assetgen.shapes import shape_for  # noqa: E402  (Blender runs this file as a script)
 
 UP = Vector((0.0, 0.0, 1.0))
+# Branch phases start above 0 so R = 0 marks the trunk even after the engine
+# stores vertex colours in 8 bits.
+PHASE_MIN = 0.02
 TIERS = ("t0", "t1", "t2")
 
 
@@ -60,8 +64,9 @@ def args():
 
 
 class Branch:
-    """A polyline with a radius per point. `reach` is the distance from the
-    trunk along the branch chain at each point (0 on the trunk)."""
+    """A polyline with a radius per point. `reach` is the distance along the
+    branch chain at each point: from the base on a trunk (for its UVs), from
+    the trunk on limbs and their children (the B channel)."""
 
     def __init__(self, level, phase):
         self.level = level
@@ -159,11 +164,12 @@ def skeleton(rnd, tree, sp):
                 side = side * math.cos(azi) + axis.cross(side) * math.sin(azi)
                 d = (axis * math.cos(angle) + side * math.sin(angle)).normalized()
                 lo, hi = spec["length"]
-                base = tree["canopy_r_m"] if level == 1 else (parent.reach[-1] - parent.reach[0])
+                crown = tree["canopy_r_m"] if level == 1 else 0.0
+                base = crown if crown > 0.0 else (parent.reach[-1] - parent.reach[0])  # no crown: relative to the parent
                 length = base * (lo + (hi - lo) * u) * rnd.uniform(0.85, 1.15)
                 r0 = max(spec["min_r_m"], pr * spec["radius_ratio"])
-                b = Branch(level, rnd.random())
-                grow(rnd, b, p - d * pr * 0.5, d, length, r0, spec["min_r_m"], spec, preach)
+                b = Branch(level, rnd.uniform(PHASE_MIN, 1.0))
+                grow(rnd, b, p - d * pr * 0.5, d, length, r0, spec["min_r_m"], spec, preach if level > 1 else 0.0)
                 parent.children += 1
                 kids.append(b)
         branches += kids
@@ -250,7 +256,7 @@ def tube(s, b, radial, ring_m, uv_m, max_reach, height, centre, half):
             s.verts.append(p + n * r)
             s.normals.append(n)
             s.uvs.append((i / radial * 2.0 * math.pi * max(r, 0.05) / uv_m, (reach - b.reach[0]) / uv_m))
-            s.colors.append((b.phase, 0.0, min(1.0, reach / max_reach), min(1.0, ao)))
+            s.colors.append((b.phase, 0.0, 0.0 if b.level == 0 else min(1.0, reach / max_reach), min(1.0, ao)))
     for j in range(rings - 1):
         r0, r1 = base + j * (radial + 1), base + (j + 1) * (radial + 1)
         for i in range(radial):
@@ -313,7 +319,7 @@ def build_tier(rnd, branches, cl, tier, budget, tree, sp):
         centre, half = crown_frame([c["c"] for c in cl], sp["clumps"]["radius_m"])
     else:  # leafless: the frame of the branches stands in for the crown
         centre, half = crown_frame([p for b in branches for p in b.points], 0.0)
-    max_reach = max(b.reach[-1] for b in branches)
+    max_reach = max([b.reach[-1] for b in branches if b.level > 0] or [1.0])
     bark = Surface()
     for b in branches:
         if b.level <= tier["levels"]:

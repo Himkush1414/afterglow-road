@@ -4,7 +4,8 @@ extends SceneTree
 ## and _t2, each with a bark and a leaves surface (or bark only, for leafless
 ## models), and _t3 (the billboard quad, one surface); all carry vertex
 ## colours, and the colours arrive unconverted (flutter weight G is 0 on bark
-## and billboards and 0.5 or 1.0 on cards, as written by tools/assetgen/trees.py).
+## and billboards and 0.5 or 1.0 on cards, as written by tools/assetgen/trees.py),
+## and trunk vertices (bark, branch phase R = 0) have branch distance B = 0.
 ## Usage: godot --headless -s res://src/tools/check_tree_models.gd -- <res:// root>
 ## Prints each error, then RESULT PASS / FAIL; exit code 0 / 1.
 
@@ -82,7 +83,11 @@ func check_model(path: String) -> PackedStringArray:
 				)
 				continue
 			var bad := 0
+			var swaying_trunk := 0
 			for c in colors:
+				# Trunk vertices (bark with branch phase 0) are 0 along the branch.
+				if s == 0 and c.r == 0.0 and c.b > TOLERANCE:
+					swaying_trunk += 1
 				var ok := (
 					absf(c.g) < TOLERANCE
 					if s == 0
@@ -93,5 +98,8 @@ func check_model(path: String) -> PackedStringArray:
 			if bad:
 				var where := "%s _%s surface %d" % [path, tier, s]
 				errors.append("%s: %d unexpected flutter weights (converted?)" % [where, bad])
+			if swaying_trunk:
+				var at := "%s _%s" % [path, tier]
+				errors.append("%s: %d trunk vertices with a branch distance" % [at, swaying_trunk])
 	node.free()
 	return errors
