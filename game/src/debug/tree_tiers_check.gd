@@ -51,6 +51,7 @@ func _run() -> void:
 	)
 	_field = TreeField.new()
 	_field.t2_shadows = presets[args[0]].get("t2_tree_shadows", false) == true
+	_field.near_sectors = int(presets[args[0]].get("tree_near_sectors", 1))
 	add_child(_field)
 	if not _field.setup(_world, defs, cfg, _tiers):
 		printerr("tree tiers check: %s" % ", ".join(_field.errors))
@@ -247,7 +248,7 @@ func _frame(start: Vector3, heading: float, path: String) -> void:
 		if not mmi.visible or mmi.multimesh.instance_count == 0:
 			continue
 		var kind := String(mmi.name).get_slice("_", 0)
-		if String(mmi.name).ends_with("shadow"):
+		if String(mmi.name).contains("shadow"):
 			kind += "_shadow"
 		kinds[kind] = int(kinds.get(kind, 0)) + mmi.multimesh.mesh.get_surface_count()
 	print("tree surfaces by kind (before culling): %s" % str(kinds))
