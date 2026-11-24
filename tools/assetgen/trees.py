@@ -8,7 +8,9 @@ Each preset model (a tree id and a seed) gives `variants` files
 named <category>_<id>_<n>_t0 / _t1 / _t2 / _t3. T3 is the billboard: one
 quad ("billboard" surface) on the model's cell of a grid x grid atlas, framed
 by billboard_frame(); <out>/<category>_models.json lists every model's cell,
-side and bottom for the atlas baker. T0-T2 have two surfaces: "bark"
+side and bottom for the atlas baker, and the bark and leaf texture sets
+the game draws it with (the shape's "bark_set" / "leaf_set"; no leaf set
+when leafless). T0-T2 have two surfaces: "bark"
 (tapered tubes for the trunk and limbs, cylinder UVs in metres) and "leaves"
 (clumped cards with soft normals pointing away from the crown centre, UVs into
 a cell of the species leaf atlas). A species preset without "clumps" makes
@@ -468,7 +470,10 @@ def main():
                 objs.append(to_object(f"{name}_{tier_name}", surfaces))
                 counts.append(f"{tier_name} " + "+".join(str(x.tris()) for x in surfaces))
             objs.append(to_object(f"{name}_t3", [billboard_quad(side, bottom, cell_of[name], bb["grid"])], ("billboard",)))
-            manifest["models"][name] = {"cell": cell_of[name], "side_m": round(side, 4), "bottom_m": round(bottom, 4)}
+            manifest["models"][name] = {
+                "cell": cell_of[name], "side_m": round(side, 4), "bottom_m": round(bottom, 4),
+                "bark_set": sp.get("bark_set"), "leaf_set": sp.get("leaf_set") if cl else None,
+            }
             export(objs, os.path.join(out, name + ".glb"))
             print(f"trees: wrote {name}.glb ({', '.join(counts)} triangles per surface; billboard cell {cell_of[name]})")
     with open(manifest_path, "w", encoding="ascii") as f:

@@ -77,6 +77,8 @@ def check_trees(content):
             errors.append(f"{stem}: billboard cell {entry['cell']} also used by {seen[entry['cell']]}")
         else:
             seen[entry["cell"]] = stem
+        if entry is not None:
+            errors += check_sets(os.path.join(content, TEXTURE_DIR, "hi"), category, stem, entry)
     if found and manifest["grid"]:
         errors += check_atlas(os.path.join(content, TEXTURE_DIR), category, manifest)
     for name in found:
@@ -87,6 +89,22 @@ def check_trees(content):
         shape = shapes.get(tree["id"]) or shape_for(preset, {"id": tree["id"]}, tree)
         surfaces = SURFACES if "clumps" in shape else SURFACES[:1]
         errors += check_model(os.path.join(model_dir, name), name[: -len(".glb")], preset["budgets"][tree["size"]], surfaces)
+    return errors
+
+
+def check_sets(hi_dir, category, stem, entry):
+    """Errors of a model's texture sets: a bark set, and a leaf set exactly
+    when the model has leaves (checked against its surfaces elsewhere), each
+    naming textures that exist."""
+    errors = []
+    if not entry.get("bark_set"):
+        return [f"{stem}: no bark_set in {category}_models.json"]
+    wanted = [f"{category}_{entry['bark_set']}_bark_ah.png", f"{category}_{entry['bark_set']}_bark_nra.png"]
+    if entry.get("leaf_set"):
+        wanted += [f"{category}_{entry['leaf_set']}_leaves_ca.png", f"{category}_{entry['leaf_set']}_leaves_nra.png"]
+    for name in wanted:
+        if not os.path.exists(os.path.join(hi_dir, name)):
+            errors.append(f"{stem}: texture {name} missing")
     return errors
 
 
