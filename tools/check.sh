@@ -82,6 +82,11 @@ if ((!quick)); then
 		else
 			skip "content (local)" "no local content data"
 		fi
+		if [[ -f game/content/assetgen/trees.json ]]; then
+			run "assets (local)" python3 -m tools.assetgen.validate game/content
+		else
+			skip "assets (local)" "no local tree preset"
+		fi
 	else
 		skip "content" "validator not added yet"
 	fi

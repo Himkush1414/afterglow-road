@@ -43,6 +43,28 @@ def stats(path):
     return {"triangles": tris, "min": lo, "max": hi}
 
 
+def meshes(path):
+    """{mesh name: {"triangles": int, "primitives": [{"material": name or None,
+    "attributes": {name: accessor type}}]}} for every mesh of the file."""
+    doc = read_json(path)
+    acc = doc["accessors"]
+    mats = [m.get("name") for m in doc.get("materials", [])]
+    out = {}
+    for mesh in doc.get("meshes", []):
+        entry = {"triangles": 0, "primitives": []}
+        for prim in mesh["primitives"]:
+            if prim.get("mode", 4) != 4:
+                raise ValueError(f"{path}: only triangle lists are counted")
+            pos = acc[prim["attributes"]["POSITION"]]
+            entry["triangles"] += (acc[prim["indices"]]["count"] if "indices" in prim else pos["count"]) // 3
+            entry["primitives"].append({
+                "material": mats[prim["material"]] if "material" in prim else None,
+                "attributes": {k: acc[v]["type"] for k, v in prim["attributes"].items()},
+            })
+        out[mesh.get("name", "")] = entry
+    return out
+
+
 def check(preset, directory):
     """Errors for missing files or meshes over their triangle budget."""
     errors = []
