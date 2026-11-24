@@ -161,7 +161,11 @@ func _check_tiers(map: Vector3, step: int) -> int:
 					not_held += int(not held)
 				var ok: bool = (
 					shown.size() == 1
-					or (shown.size() == 2 and shown[1] == shown[0] + 1 and absf(total - 1.0) < 1e-3)
+					or (
+						shown.size() == 2
+						and _next_tier(shown[0]) == shown[1]
+						and absf(total - 1.0) < 1e-3
+					)
 				)
 				if d < float(_tiers[TreeField.T3]) - _band and not ok:
 					wrong_count += 1
@@ -173,6 +177,16 @@ func _check_tiers(map: Vector3, step: int) -> int:
 		)
 	)
 	return int(not ok_step)
+
+
+## The next tier after k with a non-empty range (empty tiers are skipped
+## in a hand-over), or -1.
+func _next_tier(k: int) -> int:
+	for j in range(k + 1, 4):
+		var start := 0.0 if j == 0 else float(_tiers[j - 1])
+		if float(_tiers[j]) > start:
+			return j
+	return -1
 
 
 func _densest_chunk() -> Vector2i:
@@ -261,6 +275,21 @@ func _frame(start: Vector3, heading: float, path: String) -> void:
 	if path != "":
 		get_viewport().get_texture().get_image().save_png(path)
 		print("frame: %s" % path)
+	_field.visible = false
+	for i in 3:
+		await RenderingServer.frame_post_draw
+	var t_calls := RenderingServer.viewport_get_render_info(
+		vp,
+		RenderingServer.VIEWPORT_RENDER_INFO_TYPE_VISIBLE,
+		RenderingServer.VIEWPORT_RENDER_INFO_DRAW_CALLS_IN_FRAME
+	)
+	var t_prims := RenderingServer.viewport_get_render_info(
+		vp,
+		RenderingServer.VIEWPORT_RENDER_INFO_TYPE_VISIBLE,
+		RenderingServer.VIEWPORT_RENDER_INFO_PRIMITIVES_IN_FRAME
+	)
+	print("terrain alone: %d draw calls, %d triangles" % [t_calls, t_prims])
+	_field.visible = true
 
 
 func _flag(ok: bool) -> String:
