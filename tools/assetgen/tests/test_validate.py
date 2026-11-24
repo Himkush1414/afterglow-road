@@ -42,8 +42,15 @@ def _good(stem, leaves=True):
 
 
 def _manifest(models_dir, cells):
+    def entry(k, c):
+        return {"cell": c, "side_m": 1.0, "bottom_m": 0.0, "bark_set": "a", "leaf_set": None if "snag" in k else "a"}
+
     with open(os.path.join(models_dir, "tree_models.json"), "w") as f:
-        json.dump({"grid": 2, "fill": 0.9, "models": {k: {"cell": c, "side_m": 1.0, "bottom_m": 0.0} for k, c in cells.items()}}, f)
+        json.dump({"grid": 2, "fill": 0.9, "models": {k: entry(k, c) for k, c in cells.items()}}, f)
+    hi = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(models_dir))), validate.TEXTURE_DIR, "hi")
+    os.makedirs(hi, exist_ok=True)
+    for name in ("tree_a_bark_ah.png", "tree_a_bark_nra.png", "tree_a_leaves_ca.png", "tree_a_leaves_nra.png"):
+        open(os.path.join(hi, name), "wb").close()
 
 
 def _atlas(content, filled, normal_differs=False, size=16, grid=2):
@@ -111,6 +118,16 @@ class ValidateTreesTest(unittest.TestCase):
             for fragment in ("differ in coverage", "cell 0 also used by tree_a_mature_1", "cell 9 outside the 2 x 2", "_t3: 4 triangles", "120 triangles (budget 100)", "_t1 leaves: no RGBA", "no _t2 mesh", "tree_a_mature_3.glb: missing", "surfaces ['bark'], expected ['bark', 'leaves']", "snag_1_t0: surfaces ['bark', 'leaves'], expected ['bark']"):
                 self.assertTrue(any(fragment in e for e in errors), (fragment, errors))
             self.assertEqual(len(errors), 12, errors)
+
+    def test_texture_sets_are_checked(self):
+        with tempfile.TemporaryDirectory() as d:
+            models = self._content(d, variants=1)
+            _write_glb(os.path.join(models, "tree_a_mature_1.glb"), _good("tree_a_mature_1"))
+            _write_glb(os.path.join(models, "tree_snag_1.glb"), _good("tree_snag_1", leaves=False))
+            _manifest(models, {"tree_a_mature_1": 0, "tree_snag_1": 1})
+            _atlas(d, [0, 1])
+            os.remove(os.path.join(d, validate.TEXTURE_DIR, "hi", "tree_a_leaves_nra.png"))
+            self.assertEqual(validate.check_trees(d), ["tree_a_mature_1: texture tree_a_leaves_nra.png missing"])
 
     def test_missing_atlas_is_reported(self):
         with tempfile.TemporaryDirectory() as d:
