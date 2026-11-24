@@ -2,14 +2,14 @@ extends SceneTree
 ## Checks the imported tree models of one content tree (22 §7 T-22-3, engine
 ## side): every <root>/assets/models/trees/tree_*.glb has the meshes _t0, _t1
 ## and _t2, each with a bark and a leaves surface (or bark only, for leafless
-## models) carrying vertex colours,
-## and the colours arrive unconverted (flutter weight G is 0 on bark and
-## 0.5 or 1.0 on cards, as written by tools/assetgen/trees.py).
+## models), and _t3 (the billboard quad, one surface); all carry vertex
+## colours, and the colours arrive unconverted (flutter weight G is 0 on bark
+## and billboards and 0.5 or 1.0 on cards, as written by tools/assetgen/trees.py).
 ## Usage: godot --headless -s res://src/tools/check_tree_models.gd -- <res:// root>
 ## Prints each error, then RESULT PASS / FAIL; exit code 0 / 1.
 
 const MODEL_DIR := "assets/models/trees"
-const TIERS: Array[String] = ["t0", "t1", "t2"]
+const TIERS: Array[String] = ["t0", "t1", "t2", "t3"]
 const SURFACES := 2  # bark, leaves; leafless models have bark only
 const TOLERANCE := 0.01
 

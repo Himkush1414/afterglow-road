@@ -5,7 +5,10 @@
 
 Each preset model (a tree id and a seed) gives `variants` files
 <out>/<category>_<id>_<n>.glb. A file holds one mesh object per tier,
-named <category>_<id>_<n>_t0 / _t1 / _t2, each with two surfaces: "bark"
+named <category>_<id>_<n>_t0 / _t1 / _t2 / _t3. T3 is the billboard: one
+quad ("billboard" surface) on the model's cell of a grid x grid atlas, framed
+by billboard_frame(); <out>/<category>_models.json lists every model's cell,
+side and bottom for the atlas baker. T0-T2 have two surfaces: "bark"
 (tapered tubes for the trunk and limbs, cylinder UVs in metres) and "leaves"
 (clumped cards with soft normals pointing away from the crown centre, UVs into
 a cell of the species leaf atlas). A species preset without "clumps" makes
@@ -331,13 +334,52 @@ def build_tier(rnd, branches, cl, tier, budget, tree, sp):
 # ------------------------------------------------------------------- export
 
 
+def billboard_frame(surfaces, fill):
+    """(side, bottom) in metres of the square a tree is drawn into for its
+    billboard: wide enough for the crown seen from any side (twice the
+    largest distance from the trunk axis), tall enough for the tree, grown by
+    1 / fill to leave a margin."""
+    pts = [v for s in surfaces for v in s.verts]
+    r = max(math.hypot(v.x, v.y) for v in pts)
+    bottom = min(0.0, min(v.z for v in pts))
+    top = max(v.z for v in pts)
+    return max(top - bottom, 2.0 * r) / fill, bottom
+
+
+def billboard_quad(side, bottom, cell, grid):
+    """The T3 quad: `side` square, base at `bottom`, facing -Y (the bake
+    camera), UVs on atlas cell `cell` (row-major from the top-left)."""
+    s = Surface()
+    col, row = cell % grid, cell // grid
+    u0, u1 = col / grid, (col + 1) / grid
+    v0, v1 = 1.0 - (row + 1) / grid, 1.0 - row / grid  # Blender UVs: v up
+    h = side * 0.5
+    for x, z, u, v in ((-h, bottom, u0, v0), (h, bottom, u1, v0), (h, bottom + side, u1, v1), (-h, bottom + side, u0, v1)):
+        s.verts.append(Vector((x, 0.0, z)))
+        s.normals.append(Vector((0.0, -1.0, 0.0)))
+        s.uvs.append((u, v))
+        s.colors.append((0.0, 0.0, 0.0, 1.0))
+    s.faces.append((0, 1, 2, 3))
+    return s
+
+
+def cells(preset, defs):
+    """Atlas cell of every model file, in preset order (stable under --only)."""
+    out, i = {}, 0
+    for model in preset["models"]:
+        for n in range(1, defs[model["id"]]["variants"] + 1):
+            out[f"{preset['category']}_{model['id']}_{n}"] = i
+            i += 1
+    return out
+
+
 def material(name):
     m = bpy.data.materials.get(name) or bpy.data.materials.new(name)
     return m
 
 
-def to_object(name, surfaces):
-    """One mesh object; surface k gets material slot k."""
+def to_object(name, surfaces, materials=("bark", "leaves")):
+    """One mesh object; surface k gets material slot k, named materials[k]."""
     verts, normals, colors, faces, uvs, mats = [], [], [], [], [], []
     for k, s in enumerate(surfaces):
         off = len(verts)
@@ -350,7 +392,7 @@ def to_object(name, surfaces):
     mesh = bpy.data.meshes.new(name)
     mesh.from_pydata([tuple(v) for v in verts], [], faces)
     mesh.update()
-    for name_k in ("bark", "leaves")[: len(surfaces)]:
+    for name_k in materials[: len(surfaces)]:
         mesh.materials.append(material(name_k))
     mesh.polygons.foreach_set("material_index", mats)
     mesh.polygons.foreach_set("use_smooth", [True] * len(faces))
@@ -390,6 +432,16 @@ def main():
     for o in list(bpy.data.objects):
         bpy.data.objects.remove(o)
     os.makedirs(out, exist_ok=True)
+    bb = preset["billboard"]
+    cell_of = cells(preset, defs)
+    if len(cell_of) > bb["grid"] ** 2:
+        raise ValueError(f"{len(cell_of)} models do not fit a {bb['grid']} x {bb['grid']} billboard atlas")
+    manifest_path = os.path.join(out, f"{preset['category']}_models.json")
+    manifest = {"models": {}}
+    if only and os.path.exists(manifest_path):
+        with open(manifest_path, encoding="utf-8") as f:
+            manifest = json.load(f)
+    manifest.update({"grid": bb["grid"], "fill": bb["fill"]})
     for model in preset["models"]:
         if only and model["id"] != only:
             continue
@@ -405,10 +457,16 @@ def main():
             objs, counts = [], []
             for k, tier_name in enumerate(TIERS):
                 surfaces = build_tier(rnd, branches, cl, sp["tiers"][k], budgets[k], tree, sp)
+                if k == 0:
+                    side, bottom = billboard_frame(surfaces, bb["fill"])
                 objs.append(to_object(f"{name}_{tier_name}", surfaces))
                 counts.append(f"{tier_name} " + "+".join(str(x.tris()) for x in surfaces))
+            objs.append(to_object(f"{name}_t3", [billboard_quad(side, bottom, cell_of[name], bb["grid"])], ("billboard",)))
+            manifest["models"][name] = {"cell": cell_of[name], "side_m": round(side, 4), "bottom_m": round(bottom, 4)}
             export(objs, os.path.join(out, name + ".glb"))
-            print(f"trees: wrote {name}.glb ({', '.join(counts)} triangles per surface)")
+            print(f"trees: wrote {name}.glb ({', '.join(counts)} triangles per surface; billboard cell {cell_of[name]})")
+    with open(manifest_path, "w", encoding="ascii") as f:
+        f.write(json.dumps(manifest, indent=1, sort_keys=True) + "\n")
 
 
 main()
