@@ -5,6 +5,9 @@ import struct
 import tempfile
 import unittest
 
+import numpy as np
+from PIL import Image
+
 from tools.assetgen import glb, validate
 
 BUDGETS = [100, 50, 20]
@@ -43,6 +46,21 @@ def _manifest(models_dir, cells):
         json.dump({"grid": 2, "fill": 0.9, "models": {k: {"cell": c, "side_m": 1.0, "bottom_m": 0.0} for k, c in cells.items()}}, f)
 
 
+def _atlas(content, filled, normal_differs=False, size=16, grid=2):
+    """Billboard atlas files with a covered pixel in each cell of `filled`."""
+    img = np.zeros((size, size, 4), np.uint8)
+    n = size // grid
+    for c in filled:
+        img[(c // grid) * n + 2, (c % grid) * n + 2] = (40, 80, 30, 255)
+    normal = img.copy()
+    if normal_differs:
+        normal[0, 0, 3] = 255
+    for d, k in (("hi", 1), ("lo", 2)):
+        os.makedirs(os.path.join(content, validate.TEXTURE_DIR, d), exist_ok=True)
+        for kind, a in (("ca", img), ("n", normal)):
+            Image.fromarray(a[::k, ::k].copy(), "RGBA").save(os.path.join(content, validate.TEXTURE_DIR, d, f"tree_billboards_{kind}.png"))
+
+
 class ValidateTreesTest(unittest.TestCase):
     def _content(self, d, variants=2):
         os.makedirs(os.path.join(d, "assetgen"))
@@ -68,7 +86,10 @@ class ValidateTreesTest(unittest.TestCase):
                 _write_glb(os.path.join(models, f"tree_a_mature_{n}.glb"), _good(f"tree_a_mature_{n}"))
             _write_glb(os.path.join(models, "tree_snag_1.glb"), _good("tree_snag_1", leaves=False))
             _manifest(models, {"tree_a_mature_1": 0, "tree_a_mature_2": 1, "tree_snag_1": 2})
+            _atlas(d, [0, 1, 2])
             self.assertEqual(validate.check_trees(d), [])
+            _atlas(d, [0, 2])
+            self.assertEqual(validate.check_trees(d), ["tree_a_mature_2: billboard cell 1 is empty"])
             m = glb.meshes(os.path.join(models, "tree_a_mature_1.glb"))
             self.assertEqual(m["tree_a_mature_1_t0"]["triangles"], 75)
 
@@ -85,10 +106,21 @@ class ValidateTreesTest(unittest.TestCase):
             _write_glb(os.path.join(models, "tree_a_mature_2.glb"), one)
             _write_glb(os.path.join(models, "tree_snag_1.glb"), _good("tree_snag_1"))  # leaves on a leafless species
             _manifest(models, {"tree_a_mature_1": 0, "tree_a_mature_2": 0, "tree_snag_1": 9})  # shared, outside
+            _atlas(d, [0], normal_differs=True)
             errors = validate.check_trees(d)
-            for fragment in ("cell 0 also used by tree_a_mature_1", "cell 9 outside the 2 x 2", "_t3: 4 triangles", "120 triangles (budget 100)", "_t1 leaves: no RGBA", "no _t2 mesh", "tree_a_mature_3.glb: missing", "surfaces ['bark'], expected ['bark', 'leaves']", "snag_1_t0: surfaces ['bark', 'leaves'], expected ['bark']"):
+            for fragment in ("differ in coverage", "cell 0 also used by tree_a_mature_1", "cell 9 outside the 2 x 2", "_t3: 4 triangles", "120 triangles (budget 100)", "_t1 leaves: no RGBA", "no _t2 mesh", "tree_a_mature_3.glb: missing", "surfaces ['bark'], expected ['bark', 'leaves']", "snag_1_t0: surfaces ['bark', 'leaves'], expected ['bark']"):
                 self.assertTrue(any(fragment in e for e in errors), (fragment, errors))
-            self.assertEqual(len(errors), 11, errors)
+            self.assertEqual(len(errors), 12, errors)
+
+    def test_missing_atlas_is_reported(self):
+        with tempfile.TemporaryDirectory() as d:
+            models = self._content(d, variants=1)
+            _write_glb(os.path.join(models, "tree_a_mature_1.glb"), _good("tree_a_mature_1"))
+            _write_glb(os.path.join(models, "tree_snag_1.glb"), _good("tree_snag_1", leaves=False))
+            _manifest(models, {"tree_a_mature_1": 0, "tree_snag_1": 1})
+            errors = validate.check_trees(d)
+            self.assertEqual(len(errors), 4, errors)
+            self.assertTrue(all("missing" in e for e in errors), errors)
 
 
 if __name__ == "__main__":
