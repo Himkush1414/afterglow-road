@@ -25,18 +25,25 @@ PALETTE_MIN, PALETTE_MAX = 6, 10
 
 
 def value_noise(rng, size, cells):
-    """Periodic value noise in [0, 1]: a cells x cells random lattice, smooth
-    (smoothstep) interpolation, wrapping at the tile edge."""
-    lattice = rng.random((cells, cells))
-    t = np.arange(size) * cells / size
-    i0 = np.floor(t).astype(int)
-    f = t - i0
-    f = f * f * (3.0 - 2.0 * f)
-    i1 = (i0 + 1) % cells
-    rows0, rows1 = lattice[i0], lattice[i1]  # (size, cells)
-    a = rows0[:, i0] * (1 - f) + rows0[:, i1] * f
-    b = rows1[:, i0] * (1 - f) + rows1[:, i1] * f
-    return a * (1 - f)[:, None] + b * f[:, None]
+    """Periodic value noise in [0, 1]: a random lattice, smooth (smoothstep)
+    interpolation, wrapping at the tile edge. `cells` is the lattice size, or
+    [across, down] for features stretched along one axis (bark furrows run
+    down the image when `down` < `across`)."""
+    cx, cy = (cells, cells) if isinstance(cells, int) else cells
+    lattice = rng.random((cy, cx))
+
+    def axis(n):
+        t = np.arange(size) * n / size
+        i0 = np.floor(t).astype(int)
+        f = t - i0
+        return i0, (i0 + 1) % n, f * f * (3.0 - 2.0 * f)
+
+    y0, y1, fy = axis(cy)
+    x0, x1, fx = axis(cx)
+    rows0, rows1 = lattice[y0], lattice[y1]  # (size, cx)
+    a = rows0[:, x0] * (1 - fx) + rows0[:, x1] * fx
+    b = rows1[:, x0] * (1 - fx) + rows1[:, x1] * fx
+    return a * (1 - fy)[:, None] + b * fy[:, None]
 
 
 def fbm(rng, size, cells, weights):
