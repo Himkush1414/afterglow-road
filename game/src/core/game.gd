@@ -72,6 +72,7 @@ func _ready() -> void:
 			func(id: String) -> Dictionary: return ContentDB.entry("trees", id)
 		)
 		var tiers: Variant = Quality.value("tree_tiers_m")
+		tree_field.t2_shadows = Quality.value("t2_tree_shadows") == true
 		if not tree_field.setup(
 			world, trees, ContentDB.tuning("trees"), tiers if tiers is Array else []
 		):
