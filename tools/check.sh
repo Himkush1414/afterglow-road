@@ -26,6 +26,12 @@ run() { # name command...
 	else
 		summary+=("FAIL     ${name}")
 		failed=1
+		# Failures can scroll out of the tail: list them (with their reason
+		# lines) first.
+		if grep -q '^FAIL  ' "${log}"; then
+			printf '\n--- %s (failures) ---\n' "${name}"
+			grep -A 8 '^FAIL  ' "${log}" | grep -E '^(FAIL  |      - |--$)'
+		fi
 		printf '\n--- %s (last 30 lines) ---\n' "${name}"
 		tail -n 30 "${log}"
 	fi
