@@ -7,7 +7,8 @@ Writes materials.json, items.json (with the pseudo-items of units.csv as
 `units`), build_pieces.json, recipes.json, trees.json, nodes.json, loot.json
 and, when animals.csv exists, animals.json; other files in the output folder are
 left alone. Columns map 1:1 to JSON fields except where a rule below says
-otherwise. Exit code 1 with one line per problem when a table is invalid.
+otherwise (trees.json `models` lists the model files of a tree type,
+tree_<id>_<n> for n = 1..variants). Exit code 1 with one line per problem when a table is invalid.
 """
 import csv
 import re
@@ -238,7 +239,7 @@ def trees(rows, problems):
         t["extra_drops"] = drops(r["extra_drops"], f"{where} extra_drops", problems)
         t["variants"] = number(r["variants"], f"{where} variants", problems)
         t["harvest_no_fell"] = harvest(r["harvest_no_fell"], f"{where} harvest_no_fell", problems)
-        t["models"] = []
+        t["models"] = [f"tree_{r['id']}_{n}" for n in range(1, int(t["variants"] or 0) + 1)]
         out.append(t)
     return {"trees": out}
 
