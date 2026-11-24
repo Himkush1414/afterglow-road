@@ -39,3 +39,17 @@ func test_globals_from_the_tuning_group() -> void:
 func test_flex_by_species() -> void:
 	check_eq(TreeShading.flex(CFG, "a"), 1.25)
 	check_eq(TreeShading.flex(CFG, "missing"), 0.0)
+
+
+func test_visibility_matches_the_hand_over_rule() -> void:
+	var tiers := [40.0, 120.0, 450.0, 2400.0]
+	check_eq(TreeShading.visibility(0, 10.0, tiers, 12.0), Vector2(1, 1), "T0 near")
+	check_eq(TreeShading.visibility(0, 40.0, tiers, 12.0), Vector2(1, 0.5), "T0 at its end")
+	check_eq(TreeShading.visibility(1, 40.0, tiers, 12.0), Vector2(0.5, 1), "T1 at its start")
+	check_eq(TreeShading.visibility(1, 30.0, tiers, 12.0), Vector2(0, 1), "T1 before its band")
+	check_eq(TreeShading.visibility(3, 2500.0, tiers, 12.0), Vector2(1, 0), "T3 past its end")
+	var phone := [0.0, 70.0, 260.0, 1400.0]
+	check_eq(TreeShading.visibility(0, 5.0, phone, 12.0), Vector2.ZERO, "an empty tier is hidden")
+	check_eq(
+		TreeShading.visibility(1, 1.0, phone, 12.0), Vector2(1, 1), "T1 from 0 m does not fade in"
+	)
