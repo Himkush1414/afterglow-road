@@ -26,6 +26,7 @@ var play_seconds := 0.0
 @onready var water: Water = $Water
 @onready var outer_ring: OuterRing = $OuterRing
 @onready var streamer: Streamer = $Streamer
+@onready var tree_field: TreeField = $TreeField
 
 
 func _enter_tree() -> void:
@@ -67,6 +68,14 @@ func _ready() -> void:
 		elif terrain.is_ready():
 			water.build(terrain.height_texture())
 		streamer.setup(world)
+		var trees: Array = ContentDB.ids("trees").map(
+			func(id: String) -> Dictionary: return ContentDB.entry("trees", id)
+		)
+		var tiers: Variant = Quality.value("tree_tiers_m")
+		if not tree_field.setup(
+			world, trees, ContentDB.tuning("trees"), tiers if tiers is Array else []
+		):
+			Log.error("trees", "; ".join(tree_field.errors))
 		weather.terrain = terrain
 		wind.world = world
 		rain.world = world
