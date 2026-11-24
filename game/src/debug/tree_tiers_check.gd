@@ -241,6 +241,16 @@ func _frame(start: Vector3, heading: float, path: String) -> void:
 		RenderingServer.VIEWPORT_RENDER_INFO_TYPE_SHADOW,
 		RenderingServer.VIEWPORT_RENDER_INFO_PRIMITIVES_IN_FRAME
 	)
+	var kinds := {}
+	for node in _field.find_children("*", "MultiMeshInstance3D", true, false):
+		var mmi := node as MultiMeshInstance3D
+		if not mmi.visible or mmi.multimesh.instance_count == 0:
+			continue
+		var kind := String(mmi.name).get_slice("_", 0)
+		if String(mmi.name).ends_with("shadow"):
+			kind += "_shadow"
+		kinds[kind] = int(kinds.get(kind, 0)) + mmi.multimesh.mesh.get_surface_count()
+	print("tree surfaces by kind (before culling): %s" % str(kinds))
 	print(
 		(
 			"frame (terrain + trees): %d draw calls, %d triangles; shadow passes %d draw calls, %d triangles"

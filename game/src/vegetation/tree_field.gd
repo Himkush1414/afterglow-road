@@ -516,33 +516,39 @@ func _load_model(root: String, stem: String, e: Dictionary, d: Dictionary) -> in
 		return -1
 	var dir := root.path_join(TEXTURE_DIR)
 	var flex := TreeShading.flex(_cfg, String(d.species))
+	for tier in 3:
+		meshes[tier] = merged_surfaces(meshes[tier])
 	# The T2 mesh again, faded as T1: the shadow caster of the T1 instances.
 	var shadow: Mesh = (meshes[T2] as Mesh).duplicate()
+	var bark: String = e.get("bark_set")
+	var leaf: Variant = e.get("leaf_set")
 	for tier in 4:
-		var mesh: Mesh = shadow if tier == 3 else meshes[tier]
-		for s in mesh.get_surface_count():
-			var leaves := s == 1
-			var tset: String = e.get("leaf_set") if leaves else e.get("bark_set")
-			var kind := "leaves" if leaves else "bark"
-			var m := ShaderMaterial.new()
-			m.shader = load(FOLIAGE)
-			m.set_shader_parameter("tier", T1 if tier == 3 else tier)
-			m.set_shader_parameter("leaves", leaves)
-			m.set_shader_parameter("height_m", float(d.height_m))
-			m.set_shader_parameter("flex", flex)
-			var colour := "ca" if leaves else "ah"
-			m.set_shader_parameter(
-				"albedo_tex", _texture(dir, "tree_%s_%s_%s.png" % [tset, kind, colour])
-			)
-			m.set_shader_parameter(
-				"normal_rough_ao", _texture(dir, "tree_%s_%s_nra.png" % [tset, kind])
-			)
-			mesh.surface_set_material(s, m)
+		var m := ShaderMaterial.new()
+		m.shader = load(FOLIAGE)
+		m.set_shader_parameter("tier", T1 if tier == 3 else tier)
+		m.set_shader_parameter("height_m", float(d.height_m))
+		m.set_shader_parameter("flex", flex)
+		m.set_shader_parameter("bark_albedo", _texture(dir, "tree_%s_bark_ah.png" % bark))
+		m.set_shader_parameter("bark_nra", _texture(dir, "tree_%s_bark_nra.png" % bark))
+		if leaf is String:
+			m.set_shader_parameter("leaf_albedo", _texture(dir, "tree_%s_leaves_ca.png" % leaf))
+			m.set_shader_parameter("leaf_nra", _texture(dir, "tree_%s_leaves_nra.png" % leaf))
+		(shadow if tier == 3 else meshes[tier] as Mesh).surface_set_material(0, m)
 	_models.append(
 		{"stem": stem, "height_m": float(d.height_m), "meshes": meshes, "shadow": shadow}
 	)
 	_near.append([null, null, null])
 	return _models.size() - 1
+
+
+## One surface holding all of a mesh's surfaces (bark and leaf cards share
+## one material, Q-110).
+static func merged_surfaces(mesh: Mesh) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for s in mesh.get_surface_count():
+		st.append_from(mesh, s, Transform3D.IDENTITY)
+	return st.commit()
 
 
 func _texture(dir: String, name: String) -> Texture2D:

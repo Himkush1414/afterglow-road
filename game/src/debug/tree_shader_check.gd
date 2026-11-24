@@ -159,18 +159,15 @@ func _tier_meshes() -> Array:
 	return out
 
 
-func _material(tier: int, leaves: bool, height: float, flex: float) -> ShaderMaterial:
+func _material(tier: int, height: float, flex: float) -> ShaderMaterial:
 	var m := ShaderMaterial.new()
 	m.shader = load("res://shaders/foliage.gdshader")
 	var dir := (ContentDB.root as String).path_join(TEXTURE_DIR)
-	var stem := "tree_%s_%s" % [_leaf, "leaves_ca"] if leaves else "tree_%s_%s" % [_bark, "bark_ah"]
-	var nra := (
-		"tree_%s_%s" % [_leaf, "leaves_nra"] if leaves else "tree_%s_%s" % [_bark, "bark_nra"]
-	)
-	m.set_shader_parameter("albedo_tex", load(dir.path_join(stem + ".png")))
-	m.set_shader_parameter("normal_rough_ao", load(dir.path_join(nra + ".png")))
+	m.set_shader_parameter("bark_albedo", load(dir.path_join("tree_%s_bark_ah.png" % _bark)))
+	m.set_shader_parameter("bark_nra", load(dir.path_join("tree_%s_bark_nra.png" % _bark)))
+	m.set_shader_parameter("leaf_albedo", load(dir.path_join("tree_%s_leaves_ca.png" % _leaf)))
+	m.set_shader_parameter("leaf_nra", load(dir.path_join("tree_%s_leaves_nra.png" % _leaf)))
 	m.set_shader_parameter("tier", tier)
-	m.set_shader_parameter("leaves", leaves)
 	m.set_shader_parameter("height_m", height)
 	m.set_shader_parameter("flex", flex)
 	return m
@@ -179,9 +176,8 @@ func _material(tier: int, leaves: bool, height: float, flex: float) -> ShaderMat
 ## A tree tier at `distance` m straight ahead of the camera.
 func _tree(mesh: Mesh, tier: int, height: float, flex: float, distance: float) -> Node3D:
 	var mi := MeshInstance3D.new()
-	mi.mesh = mesh
-	for s in mesh.get_surface_count():
-		mi.set_surface_override_material(s, _material(tier, s == 1, height, flex))
+	mi.mesh = TreeField.merged_surfaces(mesh)
+	mi.set_surface_override_material(0, _material(tier, height, flex))
 	mi.position = Vector3(0.0, 0.0, -distance)
 	return mi
 
