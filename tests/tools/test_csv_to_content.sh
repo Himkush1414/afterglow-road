@@ -74,6 +74,7 @@ an={r['id']:r for r in json.load(open('${out}/animals.json'))['animals']}
 by={i['id']:i for i in items['items']}
 sys.exit(0 if ($2) else 1)"; then pass "$1"; else fail "$1"; fi
 }
+check "tree model files per variant" "tr['tree_a']['models']==['tree_tree_a_1','tree_tree_a_2'] and tr['tree_b']['models']==['tree_tree_b_1']"
 check "animal hours as spans" "an['ani_a']['active_hours']==[{'from':5,'to':10},{'from':22,'to':2}]"
 check "animal flee distance and modes" "an['ani_a']['flee']=={'mode':'run','m':35} and an['ani_b']['flee']=={'mode':'fly','m':60} and an['ani_c']['flee']=={'mode':'tree','m':None}"
 check "animal catch methods" "an['ani_a']['catch']==['snare','thrown_stone'] and an['ani_b']['catch']==[]"
