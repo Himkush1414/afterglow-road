@@ -2181,6 +2181,77 @@
 					}
 				}
 			}
+		},
+		"tuning_trees": {
+			"type": "object",
+			"fields": {
+				"wind_ref_ms": {
+					"type": "number",
+					"min": 0.1
+				},
+				"bend_exponent": {
+					"type": "number",
+					"min": 0
+				},
+				"height_exponent": {
+					"type": "number",
+					"min": 0
+				},
+				"branch_amp_m": {
+					"type": "number",
+					"min": 0
+				},
+				"branch_rate": {
+					"type": "number",
+					"min": 0
+				},
+				"leaf_amp_m": {
+					"type": "number",
+					"min": 0
+				},
+				"leaf_rate": {
+					"type": "number",
+					"min": 0
+				},
+				"leaf_ref_ms": {
+					"type": "number",
+					"min": 0.1
+				},
+				"leaf_clamp": {
+					"type": "list",
+					"min_len": 2,
+					"of": {
+						"type": "number",
+						"min": 0
+					}
+				},
+				"leaf_wave": {
+					"type": "list",
+					"min_len": 2,
+					"of": {
+						"type": "number"
+					}
+				},
+				"flex_m": {
+					"type": "map",
+					"values": {
+						"type": "number",
+						"min": 0
+					}
+				},
+				"fade_band_m": {
+					"type": "number",
+					"min": 0
+				},
+				"tint_value": {
+					"type": "number",
+					"min": 0
+				},
+				"tint_hue_rad": {
+					"type": "number",
+					"min": 0
+				}
+			}
 		}
 	},
 	"files": {
@@ -2244,6 +2315,10 @@
 					},
 					"review": {
 						"type": "tuning_review",
+						"optional": true
+					},
+					"trees": {
+						"type": "tuning_trees",
 						"optional": true
 					}
 				}
