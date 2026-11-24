@@ -22,6 +22,7 @@ import subprocess
 import sys
 
 from tools.assetgen import glb
+from tools.assetgen.shapes import shape_for
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 TIERS = ("t0", "t1", "t2")
@@ -46,7 +47,7 @@ def check_trees(content):
         if tree is None:
             errors.append(f"preset model {model['id']}: no tree definition")
             continue
-        shapes[model["id"]] = model.get("shape", tree["species"])
+        shapes[model["id"]] = shape_for(preset, model, tree)
         for n in range(1, tree["variants"] + 1):
             expected[f"{category}_{model['id']}_{n}.glb"] = tree
     found = sorted(f for f in os.listdir(model_dir) if f.startswith(category + "_") and f.endswith(".glb")) if os.path.isdir(model_dir) else []
@@ -57,8 +58,8 @@ def check_trees(content):
         if tree is None:
             errors.append(f"{name}: no tree definition")
             continue
-        shape = shapes.get(tree["id"], tree["species"])
-        surfaces = SURFACES if "clumps" in preset["species"].get(shape, {}) else SURFACES[:1]
+        shape = shapes.get(tree["id"]) or shape_for(preset, {"id": tree["id"]}, tree)
+        surfaces = SURFACES if "clumps" in shape else SURFACES[:1]
         errors += check_model(os.path.join(model_dir, name), name[: -len(".glb")], preset["budgets"][tree["size"]], surfaces)
     return errors
 

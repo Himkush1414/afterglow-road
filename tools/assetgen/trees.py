@@ -12,6 +12,7 @@ a cell of the species leaf atlas). A species preset without "clumps" makes
 leafless models (bark only); "lie_length_m" lays the trunk on the ground;
 "stems" > 1 grows several trunks from the base (shrubs). A preset model
 may name a "shape" other than its species (two shapes of one species).
+A shape's "sizes" maps a tree size to overrides (tools/assetgen/shapes.py).
 
 All tiers share one skeleton and one set of clump positions, so their
 silhouettes match; they differ in tube resolution, branch depth and card
@@ -35,6 +36,9 @@ import sys
 
 import bpy
 from mathutils import Vector
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from tools.assetgen.shapes import shape_for  # noqa: E402  (Blender runs this file as a script)
 
 UP = Vector((0.0, 0.0, 1.0))
 TIERS = ("t0", "t1", "t2")
@@ -390,7 +394,7 @@ def main():
         if only and model["id"] != only:
             continue
         tree = defs[model["id"]]
-        sp = preset["species"][model.get("shape", tree["species"])]
+        sp = shape_for(preset, model, tree)
         budgets = preset["budgets"][tree["size"]]
         for n in range(1, tree["variants"] + 1):
             rnd = random.Random(f"{model['id']}:{model['seed']}:{n}")
