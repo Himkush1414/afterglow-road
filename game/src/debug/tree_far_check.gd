@@ -55,7 +55,7 @@ func _run() -> void:
 		await get_tree().process_frame
 	var seconds := (Time.get_ticks_msec() - t0) / 1000.0
 	var bad := 0
-	var wanted := _field.tiles_within(eye, _field.reach_m())
+	var wanted := _field.tiles_within(eye, _field.build_reach_m())
 	var built := _field.built_tiles()
 	var tiles_ok := (
 		built.size() == wanted.size() and wanted.all(func(t: Vector2i) -> bool: return built.has(t))
@@ -64,7 +64,7 @@ func _run() -> void:
 	print(
 		(
 			"tiles: %d built, %d within %.0f m of the eye%s"
-			% [built.size(), wanted.size(), _field.reach_m(), _flag(tiles_ok)]
+			% [built.size(), wanted.size(), _field.build_reach_m(), _flag(tiles_ok)]
 		)
 	)
 	# Every tree within the T3 end lies in a built tile and is drawn there.

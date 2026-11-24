@@ -50,6 +50,19 @@ static func flex(cfg: Dictionary, species: String) -> float:
 	return float((cfg.get("flex_m", {}) as Dictionary).get(species, 0.0))
 
 
+## (fade-in, fade-out) visibility of tier k at horizontal distance d: the
+## same rule as tree_tier_visibility in tree_fade.gdshaderinc.
+static func visibility(k: int, d: float, tiers_m: Array, band_m: float) -> Vector2:
+	var start := 0.0 if k == 0 else float(tiers_m[k - 1])
+	var end := float(tiers_m[k])
+	if end <= start:
+		return Vector2.ZERO
+	var band := maxf(band_m, 0.001)
+	var vin := 1.0 if start <= 0.0 else clampf((d - start) / band + 0.5, 0.0, 1.0)
+	var vout := 1.0 - clampf((d - end) / band + 0.5, 0.0, 1.0)
+	return Vector2(vin, vout)
+
+
 static func set_camera(pos: Vector3) -> void:
 	RenderingServer.global_shader_parameter_set("tree_camera_pos", pos)
 

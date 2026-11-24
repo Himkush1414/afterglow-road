@@ -88,7 +88,7 @@ func test_streaming_builds_and_frees_a_tile() -> void:
 		await tree.process_frame
 	check_eq(_field.built_tiles(), [Vector2i(0, 0)])
 	check_eq(_field.instances, 3)
-	_field.update_for(_world.map_to_world(Vector3(256.0, 0.0, 512.0 + 2400.0 + 300.0)))
+	_field.update_for(_world.map_to_world(Vector3(256.0, 0.0, 512.0 + 2400.0 + 400.0)))
 	check_eq(_field.built_tiles(), [], "freed beyond the range + keep margin")
 	check_eq(_field.instances, 0)
 

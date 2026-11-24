@@ -6,7 +6,9 @@ extends Node3D
 ##   models, built on a worker thread when the tile comes within the preset's
 ##   T3 range and freed when it leaves it (Q-107);
 ## - the mid tier T2: one MultiMesh per model per 128 m chunk, built on a
-##   worker thread for the chunks reaching into the T2 range (Q-108).
+##   worker thread for the chunks reaching into the T2 range (Q-108);
+## - the near set T0/T1: per model one MultiMesh per tier, refilled from a
+##   worker thread when the camera crosses a 16 m line (Q-108).
 ##
 ## Per record, a hash of (chunk, record index) picks the model variant from
 ## the type's `models`, the wind phase and the tint. Billboards use the atlas
@@ -26,7 +28,11 @@ const TILE_M := 512.0
 const RESELECT_M := 64.0
 const KEEP_EXTRA_M := 256.0
 const MAX_BUILDS := 2
+const T0 := 0
 const T1 := 1
+const NEAR_LINE_M := 16.0
+## How far the camera can move between near-set rebuilds (a 16 m cell's diagonal).
+const NEAR_SLACK_M := 22.7
 const T2 := 2
 const T3 := 3
 const CHUNK_RESELECT_M := 16.0
@@ -44,6 +50,12 @@ var tiers_m: Array = []
 var t2_shadows := false
 ## Instances in the built T2 chunks.
 var mid_instances := 0
+## Instances in the near set, per tier [T0, T1].
+var near_instances := [0, 0]
+## Main-thread time of the last near-set assignment (T-06-6), microseconds.
+var near_assign_usec := 0
+## Map position the current near set was built around.
+var near_map := Vector3(INF, INF, INF)
 
 var _world: WorldData
 var _defs: Array = []
@@ -67,6 +79,11 @@ var _pending_chunks := {}
 var _done_chunks := {}
 var _last_chunk_eye := Vector3(INF, INF, INF)
 var _wanted_chunks: Array[Vector2i] = []
+## Per model: [T0 MultiMeshInstance3D or null, T1 MultiMeshInstance3D or null].
+var _near: Array = []
+var _near_line := Vector2i(1 << 30, 1 << 30)
+var _near_task := -1
+var _near_result: Variant = null
 
 
 ## False with `errors` when the tree data cannot be read. `defs`: the tree
@@ -195,6 +212,12 @@ func reach_m() -> float:
 	return float(tiers_m[T3]) + float(_cfg.get("fade_band_m", 0.0))
 
 
+## Tiles are built this far: the far reach plus the distance the camera can
+## move before tiles are selected again.
+func build_reach_m() -> float:
+	return reach_m() + RESELECT_M
+
+
 func built_tiles() -> Array:
 	return _tiles.keys()
 
@@ -206,7 +229,135 @@ func built_chunks() -> Array:
 func is_settled() -> bool:
 	var tiles := _wanted.all(func(t: Vector2i) -> bool: return _tiles.has(t))
 	var chunks := _wanted_chunks.all(func(c: Vector2i) -> bool: return _chunks.has(c))
-	return _pending.is_empty() and _pending_chunks.is_empty() and tiles and chunks
+	var near := _models.is_empty() or (_near_task < 0 and _near_line.x != 1 << 30)
+	return _pending.is_empty() and _pending_chunks.is_empty() and tiles and chunks and near
+
+
+## Distance window [from, to] (metres) in which a tree goes into tier k's
+## near buffer: the tier's range widened by half a band and the slack.
+func near_window(k: int) -> Vector2:
+	var start := 0.0 if k == 0 else float(tiers_m[k - 1])
+	var end := float(tiers_m[k])
+	if end <= start:
+		return Vector2(1.0, 0.0)
+	var pad := _band() * 0.5 + NEAR_SLACK_M
+	return Vector2(maxf(0.0, start - pad) if start > 0.0 else 0.0, end + pad)
+
+
+## Near-set buffers around a map position: per model index [[T0 buffer,
+## count], [T1 buffer, count]].
+func near_buffers(map: Vector3) -> Dictionary:
+	var out := {}
+	var windows := [near_window(T0), near_window(T1)]
+	var reach: float = maxf((windows[0] as Vector2).y, (windows[1] as Vector2).y)
+	var lo := WorldData.tree_chunk_of_map(map - Vector3(reach, 0.0, reach))
+	var hi := WorldData.tree_chunk_of_map(map + Vector3(reach, 0.0, reach))
+	for cz in range(lo.y, hi.y + 1):
+		for cx in range(lo.x, hi.x + 1):
+			var chunk := Vector2i(cx, cz)
+			var raw := chunk_records(chunk)
+			var ci := WorldData.tree_chunk_index(chunk)
+			for i in raw.size() / RECORD_BYTES:
+				var r := decode(raw, chunk, i)
+				var d := Vector2(r.map.x - map.x, r.map.y - map.z).length()
+				if d > reach or r.model >= _variants.size():
+					continue
+				var options: Array = _variants[r.model]
+				if options.is_empty():
+					continue
+				var h := record_hash(ci, i)
+				var v: Array = options[h % options.size()]
+				if int(v[3]) < 0:
+					continue
+				var entry: Array = out.get_or_add(
+					int(v[3]), [[PackedFloat32Array(), 0], [PackedFloat32Array(), 0]]
+				)
+				var row := PackedFloat32Array()
+				for k in 2:
+					var w: Vector2 = windows[k]
+					if d < w.x or d > w.y:
+						continue
+					if row.is_empty():
+						row = _instance_row(r, h, v)
+					var slot: Array = entry[k]
+					var buf: PackedFloat32Array = slot[0]
+					buf.append_array(row)
+					slot[0] = buf
+					slot[1] = int(slot[1]) + 1
+	return out
+
+
+func _instance_row(r: Dictionary, h: int, v: Array) -> PackedFloat32Array:
+	var pos := _world.map_to_world(Vector3(r.map.x, 0.0, r.map.y))
+	pos.y = _world.height_at(pos.x, pos.z)
+	var b := Basis(Vector3.UP, r.yaw).scaled(Vector3.ONE * r.scale)
+	var row := PackedFloat32Array([b.x.x, b.y.x, b.z.x, pos.x, b.x.y, b.y.y, b.z.y, pos.y])
+	row.append_array([b.x.z, b.y.z, b.z.z, pos.z])
+	row.append_array([((h >> 8) & 255) / 255.0, ((h >> 16) & 255) / 127.5 - 1.0, 0.0, float(v[0])])
+	return row
+
+
+func _update_near(eye: Vector3) -> void:
+	var map := _world.world_to_map(eye)
+	if _near_task >= 0 and WorkerThreadPool.is_task_completed(_near_task):
+		WorkerThreadPool.wait_for_task_completion(_near_task)
+		_near_task = -1
+		_mutex.lock()
+		var result: Variant = _near_result
+		_near_result = null
+		_mutex.unlock()
+		if result is Array:
+			near_map = result[0]
+			_assign_near(result[1])
+	var line := Vector2i(floori(map.x / NEAR_LINE_M), floori(map.z / NEAR_LINE_M))
+	if line != _near_line and _near_task < 0:
+		_near_line = line
+		_near_task = WorkerThreadPool.add_task(_build_near.bind(map), false, "tree near set")
+
+
+func _build_near(map: Vector3) -> void:
+	var result := near_buffers(map)
+	_mutex.lock()
+	_near_result = [map, result]
+	_mutex.unlock()
+
+
+func _assign_near(buffers: Dictionary) -> void:
+	var t0 := Time.get_ticks_usec()
+	near_instances = [0, 0]
+	for model in _models.size():
+		var entry: Array = buffers.get(
+			model, [[PackedFloat32Array(), 0], [PackedFloat32Array(), 0]]
+		)
+		for k in 2:
+			var slot: Array = entry[k]
+			var node: MultiMeshInstance3D = (_near[model] as Array)[k]
+			if node == null:
+				if int(slot[1]) == 0:
+					continue
+				node = _near_node(model, k)
+			var mm := node.multimesh
+			if mm.instance_count != int(slot[1]):
+				mm.instance_count = int(slot[1])
+			if int(slot[1]) > 0:
+				mm.buffer = slot[0]
+			node.visible = int(slot[1]) > 0
+			near_instances[k] += int(slot[1])
+	near_assign_usec = Time.get_ticks_usec() - t0
+
+
+func _near_node(model: int, k: int) -> MultiMeshInstance3D:
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_custom_data = true
+	mm.mesh = (_models[model].meshes as Array)[k]
+	var node := MultiMeshInstance3D.new()
+	node.name = "Near_%s_t%d" % [_models[model].stem, k]
+	node.multimesh = mm
+	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	add_child(node)
+	(_near[model] as Array)[k] = node
+	return node
 
 
 func _band() -> float:
@@ -230,11 +381,12 @@ func _chunk_far(eye: Vector3, c: Vector2i) -> float:
 
 
 ## Chunks reaching into the T2 range: nearest point within T2 end + band and
-## farthest point beyond T1 end - band / 2 (Q-108).
+## farthest point beyond T1 end - band / 2 (Q-108), each widened by the
+## distance the camera can move before chunks are selected again.
 func mid_chunks(eye: Vector3) -> Array[Vector2i]:
 	var out: Array[Vector2i] = []
-	var reach := float(tiers_m[T2]) + _band()
-	var inner := float(tiers_m[T1]) - _band() * 0.5
+	var reach := float(tiers_m[T2]) + _band() + CHUNK_RESELECT_M
+	var inner := float(tiers_m[T1]) - _band() * 0.5 - CHUNK_RESELECT_M
 	if float(tiers_m[T2]) <= float(tiers_m[T1]):
 		return out
 	var m := _world.world_to_map(eye)
@@ -376,6 +528,7 @@ func _load_model(root: String, stem: String, e: Dictionary, d: Dictionary) -> in
 			)
 			mesh.surface_set_material(s, m)
 	_models.append({"stem": stem, "height_m": float(d.height_m), "meshes": meshes})
+	_near.append([null, null])
 	return _models.size() - 1
 
 
@@ -397,6 +550,9 @@ func _notification(what: int) -> void:
 		_done.clear()
 		_pending_chunks.clear()
 		_done_chunks.clear()
+		if _near_task >= 0:
+			WorkerThreadPool.wait_for_task_completion(_near_task)
+			_near_task = -1
 
 
 func _process(_delta: float) -> void:
@@ -410,8 +566,8 @@ func update_for(eye: Vector3) -> void:
 	TreeShading.set_camera(eye)
 	if eye.distance_to(_last_eye) >= RESELECT_M:
 		_last_eye = eye
-		_wanted = tiles_within(eye, reach_m())
-		var keep := tiles_within(eye, reach_m() + KEEP_EXTRA_M)
+		_wanted = tiles_within(eye, build_reach_m())
+		var keep := tiles_within(eye, build_reach_m() + KEEP_EXTRA_M)
 		for t: Vector2i in _tiles.keys():
 			if not keep.has(t):
 				_free_tile(t)
@@ -423,6 +579,7 @@ func update_for(eye: Vector3) -> void:
 			_pending[t] = WorkerThreadPool.add_task(_build.bind(t), false, "tree tile")
 	if _models.is_empty():
 		return
+	_update_near(eye)
 	if eye.distance_to(_last_chunk_eye) >= CHUNK_RESELECT_M:
 		_last_chunk_eye = eye
 		_wanted_chunks = mid_chunks(eye)
@@ -500,6 +657,7 @@ func _setup_models(root: String) -> void:
 	_material.shader = load(SHADER)
 	_variants.clear()
 	_models.clear()
+	_near.clear()
 	var flexes := PackedFloat32Array()
 	flexes.resize(CELLS)
 	if manifest is Dictionary:
