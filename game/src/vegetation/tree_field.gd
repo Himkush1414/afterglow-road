@@ -62,7 +62,8 @@ var _defs: Array = []
 var _cfg := {}
 ## Per tree type: [[cell, side_m, bottom_m, model index or -1] per variant].
 var _variants: Array = []
-## Per model (index from _variants): {"stem", "height_m", "meshes": [T0, T1, T2]}.
+## Per model (index from _variants): {"stem", "height_m", "meshes": [T0, T1, T2],
+## "shadow": the T2 mesh with T1 materials}.
 var _models: Array = []
 var _textures := {}
 var _material: ShaderMaterial
@@ -79,7 +80,9 @@ var _pending_chunks := {}
 var _done_chunks := {}
 var _last_chunk_eye := Vector3(INF, INF, INF)
 var _wanted_chunks: Array[Vector2i] = []
-## Per model: [T0 MultiMeshInstance3D or null, T1 MultiMeshInstance3D or null].
+## Per model: [T0, T1, T1 shadow caster] MultiMeshInstance3D or null. Beyond
+## T0, shadows are cast with the T2 mesh (06 §A3): the T1 instances drawn
+## again as shadow-only T2 meshes.
 var _near: Array = []
 var _near_line := Vector2i(1 << 30, 1 << 30)
 var _near_task := -1
@@ -329,8 +332,8 @@ func _assign_near(buffers: Dictionary) -> void:
 		var entry: Array = buffers.get(
 			model, [[PackedFloat32Array(), 0], [PackedFloat32Array(), 0]]
 		)
-		for k in 2:
-			var slot: Array = entry[k]
+		for k in 3:
+			var slot: Array = entry[mini(k, 1)]
 			var node: MultiMeshInstance3D = (_near[model] as Array)[k]
 			if node == null:
 				if int(slot[1]) == 0:
@@ -342,19 +345,25 @@ func _assign_near(buffers: Dictionary) -> void:
 			if int(slot[1]) > 0:
 				mm.buffer = slot[0]
 			node.visible = int(slot[1]) > 0
-			near_instances[k] += int(slot[1])
+			if k < 2:
+				near_instances[k] += int(slot[1])
 	near_assign_usec = Time.get_ticks_usec() - t0
 
 
+## k: 0 T0 (draws and casts), 1 T1 (draws only), 2 T1's shadow caster (T2 mesh).
 func _near_node(model: int, k: int) -> MultiMeshInstance3D:
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.use_custom_data = true
-	mm.mesh = (_models[model].meshes as Array)[k]
+	mm.mesh = _models[model].shadow if k == 2 else (_models[model].meshes as Array)[k]
 	var node := MultiMeshInstance3D.new()
-	node.name = "Near_%s_t%d" % [_models[model].stem, k]
+	node.name = "Near_%s_%s" % [_models[model].stem, ["t0", "t1", "t1_shadow"][k]]
 	node.multimesh = mm
-	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	node.cast_shadow = [
+		GeometryInstance3D.SHADOW_CASTING_SETTING_ON,
+		GeometryInstance3D.SHADOW_CASTING_SETTING_OFF,
+		GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY,
+	][k]
 	add_child(node)
 	(_near[model] as Array)[k] = node
 	return node
@@ -507,15 +516,17 @@ func _load_model(root: String, stem: String, e: Dictionary, d: Dictionary) -> in
 		return -1
 	var dir := root.path_join(TEXTURE_DIR)
 	var flex := TreeShading.flex(_cfg, String(d.species))
-	for tier in 3:
-		var mesh: Mesh = meshes[tier]
+	# The T2 mesh again, faded as T1: the shadow caster of the T1 instances.
+	var shadow: Mesh = (meshes[T2] as Mesh).duplicate()
+	for tier in 4:
+		var mesh: Mesh = shadow if tier == 3 else meshes[tier]
 		for s in mesh.get_surface_count():
 			var leaves := s == 1
 			var tset: String = e.get("leaf_set") if leaves else e.get("bark_set")
 			var kind := "leaves" if leaves else "bark"
 			var m := ShaderMaterial.new()
 			m.shader = load(FOLIAGE)
-			m.set_shader_parameter("tier", tier)
+			m.set_shader_parameter("tier", T1 if tier == 3 else tier)
 			m.set_shader_parameter("leaves", leaves)
 			m.set_shader_parameter("height_m", float(d.height_m))
 			m.set_shader_parameter("flex", flex)
@@ -527,8 +538,10 @@ func _load_model(root: String, stem: String, e: Dictionary, d: Dictionary) -> in
 				"normal_rough_ao", _texture(dir, "tree_%s_%s_nra.png" % [tset, kind])
 			)
 			mesh.surface_set_material(s, m)
-	_models.append({"stem": stem, "height_m": float(d.height_m), "meshes": meshes})
-	_near.append([null, null])
+	_models.append(
+		{"stem": stem, "height_m": float(d.height_m), "meshes": meshes, "shadow": shadow}
+	)
+	_near.append([null, null, null])
 	return _models.size() - 1
 
 
