@@ -2,10 +2,11 @@ extends Node
 ## Review frames for the owner (25 §5): captures one named set of the
 ## optional "review" tuning group. The game starts a new game in a throwaway
 ## save folder, applies the set's quality preset for the renderer, and a
-## camera stands at the set's place (eye height, heading, pitch, field of
-## view). For each weather state of the set (one game day each) the weather
-## is forced a blend early and its next roll held back, then the clock is
-## set to each time and one frame is saved as
+## camera stands at the set's place, `forward_m` along the heading (eye
+## height, heading, pitch, field of view). For each weather state of the
+## set (one game day each) the weather is forced a blend early and its next
+## roll held back, then the clock is set to each time and one frame is
+## saved as
 ## <set>_<renderer>_<HHMM>_<weather>.png.
 ## Needs a display:
 ##   tools/godot.sh [--rendering-method mobile] res://scenes/debug/review_capture.tscn \
@@ -97,13 +98,15 @@ class Runner:
 		for p: Dictionary in doc.get("pois", []):
 			if p.id != cfg.place:
 				continue
+			var h := deg_to_rad(float(cfg.heading_deg))
+			var forward := float(cfg.get("forward_m", 0.0))
 			var at := game.world.map_to_world(Vector3(float(p.x), 0.0, float(p.z)))
+			at += Vector3(sin(h), 0.0, -cos(h)) * forward
 			at.y = game.world.height_at(at.x, at.z) + float(cfg.eye_m)
 			var cam := Camera3D.new()
 			cam.fov = float(cfg.fov_deg)
 			cam.far = 65000.0
 			game.add_child(cam)
-			var h := deg_to_rad(float(cfg.heading_deg))
 			var pitch := deg_to_rad(float(cfg.pitch_deg))
 			var look := Vector3(sin(h) * cos(pitch), sin(pitch), -cos(h) * cos(pitch))
 			cam.look_at_from_position(at, at + look)

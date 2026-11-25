@@ -2141,6 +2141,11 @@
 				"heading_deg": {
 					"type": "number"
 				},
+				"forward_m": {
+					"type": "number",
+					"min": 0,
+					"optional": true
+				},
 				"pitch_deg": {
 					"type": "number",
 					"min": -89,
