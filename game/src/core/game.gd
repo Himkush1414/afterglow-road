@@ -14,6 +14,9 @@ static var current: Game
 var slot := ""
 var play_seconds := 0.0
 
+## Ground cover; configured only when the content has "grass" tuning.
+var grass_field: GrassField
+
 @onready var clock: GameClock = $Clock
 @onready var weather: Weather = $Weather
 @onready var wind: Wind = $Wind
@@ -27,6 +30,30 @@ var play_seconds := 0.0
 @onready var outer_ring: OuterRing = $OuterRing
 @onready var streamer: Streamer = $Streamer
 @onready var tree_field: TreeField = $TreeField
+
+
+## Ground cover (06 §B): radius, density and level of detail from the
+## quality preset, water depth from the water.
+func _setup_grass() -> void:
+	grass_field = GrassField.new()
+	grass_field.name = "GrassField"
+	add_child(grass_field)
+	var cfg := ContentDB.tuning("grass")
+	if cfg.is_empty():
+		return
+	var radius: Variant = Quality.value("grass_radius_m")
+	var density: Variant = Quality.value("grass_density")
+	var texture_set: Variant = Quality.value("texture_set")
+	if radius != null:
+		grass_field.radius_m = float(radius)
+	var mult := float(density) if density != null else 1.0
+	if grass_field.configure(world, cfg, ContentDB.tuning("terrain"), mult):
+		grass_field.depth_of = water.depth_at
+		var lod := "lo" if Quality.preset_id.begins_with("phone") else "hi"
+		var set_name := String(texture_set) if texture_set != null else "hi"
+		grass_field.start(grass_field.load_meshes(ContentDB.root, lod, set_name))
+	if not grass_field.errors.is_empty():
+		Log.error("grass", "; ".join(grass_field.errors))
 
 
 func _enter_tree() -> void:
@@ -91,6 +118,7 @@ func _ready() -> void:
 			ContentDB.tuning("trees").get("leaf_particles", {}),
 			float(mult) if mult != null else 1.0
 		)
+		_setup_grass()
 		weather.terrain = terrain
 		wind.world = world
 		rain.world = world

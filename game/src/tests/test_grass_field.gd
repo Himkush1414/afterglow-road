@@ -188,3 +188,18 @@ func test_unknown_layer_or_type_is_an_error() -> void:
 	check(_world.load_dir(ContentDB.SAMPLE_ROOT + "/world"))
 	check(not f.configure(_world, cfg, TERRAIN, 1.0), "rejected")
 	check_eq(f.errors.size(), 2, str(f.errors))
+
+
+func test_missing_models_are_reported_by_name() -> void:
+	var cfg := CFG.duplicate(true)
+	cfg.types["mat"] = {"variants": 1}
+	cfg.layers.ground.types["mat"] = 0.1
+	var f := _field(1.0, cfg)
+	var meshes := f.load_meshes("res://no_such_content", "lo", "lo")
+	check_eq(meshes.size(), f.draws.size(), "one entry per draw")
+	check_eq(meshes.count(null), meshes.size(), "all missing")
+	var text := "\n".join(f.errors)
+	for stem: String in ["tuft_1", "tuft_2", "tuft_3", "bloom_1", "bloom_2", "mat"]:
+		check(text.contains("ground_cover_%s_lo.glb: missing" % stem), stem)
+	check(text.contains("lo/ground_cover_ca.png: missing"), "the atlas")
+	check_eq(f.errors.size(), 7, text)

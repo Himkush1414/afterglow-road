@@ -18,8 +18,8 @@ extends Node3D
 ##
 ## Streaming (06 §B2, §B5): every cell reaching within `radius_m` of the eye
 ## is built on a worker thread (EMPTY -> BUILDING), at most MAX_BUILDS at a
-## time, nearest first; one finished cell per update is added as one
-## MultiMesh per draw (VISIBLE); cells beyond radius_m + KEEP_EXTRA_M are
+## time, nearest first; a finished cell is assembled one MultiMesh per draw
+## per update and shown when complete (VISIBLE); cells beyond radius_m + KEEP_EXTRA_M are
 ## freed (FREED). A change of the holes rebuilds the cells it touches and
 ## swaps them in when done, so they never go bare.
 
@@ -36,6 +36,14 @@ const MAX_BUILDS := 2
 const KEEP_EXTRA_M := 8.0
 ## The wanted cells are worked out again when the eye moved this far.
 const RESELECT_M := 4.0
+const MODEL_DIR := "assets/models/ground_cover"
+const TEXTURE_DIR := "assets/textures/ground_cover"
+const CATEGORY := "ground_cover"
+const SHADER := "res://shaders/grass.gdshader"
+## Shader parameters taken from the "shader" object of the "grass" tuning.
+const SHADER_KEYS := [
+	"lean_base", "lean_per_ms", "flutter_m", "flutter_hz", "fade_band", "bend_push", "alpha_cut"
+]
 
 var errors: PackedStringArray = []
 ## Cell side in metres.
@@ -56,6 +64,8 @@ var radius_m := 48.0
 var instances := 0
 ## Longest main-thread time of one update() in microseconds (T-06-10).
 var worst_update_usec := 0
+## Longest worker build of one cell in microseconds (T-06-10).
+var worst_build_usec := 0
 
 var _world: WorldData
 var _cfg := {}
@@ -97,6 +107,8 @@ var _mutex := Mutex.new()
 var _wanted: Array[Vector2i] = []
 ## Added cells waiting for a rebuild after a hole change.
 var _stale := {}
+## The cell being assembled: [cell, holder, arrays, next draw, plants], or [].
+var _assembly: Array = []
 var _last_eye := Vector3(INF, INF, INF)
 var _biome_layer := PackedInt32Array()
 var _slope_layer := PackedInt32Array()
@@ -477,6 +489,63 @@ static func _in_hole(near: PackedVector3Array, x: float, z: float) -> bool:
 	return false
 
 
+## One mesh per entry of `draws` from the content's ground-cover models at
+## level of detail `lod` ("hi" or "lo"), each given a grass.gdshader
+## material with the atlas of `texture_set` and the "shader" numbers of the
+## tuning; null for a draw whose model is missing (with an error). A type
+## with several variants uses <type>_<n>, n from 1.
+func load_meshes(root: String, lod: String, texture_set: String) -> Array[Mesh]:
+	var out: Array[Mesh] = []
+	var atlas_path := root.path_join(TEXTURE_DIR).path_join(texture_set).path_join(
+		CATEGORY + "_ca.png"
+	)
+	var atlas: Texture2D = load(atlas_path) if ResourceLoader.exists(atlas_path) else null
+	if atlas == null:
+		errors.append("%s: missing" % atlas_path)
+	var shader: Shader = load(SHADER)
+	var params: Dictionary = _cfg.get("shader", {})
+	for d: Array in draws:
+		var types: Dictionary = _cfg.types
+		var stem: String = (
+			d[0] if int(types[d[0]].variants) == 1 else "%s_%d" % [d[0], int(d[1]) + 1]
+		)
+		var path := root.path_join(MODEL_DIR).path_join("%s_%s_%s.glb" % [CATEGORY, stem, lod])
+		if not ResourceLoader.exists(path):
+			errors.append("%s: missing" % path)
+			out.append(null)
+			continue
+		var node := (load(path) as PackedScene).instantiate()
+		var found := node.find_children("*", "MeshInstance3D", true, false)
+		var mesh: Mesh = (found[0] as MeshInstance3D).mesh if not found.is_empty() else null
+		node.free()
+		if mesh == null:
+			errors.append("%s: no mesh" % path)
+			out.append(null)
+			continue
+		var mat := ShaderMaterial.new()
+		mat.shader = shader
+		mat.set_shader_parameter("use_texture", atlas != null)
+		mat.set_shader_parameter("albedo_tex", atlas)
+		mat.set_shader_parameter("blade_height_m", maxf(mesh.get_aabb().end.y, 0.01))
+		mat.set_shader_parameter("radius_m", radius_m)
+		for key: String in SHADER_KEYS:
+			if params.has(key):
+				mat.set_shader_parameter(key, float(params[key]))
+		mesh.surface_set_material(0, mat)
+		out.append(mesh)
+	return out
+
+
+## Bender spheres (engine x, y, z, radius), at most 4; the rest are unused.
+func set_benders(points: Array[Vector4]) -> void:
+	var list: Array[Vector4] = []
+	for i in 4:
+		list.append(points[i] if i < points.size() else Vector4.ZERO)
+	for m in _meshes:
+		if m != null:
+			(m.surface_get_material(0) as ShaderMaterial).set_shader_parameter("benders", list)
+
+
 ## Starts streaming with one mesh per entry of `draws` (null: nothing drawn
 ## for that draw).
 func start(meshes: Array[Mesh]) -> void:
@@ -517,6 +586,7 @@ func update(eye: Vector3) -> void:
 		for c: Vector2i in _cells.keys():
 			if _cell_distance(m, c) > radius_m + KEEP_EXTRA_M:
 				_free_cell(c)
+	_assemble_step()
 	_finish_one()
 	for c in _wanted:
 		if _pending.size() >= MAX_BUILDS:
@@ -547,7 +617,7 @@ func set_holes(list: PackedVector3Array) -> void:
 
 ## True when every wanted cell is added and nothing is building.
 func is_settled() -> bool:
-	if not _pending.is_empty() or not _stale.is_empty():
+	if not _pending.is_empty() or not _stale.is_empty() or not _assembly.is_empty():
 		return false
 	for c in _wanted:
 		if not _cells.has(c):
@@ -568,8 +638,16 @@ func wait_for_builds() -> void:
 			_pending[c] = -1
 
 
+func _process(_delta: float) -> void:
+	var cam := get_viewport().get_camera_3d()
+	if cam != null:
+		update(cam.global_position)
+
+
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_PREDELETE:
+		if not _assembly.is_empty():
+			(_assembly[1] as Node3D).free()
 		for c: Vector2i in _pending:
 			if _pending[c] >= 0:
 				WorkerThreadPool.wait_for_task_completion(_pending[c])
@@ -582,15 +660,19 @@ func _cell_distance(map: Vector3, c: Vector2i) -> float:
 
 
 func _build(cell: Vector2i, hole_list: PackedVector3Array) -> void:
+	var t0 := Time.get_ticks_usec()
 	var arrays := _build_cell(cell, hole_list)
+	var took := Time.get_ticks_usec() - t0
 	_mutex.lock()
 	_done[cell] = arrays
+	worst_build_usec = maxi(worst_build_usec, took)
 	_mutex.unlock()
 
 
-## Adds the first finished build (one per update keeps the main thread
-## short when crossing cells).
+## Takes the first finished build when no cell is being assembled.
 func _finish_one() -> void:
+	if not _assembly.is_empty():
+		return
 	for c: Vector2i in _pending.keys():
 		var task: int = _pending[c]
 		if task >= 0:
@@ -604,21 +686,38 @@ func _finish_one() -> void:
 		_mutex.unlock()
 		if arrays == null or not _wanted.has(c):
 			continue
-		if _cells.has(c):
-			_free_cell(c)
-		_add_cell(c, arrays)
+		var holder := Node3D.new()
+		holder.name = "Cell_%d_%d" % [c.x, c.y]
+		holder.position = cell_origin(c)
+		# In the tree but hidden: each MultiMesh enters the tree in its own step.
+		holder.visible = false
+		add_child(holder)
+		_assembly = [c, holder, arrays, 0, 0]
 		return
 
 
-func _add_cell(c: Vector2i, arrays: Array[PackedFloat32Array]) -> void:
-	var holder := Node3D.new()
-	holder.name = "Cell_%d_%d" % [c.x, c.y]
-	holder.position = cell_origin(c)
-	var count := 0
-	for d in arrays.size():
+## One step of the cell being assembled: one MultiMesh (one buffer upload)
+## per update keeps the main thread short when crossing cells; when every
+## draw is in, the cell replaces its old version in one go, so it never
+## shows half built or bare.
+func _assemble_step() -> void:
+	if _assembly.is_empty():
+		return
+	var c: Vector2i = _assembly[0]
+	var holder: Node3D = _assembly[1]
+	var arrays: Array[PackedFloat32Array] = _assembly[2]
+	if not _wanted.has(c):
+		holder.free()
+		_assembly = []
+		return
+	var d: int = _assembly[3]
+	while d < arrays.size():
 		var n := arrays[d].size() / STRIDE
-		if n == 0 or d >= _meshes.size() or _meshes[d] == null:
-			continue
+		if n > 0 and d < _meshes.size() and _meshes[d] != null:
+			break
+		d += 1
+	if d < arrays.size():
+		var n := arrays[d].size() / STRIDE
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
 		mm.use_custom_data = true
@@ -630,10 +729,15 @@ func _add_cell(c: Vector2i, arrays: Array[PackedFloat32Array]) -> void:
 		node.multimesh = mm
 		node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		holder.add_child(node)
-		count += n
-	add_child(holder)
-	_cells[c] = [holder, count]
-	instances += count
+		_assembly[3] = d + 1
+		_assembly[4] = int(_assembly[4]) + n
+		return
+	if _cells.has(c):
+		_free_cell(c)
+	holder.visible = true
+	_cells[c] = [holder, int(_assembly[4])]
+	instances += int(_assembly[4])
+	_assembly = []
 
 
 func _free_cell(c: Vector2i) -> void:
