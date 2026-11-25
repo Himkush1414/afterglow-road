@@ -79,6 +79,18 @@ func _ready() -> void:
 			world, trees, ContentDB.tuning("trees"), tiers if tiers is Array else []
 		):
 			Log.error("trees", "; ".join(tree_field.errors))
+		var leaves := LeafParticles.new()
+		leaves.name = "LeafParticles"
+		tree_field.add_child(leaves)
+		var mult: Variant = Quality.value("particle_mult")
+		leaves.setup(
+			tree_field,
+			world,
+			trees,
+			wind,
+			ContentDB.tuning("trees").get("leaf_particles", {}),
+			float(mult) if mult != null else 1.0
+		)
 		weather.terrain = terrain
 		wind.world = world
 		rain.world = world
