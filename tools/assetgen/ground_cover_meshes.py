@@ -14,7 +14,16 @@ and segment counts:
   tip; triangles = cards x segments x 2;
 - "flat": `cards` horizontal cards `width_m` across, lifted `lift_m`, each
   split into segments x segments and curled up by `curl_m` at the edges;
-  triangles = cards x segments² x 2.
+  triangles = cards x segments² x 2;
+- "clump": `cards` upright cards like "cross" but each standing at a
+  random point within `radius_m` with a random turn and 80-100% of the
+  height (a reed bed, a bush, a mushroom patch).
+
+Upright kinds take an optional `show` (0-1, default 1): only the bottom
+share of the cell is used and the card is that share of `height_m` tall,
+for cut stems (the empty state of a picked plant). Meshes with the same
+`layout` name and seed place their cards alike (a plant's full and empty
+states).
 
 UVs cover the cell's opaque bounds (the root at the bottom of the cell).
 Vertex colour R is the tip weight for the grass shader: the height share
@@ -45,30 +54,57 @@ def cell_uv(atlas, cell):
     return cu + b[0] / g, cv + b[1] / g, cu + b[2] / g, cv + b[3] / g
 
 
+def _card(verts, faces, uvs, tips, uv, at, a, h, w, rows, bend, show):
+    """One upright card at `at` (x, y) turned by `a`, `h` tall before `show`."""
+    u0, v0, u1, v1 = uv
+    d = (math.cos(a), math.sin(a))
+    nrm = (-d[1], d[0])
+    base = len(verts)
+    for j in range(rows + 1):
+        t = j / rows
+        back = bend * h * (t * show) ** 2
+        for side in (-0.5, 0.5):
+            x = at[0] + d[0] * w * side + nrm[0] * back
+            y = at[1] + d[1] * w * side + nrm[1] * back
+            verts.append((x, y, h * show * t))
+            uvs.append((u0 + (side + 0.5) * (u1 - u0), v1 - t * show * (v1 - v0)))
+            tips.append(t * show)
+    for j in range(rows):
+        r0, r1 = base + 2 * j, base + 2 * (j + 1)
+        faces.append((r0, r0 + 1, r1 + 1, r1))
+
+
 def cross(spec, lod, uv, rnd):
-    """(verts, faces, uvs, tips) for upright cards (Blender Z up)."""
+    """(verts, faces, uvs, tips) for upright cards around one point (Blender Z up)."""
     u0, v0, u1, v1 = uv
     h = spec["height_m"]
     w = h * (u1 - u0) / max(v1 - v0, 1e-6)
-    sink = spec.get("sink_m", 0.0)
     verts, faces, uvs, tips = [], [], [], []
-    n, rows = lod["cards"], lod["segments"]
+    n = lod["cards"]
     for k in range(n):
         a = math.pi * k / n + rnd.uniform(-0.15, 0.15)
-        d = (math.cos(a), math.sin(a))
-        nrm = (-d[1], d[0])
-        base = len(verts)
-        for j in range(rows + 1):
-            t = j / rows
-            back = spec["bend"] * h * t * t
-            for side in (-0.5, 0.5):
-                verts.append((d[0] * w * side + nrm[0] * back, d[1] * w * side + nrm[1] * back, h * t - sink))
-                uvs.append((u0 + (side + 0.5) * (u1 - u0), v1 - t * (v1 - v0)))
-                tips.append(t)
-        for j in range(rows):
-            r0, r1 = base + 2 * j, base + 2 * (j + 1)
-            faces.append((r0, r0 + 1, r1 + 1, r1))
-    return verts, faces, uvs, tips
+        _card(verts, faces, uvs, tips, uv, (0.0, 0.0), a, h, w, lod["segments"], spec["bend"], spec.get("show", 1.0))
+    return _sink(spec, verts), faces, uvs, tips
+
+
+def clump(spec, lod, uv, rnd):
+    """(verts, faces, uvs, tips) for upright cards spread over a disc."""
+    u0, v0, u1, v1 = uv
+    verts, faces, uvs, tips = [], [], [], []
+    for k in range(lod["cards"]):
+        r = spec["radius_m"] * math.sqrt(rnd.random())
+        p = rnd.uniform(0.0, 2.0 * math.pi)
+        h = spec["height_m"] * rnd.uniform(0.8, 1.0)
+        w = h * (u1 - u0) / max(v1 - v0, 1e-6)
+        at = (math.cos(p) * r, math.sin(p) * r)
+        a = rnd.uniform(0.0, math.pi)
+        _card(verts, faces, uvs, tips, uv, at, a, h, w, lod["segments"], spec["bend"], spec.get("show", 1.0))
+    return _sink(spec, verts), faces, uvs, tips
+
+
+def _sink(spec, verts):
+    s = spec.get("sink_m", 0.0)
+    return [(x, y, z - s) for x, y, z in verts]
 
 
 def flat(spec, lod, uv, rnd):
@@ -143,8 +179,8 @@ def main():
     for spec in preset["meshes"]:
         uv = cell_uv(atlas, cells[spec["cell"]])
         for lod_name, lod in spec["lods"].items():
-            rnd = random.Random(f"{spec['name']}:{spec['seed']}:{lod_name}")
-            make = {"cross": cross, "flat": flat}[spec["kind"]]
+            rnd = random.Random(f"{spec.get('layout', spec['name'])}:{spec['seed']}:{lod_name}")
+            make = {"cross": cross, "flat": flat, "clump": clump}[spec["kind"]]
             name = f"{preset['category']}_{spec['name']}_{lod_name}"
             export(build(name, *make(spec, lod, uv, rnd)), os.path.join(out, name + ".glb"))
             print(f"ground cover: wrote {name}.glb")
