@@ -23,9 +23,9 @@ func test_check_near_uses_tolerance() -> void:
 
 
 func test_awaiting_a_frame_works() -> void:
-	var frame := tree.get_frame()
+	var frame := Engine.get_process_frames()
 	await tree.process_frame
-	check(tree.get_frame() > frame, "a frame passed")
+	check(Engine.get_process_frames() > frame, "a frame passed")
 
 
 func test_expected_engine_errors_are_matched_once() -> void:
