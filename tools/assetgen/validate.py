@@ -37,6 +37,9 @@ SURFACES = ("bark", "leaves")
 MODEL_DIR = os.path.join("assets", "models", "trees")
 STUMP_DIR = os.path.join("assets", "models", "stumps")
 STUMP_SURFACES = ["bark", "cut"]
+COVER_MODEL_DIR = os.path.join("assets", "models", "ground_cover")
+COVER_TEXTURE_DIR = os.path.join("assets", "textures", "ground_cover")
+COVER_SURFACES = ["ground_cover"]
 TEXTURE_DIR = os.path.join("assets", "texture_sets", "trees")
 TIMEOUT_S = 300
 
@@ -205,12 +208,58 @@ def engine_check(content):
         return 1
 
 
+def check_ground_cover(content):
+    """Errors of the ground-cover atlas and meshes ([] without a mesh
+    preset): atlas images and manifest present, every mesh preset cell in
+    the atlas, every level of detail present, within its triangle budget,
+    one "ground_cover" surface carrying vertex colour (the tip weight)."""
+    preset_path = os.path.join(content, "assetgen", "ground_cover_meshes.json")
+    if not os.path.exists(preset_path):
+        return []
+    with open(preset_path, encoding="utf-8") as f:
+        preset = json.load(f)
+    errors = []
+    textures = os.path.join(content, COVER_TEXTURE_DIR)
+    cat = preset["category"]
+    for sub in ("hi", "lo"):
+        for kind in ("ca", "nra"):
+            path = os.path.join(textures, sub, f"{cat}_{kind}.png")
+            if not os.path.exists(path):
+                errors.append(f"{path}: missing")
+    manifest_path = os.path.join(textures, f"{cat}.json")
+    cells = set()
+    if os.path.exists(manifest_path):
+        with open(manifest_path, encoding="utf-8") as f:
+            cells = {c["name"] for c in json.load(f)["cells"]}
+    else:
+        errors.append(f"{manifest_path}: missing")
+    models = os.path.join(content, COVER_MODEL_DIR)
+    for spec in preset["meshes"]:
+        if cells and spec["cell"] not in cells:
+            errors.append(f"{spec['name']}: atlas has no cell '{spec['cell']}'")
+        for lod in spec["lods"]:
+            path = os.path.join(models, f"{cat}_{spec['name']}_{lod}.glb")
+            if not os.path.exists(path):
+                errors.append(f"{path}: missing")
+                continue
+            for mesh, entry in glb.meshes(path).items():
+                budget = spec["max_tris"][lod]
+                if entry["triangles"] > budget:
+                    errors.append(f"{path}: {entry['triangles']} triangles (budget {budget})")
+                materials = sorted(p["material"] or "" for p in entry["primitives"])
+                if materials != COVER_SURFACES:
+                    errors.append(f"{path} {mesh}: surfaces {materials}, expected {COVER_SURFACES}")
+                if any("COLOR_0" not in p["attributes"] for p in entry["primitives"]):
+                    errors.append(f"{path} {mesh}: no vertex colour (tip weight)")
+    return errors
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="validate the assets of a content tree")
     ap.add_argument("content")
     ap.add_argument("--no-engine", action="store_true")
     a = ap.parse_args(argv)
-    errors = check_trees(a.content) + check_stumps(a.content)
+    errors = check_trees(a.content) + check_stumps(a.content) + check_ground_cover(a.content)
     for e in errors:
         print(f"  ERROR {e}")
     code = 0 if a.no_engine or errors else engine_check(a.content)
