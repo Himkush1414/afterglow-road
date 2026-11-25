@@ -2321,6 +2321,74 @@
 					}
 				}
 			}
+		},
+		"grass_type": {
+			"type": "object",
+			"fields": {
+				"variants": {
+					"type": "int",
+					"min": 1
+				},
+				"scale": {
+					"type": "list",
+					"min_len": 2,
+					"of": {
+						"type": "number",
+						"min": 0.01
+					},
+					"optional": true
+				}
+			}
+		},
+		"grass_layer": {
+			"type": "object",
+			"fields": {
+				"density": {
+					"type": "number",
+					"min": 0
+				},
+				"types": {
+					"type": "map",
+					"values": {
+						"type": "number",
+						"min": 0
+					}
+				}
+			}
+		},
+		"tuning_grass": {
+			"type": "object",
+			"fields": {
+				"cell_m": {
+					"type": "number",
+					"min": 4
+				},
+				"seed": {
+					"type": "int",
+					"optional": true
+				},
+				"road_mask_below": {
+					"type": "number",
+					"min": 0,
+					"max": 1
+				},
+				"water_depth_max_m": {
+					"type": "number",
+					"min": 0
+				},
+				"types": {
+					"type": "map",
+					"values": {
+						"type": "grass_type"
+					}
+				},
+				"layers": {
+					"type": "map",
+					"values": {
+						"type": "grass_layer"
+					}
+				}
+			}
 		}
 	},
 	"files": {
@@ -2388,6 +2456,10 @@
 					},
 					"trees": {
 						"type": "tuning_trees",
+						"optional": true
+					},
+					"grass": {
+						"type": "tuning_grass",
 						"optional": true
 					}
 				}
