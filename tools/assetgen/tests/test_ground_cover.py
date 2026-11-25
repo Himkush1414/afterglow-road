@@ -97,5 +97,51 @@ class GroundCoverTest(unittest.TestCase):
             ground_cover.check_preset(bad)
 
 
+FORAGE = {
+    "category": "sample_forage",
+    "size": 128,
+    "grid": 2,
+    "seed": 4,
+    "normal_strength": 2.0,
+    "ao": 0.4,
+    "cells": [
+        dict(COMMON, name="bush", shape="bush", palette=GREEN, seed=21, count=60, leaf_px=[9, 5]),
+        dict(COMMON, name="berry_bush", shape="bush", palette=GREEN, accent=ACCENT, seed=21, count=60,
+             leaf_px=[9, 5], berries=12, berry_px=4),
+        dict(COMMON, name="caps", shape="mushrooms", palette=GREEN, accent=ACCENT, count=3, cap_px=14),
+    ],
+}
+
+
+class ForageShapesTest(unittest.TestCase):
+    def test_seeded_bush_with_and_without_berries(self):
+        ca, _, cells = ground_cover.paint_atlas(FORAGE)
+        bush, berries = cell(ca, 0, 2, 128), cell(ca, 1, 2, 128)
+        self.assertGreater((bush[..., 3] >= 128).mean(), 0.05)
+        self.assertTrue(all(c["upright"] for c in cells))
+        # Same leaves: the coverage of the plain bush lies inside the berry bush.
+        self.assertTrue(np.all(berries[..., 3][bush[..., 3] >= 128] >= 128))
+        # Same colours on the leaves away from the berries (bleed and smoothing
+        # change the transparent area and the pixels next to a berry).
+        opaque = bush[..., 3] >= 128
+        same = np.all(bush == berries, axis=-1)[opaque]
+        self.assertGreater(same.mean(), 0.8)
+
+        def accent(img):
+            rgb = img[..., :3].astype(int)
+            return int(((rgb[..., 0] - rgb[..., 1] > 60) & (img[..., 3] >= 128)).sum())
+
+        self.assertEqual(accent(bush), 0)
+        self.assertGreater(accent(berries), 0)
+        self.assertGreater(accent(cell(ca, 2, 2, 128)), 0, "mushroom caps")
+
+    def test_berries_and_caps_need_an_accent(self):
+        for i in (1, 2):
+            bad = copy.deepcopy(FORAGE)
+            del bad["cells"][i]["accent"]
+            with self.assertRaises(ground_cover.PresetError):
+                ground_cover.check_preset(bad)
+
+
 if __name__ == "__main__":
     unittest.main()

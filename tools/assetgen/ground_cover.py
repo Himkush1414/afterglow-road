@@ -17,7 +17,16 @@ The atlas is a grid x grid set of square cells, one per entry of `cells`
 - "scatter": leaves lying in all directions over the whole cell, seen from
   above (litter: `count`, `leaf_px`);
 - "patch": a soft-edged noise blob filled with small dots, seen from above
-  (moss: `cells_noise`, `dots`, `dot_px`).
+  (moss: `cells_noise`, `dots`, `dot_px`);
+- "bush": short stems and a dome of overlapping leaves (`count` leaves,
+  `leaf_px`); with `berries` > 0, that many berries of `berry_px` in the
+  accent palette on top;
+- "mushrooms": `count` short stems, each with a domed cap (`cap_px` wide)
+  in the accent palette.
+
+A cell with its own `seed` paints from that seed instead of the shared
+stream, so two cells with the same seed and settings paint the same
+plant (a berry bush with and without its berries).
 
 Colour is reduced to the cell's palette (6-10 colours; an optional
 `accent` palette for dots and petals), smoothed with the Kuwahara filter
@@ -42,8 +51,8 @@ from PIL import Image
 
 from tools.assetgen import leaves, paint
 
-SHAPES = ("blades", "frond", "twigs", "flower", "scatter", "patch")
-UPRIGHT = ("blades", "frond", "twigs", "flower")
+SHAPES = ("blades", "frond", "twigs", "flower", "scatter", "patch", "bush", "mushrooms")
+UPRIGHT = ("blades", "frond", "twigs", "flower", "bush", "mushrooms")
 
 
 class PresetError(ValueError):
@@ -62,8 +71,8 @@ def check_preset(preset):
             raise PresetError(f"{c['name']}: named twice")
         names.add(c["name"])
         paint.check_material({"name": c["name"], "palette": c["palette"], "brush": c["brush"]})
-        if c["shape"] in ("twigs", "flower") and not c.get("accent"):
-            raise PresetError(f"{c['name']}: shape '{c['shape']}' needs an accent palette")
+        if (c["shape"] in ("twigs", "flower", "mushrooms") or c.get("berries")) and not c.get("accent"):
+            raise PresetError(f"{c['name']}: dots, petals, berries or caps need an accent palette")
 
 
 class Canvas:
@@ -167,6 +176,42 @@ def paint_cell(rng, n, c):
             reach = lp * size * 0.6 + 1
             x, y = rng.uniform(margin + reach, n - margin - reach, 2)
             cv.stamp(x, y, lp * size, wp * size, rng.uniform(0, math.pi), rng.uniform(0.1, 1.0), rng.random())
+    elif shape == "bush":
+        lp, wp = c["leaf_px"]
+        cx, base_y = n * 0.5, n - margin
+        r = (n - 2 * margin) * 0.42
+        cy = base_y - r * 1.05
+        for i in range(5):
+            b = np.array([cx + rng.uniform(-0.15, 0.15) * n, base_y])
+            cv.stroke(rng, b, np.array([cx + (i - 2) * r * 0.3, cy]), 0.04, 2.5, 1.2, 0.08, 0.1)
+        dome = []
+        for _ in range(c["count"]):
+            a, d = rng.uniform(0.0, 2.0 * math.pi), math.sqrt(rng.random())
+            x = cx + math.cos(a) * d * r
+            y = min(cy + math.sin(a) * d * r * 0.85, base_y - lp)
+            reach = lp * 0.6 + 1
+            x, y = np.clip([x, y], margin + reach, n - margin - reach)
+            # Lighter toward the top and the outside of the dome.
+            value = np.clip(0.3 + 0.35 * (cy - y) / r + 0.25 * d + rng.normal(0.0, 0.08), 0.0, 1.0)
+            cv.stamp(x, y, lp, wp, rng.uniform(0, math.pi), value, 0.2 + 0.6 * rng.random())
+            dome.append((x, y))
+        for k in range(c.get("berries", 0)):
+            x, y = dome[int(rng.integers(len(dome)))]
+            bp = c["berry_px"]
+            jitter = rng.normal(0, lp * 0.3, 2)
+            x, y = np.clip([x + jitter[0], y + jitter[1]], margin + bp, n - margin - bp)
+            cv.stamp(x, y, bp, bp, 0.0, rng.uniform(0.3, 0.9), 0.95, True)
+    elif shape == "mushrooms":
+        cap = c["cap_px"]
+        for i in range(c["count"]):
+            x = margin + cap + (n - 2 * margin - 2 * cap) * (i + rng.uniform(0.2, 0.8)) / c["count"]
+            top = n - margin - rng.uniform(0.25, 0.55) * (n - 2 * margin) * 0.5
+            cv.stroke(rng, np.array([x, n - margin]), np.array([x, top]), 0.02, cap * 0.22, cap * 0.18, 0.75, 0.5)
+            for k in range(6):
+                # A dome: stacked ellipses, wider at the rim, lighter on top.
+                t = k / 5
+                w = cap * (1.0 - 0.55 * t)
+                cv.stamp(x, top - t * cap * 0.35, w, cap * 0.32, 0.0, 0.25 + 0.6 * t, 0.6 + 0.05 * k, True)
     else:  # patch
         blob = paint.normalise(paint.fbm(rng, n, c["cells_noise"], [1.0, 0.5]))
         yy, xx = (np.mgrid[0:n, 0:n] + 0.5) / n - 0.5
@@ -213,13 +258,16 @@ def paint_atlas(preset):
     rough = np.full((size, size), 1.0)
     cells = []
     for i, c in enumerate(preset["cells"]):
-        cv = paint_cell(rng, n, c)
+        # A seeded cell paints and varies from its own streams (see the module doc).
+        own = "seed" in c
+        cv = paint_cell(np.random.default_rng(c["seed"]) if own else rng, n, c)
+        brush_rng = np.random.default_rng([c["seed"], 1]) if own else rng
         col = _colour(cv.va[..., 0], c["palette"])
         if c.get("accent"):
             col = np.where(cv.accent[..., None], _colour(cv.va[..., 0], c["accent"]), col)
         col = paint.kuwahara(col, c["kuwahara_radius"])
         for k in c["brush"]["cells"]:
-            col = col * (1.0 + c["brush"]["strength"] * (2.0 * paint.value_noise(rng, n, k) - 1.0))[..., None]
+            col = col * (1.0 + c["brush"]["strength"] * (2.0 * paint.value_noise(brush_rng, n, k) - 1.0))[..., None]
         sl = (slice((i // g) * n, (i // g + 1) * n), slice((i % g) * n, (i % g + 1) * n))
         rgb[sl], alpha[sl], depth[sl] = col, cv.va[..., 1], np.clip(cv.depth, 0.0, 1.0)
         r0, r1 = c["roughness"]
