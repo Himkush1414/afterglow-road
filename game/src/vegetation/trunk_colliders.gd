@@ -4,8 +4,9 @@ extends Node3D
 ## POOL nearest standing trees within RADIUS_M get a capsule on physics
 ## layer 5 (radius trunk_r_m x scale, height height_m x scale, standing on
 ## the ground; metadata "tree_id"). The selection runs again once the body
-## has moved RESELECT_M. Lying trunks (no crown, lower than LYING_BELOW_M)
-## get none yet. Tree chunks within RADIUS_M + PREFETCH_M are read on worker
+## has moved RESELECT_M. A lying trunk (no crown, lower than LYING_BELOW_M)
+## gets a horizontal capsule along its model's main axis, resting on the
+## ground; without a model it gets none. Tree chunks within RADIUS_M + PREFETCH_M are read on worker
 ## threads ahead of the body, so a selection reads no file unless the body
 ## jumped (spawn, teleport).
 
@@ -17,13 +18,15 @@ const LYING_BELOW_M := 1.0
 const LAYER := 5
 ## Extra reach of the chunk read-ahead around each body.
 const PREFETCH_M := 32.0
-## Floats per standing tree in a decoded chunk: map x, map z, radius, height, id.
-const STRIDE := 5
+## Floats per tree in a decoded chunk: map x, map z (capsule centre), radius,
+## length, id, axis x, axis z (axis 0, 0: standing).
+const STRIDE := 7
 
 var _field: TreeField
 var _world: WorldData
-## Per tree type (record model index): [trunk radius m, height m], or [] for
-## a lying trunk.
+## Per tree type (record model index): [trunk radius m, height m, lying axes]
+## where lying axes is [] for a standing tree, else one lying_axis() result
+## per variant; [] when the type gets no collider.
 var _sizes: Array = []
 ## tracked body -> {"at": Vector2 map position of the last selection or NAN,
 ## "bodies": Array[StaticBody3D]}
@@ -43,10 +46,16 @@ func setup(field: TreeField, world: WorldData, defs: Array) -> void:
 	_field = field
 	_world = world
 	_sizes.clear()
-	for d: Dictionary in defs:
+	for type in defs.size():
+		var d: Dictionary = defs[type]
 		var height := float(d.height_m)
-		var lying := float(d.get("canopy_r_m", 0.0)) <= 0.0 and height < LYING_BELOW_M
-		_sizes.append([] if lying else [float(d.trunk_r_m), height])
+		var size := [float(d.trunk_r_m), height, []]
+		if float(d.get("canopy_r_m", 0.0)) <= 0.0 and height < LYING_BELOW_M:
+			for mesh in field.variant_meshes(type):
+				(size[2] as Array).append(lying_axis(_vertices(mesh)))
+			if (size[2] as Array).all(func(a: Array) -> bool: return a.is_empty()):
+				size = []
+		_sizes.append(size)
 	_wait_for_reads()
 	_cache.clear()
 
@@ -110,8 +119,8 @@ func update(body: Node3D) -> void:
 	_assign(pool.bodies, trees_near(at))
 
 
-## The standing trees within RADIUS_M of a map position, nearest first, at
-## most POOL: each [map x, map z, radius, height, id].
+## The trees within RADIUS_M of a map position, nearest first, at most POOL:
+## each [map x, map z, radius, length, id, axis x, axis z].
 func trees_near(at: Vector2) -> Array:
 	var found := []
 	var lo := WorldData.tree_chunk_of_map(Vector3(at.x - RADIUS_M, 0.0, at.y - RADIUS_M))
@@ -128,7 +137,11 @@ func trees_near(at: Vector2) -> Array:
 	for f: Array in found.slice(0, POOL):
 		var data: PackedFloat64Array = f[2]
 		var o: int = f[1]
-		out.append([data[o], data[o + 1], data[o + 2], data[o + 3], int(data[o + 4])])
+		var t := []
+		for k in STRIDE:
+			t.append(data[o + k])
+		t[4] = int(t[4])
+		out.append(t)
 	return out
 
 
@@ -193,22 +206,88 @@ func _wait_for_reads() -> void:
 	_mutex.unlock()
 
 
-## Decodes the standing trees of a chunk (any thread: reads only).
+## Decodes the trees of a chunk that get a collider (any thread: reads only).
 func _read(c: Vector2i) -> PackedFloat64Array:
 	var data := PackedFloat64Array()
 	if c.x < 0 or c.y < 0:
 		return data
 	var raw := _field.chunk_records(c)
-	var base := WorldData.tree_chunk_index(c) << TreeField.RECORD_BITS
+	var ci := WorldData.tree_chunk_index(c)
 	for i in raw.size() / TreeField.RECORD_BYTES:
 		var r := TreeField.decode(raw, c, i)
 		var size: Array = _sizes[r.model] if r.model < _sizes.size() else []
 		if size.is_empty():
 			continue
-		data.append_array(
-			[r.map.x, r.map.y, float(size[0]) * r.scale, float(size[1]) * r.scale, float(base | i)]
+		var id := float((ci << TreeField.RECORD_BITS) | i)
+		var scale: float = r.scale
+		var radius := float(size[0]) * scale
+		var axes: Array = size[2]
+		if axes.is_empty():
+			data.append_array([r.map.x, r.map.y, radius, float(size[1]) * scale, id, 0.0, 0.0])
+			continue
+		# The variant the renderer picks for this record (TreeField.chunk_buffers).
+		var lying: Array = axes[TreeField.record_hash(ci, i) % axes.size()]
+		if lying.is_empty():
+			continue
+		var turn := Basis(Vector3.UP, float(r.yaw))
+		var dir: Vector2 = lying[0]
+		var mid: Vector2 = lying[2]
+		var axis := turn * Vector3(dir.x, 0.0, dir.y)
+		var centre := turn * Vector3(mid.x, 0.0, mid.y) * scale
+		(
+			data
+			. append_array(
+				[
+					r.map.x + centre.x,
+					r.map.y + centre.z,
+					radius,
+					float(lying[1]) * scale,
+					id,
+					axis.x,
+					axis.z,
+				]
+			)
 		)
 	return data
+
+
+## Main axis of a lying trunk from its model's vertices (principal axis in
+## the horizontal plane): [axis (unit, x z), length m, centre (x z)], or []
+## when there are no vertices.
+static func lying_axis(vertices: PackedVector3Array) -> Array:
+	if vertices.is_empty():
+		return []
+	var mean := Vector2.ZERO
+	for v in vertices:
+		mean += Vector2(v.x, v.z)
+	mean /= vertices.size()
+	var sxx := 0.0
+	var szz := 0.0
+	var sxz := 0.0
+	for v in vertices:
+		var d := Vector2(v.x, v.z) - mean
+		sxx += d.x * d.x
+		szz += d.y * d.y
+		sxz += d.x * d.y
+	var angle := 0.5 * atan2(2.0 * sxz, sxx - szz)
+	var axis := Vector2(cos(angle), sin(angle))
+	var lo := INF
+	var hi := -INF
+	for v in vertices:
+		var t := Vector2(v.x, v.z).dot(axis)
+		lo = minf(lo, t)
+		hi = maxf(hi, t)
+	var centre := mean + axis * ((lo + hi) * 0.5 - mean.dot(axis))
+	return [axis, hi - lo, centre]
+
+
+static func _vertices(mesh: Mesh) -> PackedVector3Array:
+	var out := PackedVector3Array()
+	if mesh == null:
+		return out
+	for s in mesh.get_surface_count():
+		out.append_array(mesh.surface_get_arrays(s)[Mesh.ARRAY_VERTEX])
+	return out
 
 
 ## Gives the selected trees a collider each; bodies already on a selected
@@ -234,8 +313,14 @@ func _assign(bodies: Array[StaticBody3D], trees: Array) -> void:
 		shape.radius = radius
 		shape.height = height
 		var pos := _world.map_to_world(Vector3(t[0], 0.0, t[1]))
-		pos.y = _world.height_at(pos.x, pos.z) + height * 0.5
-		b.global_position = pos
+		var ground := _world.height_at(pos.x, pos.z)
+		var basis := Basis.IDENTITY
+		pos.y = ground + height * 0.5
+		if t[5] != 0.0 or t[6] != 0.0:  # lying: the capsule's axis (local y) along the trunk
+			var along := Vector3(t[5], 0.0, t[6]).normalized()
+			basis = Basis(along.cross(Vector3.UP), along, Vector3.UP)
+			pos.y = ground + radius
+		b.global_transform = Transform3D(basis, pos)
 		b.set_meta(&"tree_id", id)
 		col.disabled = false
 	for b in free:
