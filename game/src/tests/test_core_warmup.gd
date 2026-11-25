@@ -23,9 +23,9 @@ func test_features_and_environment_follow_the_preset() -> void:
 func test_run_draws_and_then_removes_it() -> void:
 	var holder := Node.new()
 	tree.root.add_child(holder)
-	var start := tree.get_frame()
+	var start := Engine.get_process_frames()
 	await Warmup.run(holder)
-	check(tree.get_frame() - start >= Warmup.FRAMES - 1, "frames passed while drawn")
+	check(Engine.get_process_frames() - start >= Warmup.FRAMES - 1, "frames passed while drawn")
 	await tree.process_frame
 	check_eq(holder.get_child_count(), 0, "removed afterwards")
 	holder.free()
