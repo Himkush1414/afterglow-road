@@ -118,6 +118,11 @@ func test_instance_transform_stands_on_the_ground() -> void:
 	var o := f.cell_origin(CELL)
 	var at := o + Vector3(t.origin.x, 0.0, t.origin.z)
 	check_near(t.origin.y, _world.height_at(at.x, at.z), 1e-4, "on the ground")
+	var off := 0
+	for k in a.size() / GrassField.STRIDE:
+		var p := o + Vector3(a[k * GrassField.STRIDE + 3], 0.0, a[k * GrassField.STRIDE + 11])
+		off += int(absf(a[k * GrassField.STRIDE + 7] - _world.height_at(p.x, p.z)) > 1e-3)
+	check_eq(off, 0, "every plant on the ground")
 	check(
 		t.origin.x >= 0.0 and t.origin.x < 32.0 and t.origin.z >= 0.0 and t.origin.z < 32.0,
 		"in the cell"

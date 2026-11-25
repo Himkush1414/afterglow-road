@@ -23,6 +23,8 @@ const SUB_M := 4.0
 const STRIDE := 16
 ## Hole circles at most (06 §B2).
 const MAX_HOLES := 64
+## Sub-cell patterns in the bank (see _cap).
+const PATTERNS := 64
 
 var errors: PackedStringArray = []
 ## Cell side in metres.
@@ -47,8 +49,26 @@ var _density := PackedFloat32Array()
 ## Per terrain layer: cumulative shares and the draw index of each type entry.
 var _share_sum: Array[PackedFloat32Array] = []
 var _share_type: Array[PackedInt32Array] = []
-## Per draw type entry: [first draw index, variants, scale min, scale max].
-var _types: Array = []
+## Per type: first draw index, variants, scale range (packed for the build loop).
+var _type_draw := PackedInt32Array()
+var _type_variants := PackedInt32Array()
+var _type_scale_lo := PackedFloat32Array()
+var _type_scale_hi := PackedFloat32Array()
+## The pattern bank: PATTERNS sub-cell patterns of _cap plants each, every
+## plant's random numbers drawn once in configure (position in the
+## sub-cell, layer and type picks 0..1, yaw as cos and sin, size 0..1, fade
+## key, wind phase). A sub-cell takes the first n plants of one pattern.
+var _cap := 0
+var _p_x := PackedFloat32Array()
+var _p_z := PackedFloat32Array()
+var _p_pick := PackedFloat32Array()
+var _p_share := PackedFloat32Array()
+var _p_variant := PackedFloat32Array()
+var _p_cos := PackedFloat32Array()
+var _p_sin := PackedFloat32Array()
+var _p_size := PackedFloat32Array()
+var _p_fade := PackedFloat32Array()
+var _p_phase := PackedFloat32Array()
 var _biome_layer := PackedInt32Array()
 var _slope_layer := PackedInt32Array()
 var _slope_deg := PackedFloat32Array()
@@ -65,6 +85,10 @@ func configure(world: WorldData, cfg: Dictionary, terrain: Dictionary, density_m
 	_cfg = cfg
 	_mult = density_mult
 	cell_m = float(cfg.cell_m)
+	if fmod(cell_m, SUB_M) != 0.0 or fmod(cell_m, world.sample_m) != 0.0:
+		errors.append(
+			"grass: cell_m %s is not a multiple of %s and %s" % [cell_m, SUB_M, world.sample_m]
+		)
 	_seed = int(cfg.get("seed", 0))
 	mask = world.mask()
 	mask_side = world.mask_side() if not mask.is_empty() else 0
@@ -73,14 +97,20 @@ func configure(world: WorldData, cfg: Dictionary, terrain: Dictionary, density_m
 	for i in layers.size():
 		index[layers[i]] = i
 	draws.clear()
-	_types.clear()
+	_type_draw.clear()
+	_type_variants.clear()
+	_type_scale_lo.clear()
+	_type_scale_hi.clear()
 	var type_index := {}
 	var types: Dictionary = cfg.types
 	for name: String in types:
 		var t: Dictionary = types[name]
 		var scale: Array = t.get("scale", [1.0, 1.0])
-		type_index[name] = _types.size()
-		_types.append([draws.size(), int(t.variants), float(scale[0]), float(scale[1])])
+		type_index[name] = _type_draw.size()
+		_type_draw.append(draws.size())
+		_type_variants.append(int(t.variants))
+		_type_scale_lo.append(float(scale[0]))
+		_type_scale_hi.append(float(scale[1]))
 		for v in int(t.variants):
 			draws.append([name, v])
 	_density = PackedFloat32Array()
@@ -127,7 +157,48 @@ func configure(world: WorldData, cfg: Dictionary, terrain: Dictionary, density_m
 	_slope_half = maxf(float(terrain.get("slope_blend_deg", 0.0)) * 0.5, 0.001)
 	_dirt_layer = index.get(terrain.get("dirt_layer", ""), -1)
 	_mud_layer = index.get(terrain.get("mud_layer", ""), -1)
+	var top := 0.0
+	for d in _density:
+		top = maxf(top, d)
+	_fill_patterns(maxi(1, ceili(top * SUB_M * SUB_M * _mult)))
 	return errors.is_empty()
+
+
+func _fill_patterns(cap: int) -> void:
+	_cap = cap
+	var rng := RandomNumberGenerator.new()
+	rng.seed = _seed * 2654435761 + 1
+	var arrays: Array[PackedFloat32Array] = []
+	for a in 10:
+		var v := PackedFloat32Array()
+		v.resize(PATTERNS * cap)
+		arrays.append(v)
+	for k in PATTERNS * cap:
+		var yaw := rng.randf() * TAU
+		var row := [
+			rng.randf() * SUB_M,
+			rng.randf() * SUB_M,
+			rng.randf(),
+			rng.randf(),
+			rng.randf(),
+			cos(yaw),
+			sin(yaw),
+			rng.randf(),
+			rng.randf(),
+			rng.randf(),
+		]
+		for a in 10:
+			arrays[a][k] = row[a]
+	_p_x = arrays[0]
+	_p_z = arrays[1]
+	_p_pick = arrays[2]
+	_p_share = arrays[3]
+	_p_variant = arrays[4]
+	_p_cos = arrays[5]
+	_p_sin = arrays[6]
+	_p_size = arrays[7]
+	_p_fade = arrays[8]
+	_p_phase = arrays[9]
 
 
 ## Map cell (cx, cz) holding an engine position.
@@ -145,9 +216,6 @@ func cell_origin(cell: Vector2i) -> Vector3:
 ## The cell's instances, one PackedFloat32Array of STRIDE floats per
 ## instance for each entry of `draws` (any thread: reads only).
 func build_cell(cell: Vector2i) -> Array[PackedFloat32Array]:
-	var out: Array[PackedFloat32Array] = []
-	for d in draws.size():
-		out.append(PackedFloat32Array())
 	var rng := RandomNumberGenerator.new()
 	rng.seed = _cell_seed(cell)
 	var origin := cell_origin(cell)
@@ -156,36 +224,46 @@ func build_cell(cell: Vector2i) -> Array[PackedFloat32Array]:
 	var road := float(_cfg.road_mask_below)
 	var area := SUB_M * SUB_M
 	var subs := roundi(cell_m / SUB_M)
+	var hs := _height_grid(origin)
+	var side := ceili(cell_m / _world.sample_m) + 2
+	var inv_step := 1.0 / _world.sample_m
 	var w := PackedFloat32Array()
 	w.resize(_density.size())
+	# Every plant goes to one flat buffer first; split by draw at the end.
+	var flat := PackedFloat32Array()
+	var ids := PackedInt32Array()
+	var count := 0
 	for sj in subs:
 		for si in subs:
 			var x0 := si * SUB_M
 			var z0 := sj * SUB_M
 			var mw := _weights(origin + Vector3(x0 + SUB_M * 0.5, 0.0, z0 + SUB_M * 0.5), w)
-			var way := mw.x
+			if mw.x >= road:
+				continue  # a way: world data, so skipping its numbers moves nothing else
 			var expect := 0.0
 			for li in w.size():
 				w[li] *= _density[li]
 				expect += w[li]
+			var weight_sum := expect
 			expect *= area * _mult
 			var n := floori(expect)
 			if rng.randf() < expect - n:
 				n += 1
+			if n == 0:
+				continue
 			var water := _water_near(origin + Vector3(x0, 0.0, z0), mw.y)
-			for k in n:
-				# Draw every number first: the checks below never shift the stream.
-				var lx := x0 + rng.randf() * SUB_M
-				var lz := z0 + rng.randf() * SUB_M
-				var pick := rng.randf() * expect / (area * _mult)
-				var share := rng.randf()
-				var vpick := rng.randf()
-				var yaw := rng.randf() * TAU
-				var size := rng.randf()
-				var fade := rng.randf()
-				var phase := rng.randf()
-				if way >= road:
-					continue
+			if flat.size() < (count + n) * STRIDE:
+				flat.resize(maxi(flat.size() * 2, (count + n) * STRIDE))
+				ids.resize(flat.size() / STRIDE)
+			var base := (rng.randi() % PATTERNS) * _cap
+			for k in mini(n, _cap):
+				var q := base + k
+				var lx := x0 + _p_x[q]
+				var lz := z0 + _p_z[q]
+				var pick := _p_pick[q] * weight_sum
+				var share := _p_share[q]
+				var vpick := _p_variant[q]
+				var size := _p_size[q]
 				var li := 0
 				while li < w.size() - 1 and pick >= w[li]:
 					pick -= w[li]
@@ -197,22 +275,74 @@ func build_cell(cell: Vector2i) -> Array[PackedFloat32Array]:
 				var e := 0
 				while e < sums.size() - 1 and share >= sums[e]:
 					e += 1
-				var t: Array = _types[_share_type[li][e]]
-				var draw: int = t[0] + mini(int(vpick * t[1]), t[1] - 1)
-				var ex := origin.x + lx
-				var ez := origin.z + lz
-				if _in_hole(cell_holes, ex, ez):
+				var ti := _share_type[li][e]
+				var variants := _type_variants[ti]
+				var draw := _type_draw[ti] + mini(int(vpick * variants), variants - 1)
+				if not cell_holes.is_empty() and _in_hole(cell_holes, origin.x + lx, origin.z + lz):
 					continue
-				if water and float(depth_of.call(Vector3(ex, 0.0, ez))) > max_depth:
-					continue
-				var s := lerpf(t[2], t[3], size)
-				var c := cos(yaw) * s
-				var sn := sin(yaw) * s
-				var y := _world.height_at(ex, ez)
-				out[draw].append_array(
-					[c, 0.0, sn, lx, 0.0, s, 0.0, y, -sn, 0.0, c, lz, fade, phase, 0.0, 0.0]
-				)
+				if water:
+					var depth := float(depth_of.call(Vector3(origin.x + lx, 0.0, origin.z + lz)))
+					if depth > max_depth:
+						continue
+				# Height on the heightmap's triangles, as WorldData.height_at.
+				var fx := lx * inv_step
+				var fz := lz * inv_step
+				var i := int(fx)
+				var j := int(fz)
+				var tx := fx - i
+				var tz := fz - j
+				var o := j * side + i
+				var y: float
+				if tx + tz <= 1.0:
+					y = hs[o] + (hs[o + 1] - hs[o]) * tx + (hs[o + side] - hs[o]) * tz
+				else:
+					var h11 := hs[o + side + 1]
+					y = h11 + (hs[o + side] - h11) * (1.0 - tx) + (hs[o + 1] - h11) * (1.0 - tz)
+				var sc := _type_scale_lo[ti] + (_type_scale_hi[ti] - _type_scale_lo[ti]) * size
+				var c := _p_cos[q] * sc
+				var sn := _p_sin[q] * sc
+				var f := count * STRIDE
+				flat[f] = c
+				flat[f + 1] = 0.0
+				flat[f + 2] = sn
+				flat[f + 3] = lx
+				flat[f + 4] = 0.0
+				flat[f + 5] = sc
+				flat[f + 6] = 0.0
+				flat[f + 7] = y
+				flat[f + 8] = -sn
+				flat[f + 9] = 0.0
+				flat[f + 10] = c
+				flat[f + 11] = lz
+				flat[f + 12] = _p_fade[q]
+				flat[f + 13] = _p_phase[q]
+				flat[f + 14] = 0.0
+				flat[f + 15] = 0.0
+				ids[count] = draw
+				count += 1
+	var out: Array[PackedFloat32Array] = []
+	for d in draws.size():
+		out.append(PackedFloat32Array())
+	for k in count:
+		out[ids[k]].append_array(flat.slice(k * STRIDE, (k + 1) * STRIDE))
 	return out
+
+
+## Heights of the samples around a cell whose engine corner is `origin`:
+## rows of ceil(cell_m / sample_m) + 2 values from the sample at or before
+## the corner (the cell corner lies on a sample when cell_m is a multiple of
+## sample_m).
+func _height_grid(origin: Vector3) -> PackedFloat32Array:
+	var m := _world.world_to_map(origin)
+	var i0 := floori(m.x / _world.sample_m)
+	var j0 := floori(m.z / _world.sample_m)
+	var side := ceili(cell_m / _world.sample_m) + 2
+	var hs := PackedFloat32Array()
+	hs.resize(side * side)
+	for j in side:
+		for i in side:
+			hs[j * side + i] = _world.sample(i0 + i, j0 + j)
+	return hs
 
 
 func _cell_seed(cell: Vector2i) -> int:
