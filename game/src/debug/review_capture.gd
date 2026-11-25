@@ -64,6 +64,7 @@ class Runner:
 				game.weather.next_change_gmin = INF  # no roll while the clock jumps
 				game.clock.set_now(gmin)
 				for f in SETTLE_FRAMES:
+					_close_pause_menu(game)
 					await get_tree().process_frame
 				await RenderingServer.frame_post_draw
 				var img := get_viewport().get_texture().get_image()
@@ -79,6 +80,13 @@ class Runner:
 			)
 		)
 		get_tree().quit(0 if saved == want else 1)
+
+	## Focus loss opens the pause menu, which would cover the frame and pause
+	## the tree (the sky would not follow the clock); the capture keeps it shut.
+	func _close_pause_menu(game: Game) -> void:
+		var menu := game.get_node_or_null("UI/PauseMenu")
+		if menu and menu.visible:
+			menu.close()
 
 	func _camera(game: Game, cfg: Dictionary) -> Camera3D:
 		var doc: Variant = JSON.parse_string(
