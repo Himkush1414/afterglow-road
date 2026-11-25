@@ -11,7 +11,7 @@ from PIL import Image
 from tools.assetgen import glb, validate
 
 BUDGETS = [100, 50, 20]
-MATERIALS = ["bark", "leaves", "billboard", "cut"]
+MATERIALS = ["bark", "leaves", "billboard", "cut", "ground_cover"]
 
 
 def _write_glb(path, meshes):
@@ -169,6 +169,54 @@ class StumpTest(unittest.TestCase):
             for fragment in ("306 triangles (budget 300)", "stump_stump_2.glb: missing", "stump_cap_1 stump_cap_1: surfaces ['bark'], expected ['bark', 'cut']"):
                 self.assertTrue(any(fragment in e for e in errors), (fragment, errors))
             self.assertEqual(len(errors), 3, errors)
+
+class GroundCoverTest(unittest.TestCase):
+    def _content(self, d):
+        os.makedirs(os.path.join(d, "assetgen"))
+        models = os.path.join(d, validate.COVER_MODEL_DIR)
+        textures = os.path.join(d, validate.COVER_TEXTURE_DIR)
+        os.makedirs(models)
+        for sub in ("hi", "lo"):
+            os.makedirs(os.path.join(textures, sub))
+            for kind in ("ca", "nra"):
+                open(os.path.join(textures, sub, f"cover_{kind}.png"), "wb").close()
+        with open(os.path.join(textures, "cover.json"), "w") as f:
+            json.dump({"cells": [{"name": "tuft"}, {"name": "mat"}]}, f)
+        lods = {"hi": {}, "lo": {}}
+        budget = {"hi": 60, "lo": 24}
+        with open(os.path.join(d, "assetgen", "ground_cover_meshes.json"), "w") as f:
+            json.dump({"category": "cover", "meshes": [
+                {"name": "tuft", "cell": "tuft", "lods": lods, "max_tris": budget},
+                {"name": "mat", "cell": "mat", "lods": lods, "max_tris": budget},
+            ]}, f)
+        for name in ("tuft", "mat"):
+            for lod, tris in (("hi", 24), ("lo", 12)):
+                _write_glb(os.path.join(models, f"cover_{name}_{lod}.glb"), [(name, [("ground_cover", tris, True)])])
+        return models, textures
+
+    def test_no_preset_no_check(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(validate.check_ground_cover(d), [])
+
+    def test_complete_set_passes_and_faults_are_reported(self):
+        with tempfile.TemporaryDirectory() as d:
+            models, textures = self._content(d)
+            self.assertEqual(validate.check_ground_cover(d), [])
+            _write_glb(os.path.join(models, "cover_tuft_lo.glb"), [("tuft", [("ground_cover", 30, True)])])
+            _write_glb(os.path.join(models, "cover_mat_hi.glb"), [("mat", [("bark", 8, False)])])
+            os.remove(os.path.join(models, "cover_mat_lo.glb"))
+            os.remove(os.path.join(textures, "lo", "cover_nra.png"))
+            errors = validate.check_ground_cover(d)
+            for fragment in (
+                "cover_tuft_lo.glb: 30 triangles (budget 24)",
+                "cover_mat_hi.glb mat: surfaces ['bark'], expected ['ground_cover']",
+                "cover_mat_hi.glb mat: no vertex colour",
+                "cover_mat_lo.glb: missing",
+                "cover_nra.png: missing",
+            ):
+                self.assertTrue(any(fragment in e for e in errors), (fragment, errors))
+            self.assertEqual(len(errors), 5, errors)
+
 
 if __name__ == "__main__":
     unittest.main()
