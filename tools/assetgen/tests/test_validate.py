@@ -11,7 +11,7 @@ from PIL import Image
 from tools.assetgen import glb, validate
 
 BUDGETS = [100, 50, 20]
-MATERIALS = ["bark", "leaves", "billboard"]
+MATERIALS = ["bark", "leaves", "billboard", "cut"]
 
 
 def _write_glb(path, meshes):
@@ -139,6 +139,36 @@ class ValidateTreesTest(unittest.TestCase):
             self.assertEqual(len(errors), 4, errors)
             self.assertTrue(all("missing" in e for e in errors), errors)
 
+
+
+class StumpTest(unittest.TestCase):
+    def _content(self, d):
+        os.makedirs(os.path.join(d, "assetgen"))
+        os.makedirs(os.path.join(d, validate.STUMP_DIR))
+        with open(os.path.join(d, "assetgen", "stumps.json"), "w") as f:
+            json.dump({"category": "stump", "meshes": [
+                {"name": "stump", "variants": 2, "max_tris": 300},
+                {"name": "cap", "variants": 1, "max_tris": 300},
+            ]}, f)
+        return os.path.join(d, validate.STUMP_DIR)
+
+    def test_no_preset_no_check(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(validate.check_stumps(d), [])
+
+    def test_complete_stumps_pass_and_faults_are_reported(self):
+        with tempfile.TemporaryDirectory() as d:
+            models = self._content(d)
+            for name in ("stump_stump_1", "stump_stump_2", "stump_cap_1"):
+                _write_glb(os.path.join(models, name + ".glb"), [(name, [("bark", 60, False), ("cut", 16, False)])])
+            self.assertEqual(validate.check_stumps(d), [])
+            _write_glb(os.path.join(models, "stump_stump_1.glb"), [("stump_stump_1", [("bark", 290, False), ("cut", 16, False)])])
+            _write_glb(os.path.join(models, "stump_cap_1.glb"), [("stump_cap_1", [("bark", 40, False)])])
+            os.remove(os.path.join(models, "stump_stump_2.glb"))
+            errors = validate.check_stumps(d)
+            for fragment in ("306 triangles (budget 300)", "stump_stump_2.glb: missing", "stump_cap_1 stump_cap_1: surfaces ['bark'], expected ['bark', 'cut']"):
+                self.assertTrue(any(fragment in e for e in errors), (fragment, errors))
+            self.assertEqual(len(errors), 3, errors)
 
 if __name__ == "__main__":
     unittest.main()
