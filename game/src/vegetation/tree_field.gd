@@ -117,12 +117,12 @@ func setup(world: WorldData, defs: Array, cfg: Dictionary, tiers: Array, root: S
 	if world.index_of(FOLDER).is_empty():
 		errors.append("%s/index.json: missing or changed" % FOLDER)
 	TreeShading.push(cfg, tiers)
+	_quad = unit_quad()
+	_setup_models(root if root != "" else String(ContentDB.root))
 	if trunks == null:
 		trunks = TrunkColliders.new()
 		add_child(trunks)
 	trunks.setup(self, world, defs)
-	_quad = unit_quad()
-	_setup_models(root if root != "" else String(ContentDB.root))
 	return errors.is_empty()
 
 
@@ -174,6 +174,16 @@ static func decode(raw: PackedByteArray, chunk: Vector2i, i: int) -> Dictionary:
 		"yaw": raw[o + 5] / 256.0 * TAU,
 		"scale": 0.75 + raw[o + 6] / 510.0,
 	}
+
+
+## The T1 mesh of each variant of a tree type (null where no model loaded),
+## in the order a record's hash picks them.
+func variant_meshes(type: int) -> Array[Mesh]:
+	var out: Array[Mesh] = []
+	for v: Array in _variants[type] if type < _variants.size() else []:
+		var model: int = v[3]
+		out.append((_models[model].meshes as Array)[T1] if model >= 0 else null)
+	return out
 
 
 ## Decoded records of a chunk (empty when it has no trees).

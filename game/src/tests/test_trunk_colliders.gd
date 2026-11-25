@@ -142,3 +142,38 @@ func test_a_body_cannot_walk_through_a_trunk() -> void:
 	await tree.process_frame  # the freed capsules leave the space
 	d = await _walk_into_trunk(body)
 	check(d > 2.0, "walks on without colliders (%.3f m)" % d)
+
+
+func test_the_main_axis_of_a_lying_trunk() -> void:
+	# Rings of a 4 m trunk (radius 0.2 m) lying at 30 degrees around (1, -0.5).
+	var axis := Vector3(cos(PI / 6.0), 0.0, sin(PI / 6.0))
+	var side := axis.cross(Vector3.UP)
+	var verts := PackedVector3Array()
+	for k in 9:
+		for j in 8:
+			var a := TAU * j / 8.0
+			var ring := side * cos(a) * 0.2 + Vector3.UP * (0.2 + sin(a) * 0.2)
+			verts.append(Vector3(1.0, 0.0, -0.5) + axis * (k / 8.0 * 4.0 - 2.0) + ring)
+	var got := TrunkColliders.lying_axis(verts)
+	var dir: Vector2 = got[0]
+	check_near(absf(dir.dot(Vector2(axis.x, axis.z))), 1.0, 1e-4, "along the trunk")
+	check_near(got[1], 4.0, 1e-3, "length")
+	check((got[2] as Vector2).is_equal_approx(Vector2(1.0, -0.5)), "centre %s" % str(got[2]))
+	check_eq(TrunkColliders.lying_axis(PackedVector3Array()), [], "no vertices")
+
+
+func test_a_lying_trunk_without_a_model_gets_no_capsule() -> void:
+	if not check(_world.load_dir(ContentDB.SAMPLE_ROOT + "/world"), ", ".join(_world.errors)):
+		return
+	var d: Dictionary = (
+		JSON
+		. parse_string(FileAccess.get_file_as_string(ContentDB.SAMPLE_ROOT + "/data/trees.json"))
+		. trees
+	)[0]
+	d.height_m = 0.5
+	d.canopy_r_m = 0.0
+	if not check(_field.setup(_world, [d], {}, TIERS, ContentDB.SAMPLE_ROOT)):
+		return
+	var body := _marker(TREE + Vector2(2.0, 0.0))
+	_field.trunks.track(body)
+	check_eq(_field.trunks.colliders_of(body).size(), 0, "sample has no models")
