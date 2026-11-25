@@ -511,6 +511,7 @@ func _add_chunk(c: Vector2i, buffers: Dictionary) -> void:
 		mm.instance_count = entry[1]
 		mm.buffer = entry[0]
 		var node := MultiMeshInstance3D.new()
+		node.name = "Mid_%s" % _models[model].stem
 		node.multimesh = mm
 		node.cast_shadow = (
 			GeometryInstance3D.SHADOW_CASTING_SETTING_ON
