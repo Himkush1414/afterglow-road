@@ -2261,6 +2261,64 @@
 				"tint_hue_rad": {
 					"type": "number",
 					"min": 0
+				},
+				"leaf_particles": {
+					"type": "tree_leaf_particles",
+					"optional": true
+				}
+			}
+		},
+		"tree_leaf_particles": {
+			"type": "object",
+			"fields": {
+				"min_wind_ms": {
+					"type": "number",
+					"min": 0
+				},
+				"radius_m": {
+					"type": "number",
+					"min": 1
+				},
+				"amount": {
+					"type": "int",
+					"min": 1
+				},
+				"lifetime_s": {
+					"type": "number",
+					"min": 0.1
+				},
+				"size_m": {
+					"type": "number",
+					"min": 0.001
+				},
+				"crown_height": {
+					"type": "number",
+					"min": 0
+				},
+				"points_max": {
+					"type": "int",
+					"min": 1
+				},
+				"reselect_m": {
+					"type": "number",
+					"min": 0.1
+				},
+				"drift": {
+					"type": "number",
+					"min": 0
+				},
+				"gravity_ms2": {
+					"type": "number",
+					"min": 0
+				},
+				"colour": {
+					"type": "list",
+					"min_len": 3,
+					"of": {
+						"type": "number",
+						"min": 0,
+						"max": 1
+					}
 				}
 			}
 		}
