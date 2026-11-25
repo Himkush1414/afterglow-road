@@ -15,6 +15,13 @@ extends Node3D
 ## or inside a hole circle (T-06-9). The random numbers are drawn before
 ## any of those checks, so a hole only removes plants and never moves the
 ## others. All numbers come from the "grass" tuning.
+##
+## Streaming (06 §B2, §B5): every cell reaching within `radius_m` of the eye
+## is built on a worker thread (EMPTY -> BUILDING), at most MAX_BUILDS at a
+## time, nearest first; one finished cell per update is added as one
+## MultiMesh per draw (VISIBLE); cells beyond radius_m + KEEP_EXTRA_M are
+## freed (FREED). A change of the holes rebuilds the cells it touches and
+## swaps them in when done, so they never go bare.
 
 ## Sub-cell side in metres (one mask texel, 04 §2).
 const SUB_M := 4.0
@@ -25,6 +32,10 @@ const STRIDE := 16
 const MAX_HOLES := 64
 ## Sub-cell patterns in the bank (see _cap).
 const PATTERNS := 64
+const MAX_BUILDS := 2
+const KEEP_EXTRA_M := 8.0
+## The wanted cells are worked out again when the eye moved this far.
+const RESELECT_M := 4.0
 
 var errors: PackedStringArray = []
 ## Cell side in metres.
@@ -39,6 +50,12 @@ var mask := PackedByteArray()
 var mask_side := 0
 ## Water depth in metres at an engine position; unset: no water.
 var depth_of: Callable
+## Streaming radius in metres (quality preset).
+var radius_m := 48.0
+## Plants in the added cells.
+var instances := 0
+## Longest main-thread time of one update() in microseconds (T-06-10).
+var worst_update_usec := 0
 
 var _world: WorldData
 var _cfg := {}
@@ -69,6 +86,18 @@ var _p_sin := PackedFloat32Array()
 var _p_size := PackedFloat32Array()
 var _p_fade := PackedFloat32Array()
 var _p_phase := PackedFloat32Array()
+var _meshes: Array[Mesh] = []
+## Added cells: cell -> [holder Node3D, plant count].
+var _cells := {}
+## Cells being built: cell -> worker task id.
+var _pending := {}
+## Finished builds, written by the workers: cell -> Array[PackedFloat32Array].
+var _done := {}
+var _mutex := Mutex.new()
+var _wanted: Array[Vector2i] = []
+## Added cells waiting for a rebuild after a hole change.
+var _stale := {}
+var _last_eye := Vector3(INF, INF, INF)
 var _biome_layer := PackedInt32Array()
 var _slope_layer := PackedInt32Array()
 var _slope_deg := PackedFloat32Array()
@@ -216,10 +245,14 @@ func cell_origin(cell: Vector2i) -> Vector3:
 ## The cell's instances, one PackedFloat32Array of STRIDE floats per
 ## instance for each entry of `draws` (any thread: reads only).
 func build_cell(cell: Vector2i) -> Array[PackedFloat32Array]:
+	return _build_cell(cell, holes)
+
+
+func _build_cell(cell: Vector2i, hole_list: PackedVector3Array) -> Array[PackedFloat32Array]:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = _cell_seed(cell)
 	var origin := cell_origin(cell)
-	var cell_holes := _holes_near(origin)
+	var cell_holes := _holes_near(origin, hole_list)
 	var max_depth := float(_cfg.water_depth_max_m)
 	var road := float(_cfg.road_mask_below)
 	var area := SUB_M * SUB_M
@@ -426,10 +459,10 @@ func _water_near(at: Vector3, wet: float) -> bool:
 
 
 ## The holes reaching into the cell whose engine corner is `origin`.
-func _holes_near(origin: Vector3) -> PackedVector3Array:
+func _holes_near(origin: Vector3, hole_list: PackedVector3Array) -> PackedVector3Array:
 	var out := PackedVector3Array()
-	for i in mini(holes.size(), MAX_HOLES):
-		var h := holes[i]
+	for i in mini(hole_list.size(), MAX_HOLES):
+		var h := hole_list[i]
 		var cx := clampf(h.x, origin.x, origin.x + cell_m)
 		var cz := clampf(h.y, origin.z, origin.z + cell_m)
 		if Vector2(h.x - cx, h.y - cz).length_squared() <= h.z * h.z:
@@ -442,3 +475,170 @@ static func _in_hole(near: PackedVector3Array, x: float, z: float) -> bool:
 		if Vector2(x - h.x, z - h.y).length_squared() <= h.z * h.z:
 			return true
 	return false
+
+
+## Starts streaming with one mesh per entry of `draws` (null: nothing drawn
+## for that draw).
+func start(meshes: Array[Mesh]) -> void:
+	_meshes = meshes
+	_last_eye = Vector3(INF, INF, INF)
+
+
+## The cells reaching within `r` metres of engine `eye` (in x and z),
+## nearest first.
+func cells_within(eye: Vector3, r: float) -> Array[Vector2i]:
+	var m := _world.world_to_map(eye)
+	# One cell more below: a cell whose far edge lies exactly r away counts.
+	var lo := Vector2i(floori((m.x - r) / cell_m) - 1, floori((m.z - r) / cell_m) - 1)
+	var hi := Vector2i(floori((m.x + r) / cell_m), floori((m.z + r) / cell_m))
+	var last := floori(_world.size_m / cell_m) - 1
+	var found := []
+	for cz in range(maxi(lo.y, 0), mini(hi.y, last) + 1):
+		for cx in range(maxi(lo.x, 0), mini(hi.x, last) + 1):
+			var d := _cell_distance(m, Vector2i(cx, cz))
+			if d <= r:
+				found.append([d, Vector2i(cx, cz)])
+	found.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0])
+	var out: Array[Vector2i] = []
+	for f: Array in found:
+		out.append(f[1])
+	return out
+
+
+## Builds, adds and frees cells for the eye at engine `eye`.
+func update(eye: Vector3) -> void:
+	if _world == null or _meshes.is_empty():
+		return
+	var t0 := Time.get_ticks_usec()
+	if Vector2(eye.x - _last_eye.x, eye.z - _last_eye.z).length() >= RESELECT_M:
+		_last_eye = eye
+		_wanted = cells_within(eye, radius_m)
+		var m := _world.world_to_map(eye)
+		for c: Vector2i in _cells.keys():
+			if _cell_distance(m, c) > radius_m + KEEP_EXTRA_M:
+				_free_cell(c)
+	_finish_one()
+	for c in _wanted:
+		if _pending.size() >= MAX_BUILDS:
+			break
+		if not _pending.has(c) and (not _cells.has(c) or _stale.has(c)):
+			_stale.erase(c)
+			_pending[c] = WorkerThreadPool.add_task(_build.bind(c, holes), false, "grass cell")
+	worst_update_usec = maxi(worst_update_usec, Time.get_ticks_usec() - t0)
+
+
+## Replaces the hole circles; the added cells they touch (old or new) are
+## rebuilt.
+func set_holes(list: PackedVector3Array) -> void:
+	var touched := {}
+	for h in holes:
+		if not list.has(h):
+			touched[h] = true
+	for h in list:
+		if not holes.has(h):
+			touched[h] = true
+	holes = list
+	for c: Vector2i in _cells:
+		for h: Vector3 in touched:
+			if not _holes_near(cell_origin(c), PackedVector3Array([h])).is_empty():
+				_stale[c] = true
+				break
+
+
+## True when every wanted cell is added and nothing is building.
+func is_settled() -> bool:
+	if not _pending.is_empty() or not _stale.is_empty():
+		return false
+	for c in _wanted:
+		if not _cells.has(c):
+			return false
+	return true
+
+
+## The added cells (for checks).
+func added_cells() -> Array:
+	return _cells.keys()
+
+
+## Waits for the builds in flight (for tests); update() then adds them.
+func wait_for_builds() -> void:
+	for c: Vector2i in _pending.keys():
+		if _pending[c] >= 0:
+			WorkerThreadPool.wait_for_task_completion(_pending[c])
+			_pending[c] = -1
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE:
+		for c: Vector2i in _pending:
+			if _pending[c] >= 0:
+				WorkerThreadPool.wait_for_task_completion(_pending[c])
+
+
+func _cell_distance(map: Vector3, c: Vector2i) -> float:
+	var x := clampf(map.x, c.x * cell_m, (c.x + 1) * cell_m)
+	var z := clampf(map.z, c.y * cell_m, (c.y + 1) * cell_m)
+	return Vector2(map.x - x, map.z - z).length()
+
+
+func _build(cell: Vector2i, hole_list: PackedVector3Array) -> void:
+	var arrays := _build_cell(cell, hole_list)
+	_mutex.lock()
+	_done[cell] = arrays
+	_mutex.unlock()
+
+
+## Adds the first finished build (one per update keeps the main thread
+## short when crossing cells).
+func _finish_one() -> void:
+	for c: Vector2i in _pending.keys():
+		var task: int = _pending[c]
+		if task >= 0:
+			if not WorkerThreadPool.is_task_completed(task):
+				continue
+			WorkerThreadPool.wait_for_task_completion(task)
+		_pending.erase(c)
+		_mutex.lock()
+		var arrays: Variant = _done.get(c)
+		_done.erase(c)
+		_mutex.unlock()
+		if arrays == null or not _wanted.has(c):
+			continue
+		if _cells.has(c):
+			_free_cell(c)
+		_add_cell(c, arrays)
+		return
+
+
+func _add_cell(c: Vector2i, arrays: Array[PackedFloat32Array]) -> void:
+	var holder := Node3D.new()
+	holder.name = "Cell_%d_%d" % [c.x, c.y]
+	holder.position = cell_origin(c)
+	var count := 0
+	for d in arrays.size():
+		var n := arrays[d].size() / STRIDE
+		if n == 0 or d >= _meshes.size() or _meshes[d] == null:
+			continue
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.use_custom_data = true
+		mm.mesh = _meshes[d]
+		mm.instance_count = n
+		mm.buffer = arrays[d]
+		var node := MultiMeshInstance3D.new()
+		node.name = "%s_%d" % [draws[d][0], draws[d][1]]
+		node.multimesh = mm
+		node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		holder.add_child(node)
+		count += n
+	add_child(holder)
+	_cells[c] = [holder, count]
+	instances += count
+
+
+func _free_cell(c: Vector2i) -> void:
+	var entry: Array = _cells[c]
+	instances -= int(entry[1])
+	(entry[0] as Node3D).queue_free()
+	_cells.erase(c)
+	_stale.erase(c)
