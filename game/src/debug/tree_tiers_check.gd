@@ -125,6 +125,7 @@ func _check_tiers(map: Vector3, step: int) -> int:
 	var trees := 0
 	var wrong_count := 0
 	var not_held := 0
+	var mid_hidden := [0, 0]  # nearer than the T2 range, beyond it
 	for cz in range(lo.y, hi.y + 1):
 		for cx in range(lo.x, hi.x + 1):
 			var chunk := Vector2i(cx, cz)
@@ -135,6 +136,10 @@ func _check_tiers(map: Vector3, step: int) -> int:
 				if d > reach:
 					continue
 				trees += 1
+				if chunks.has(chunk):
+					var v2 := TreeShading.visibility(TreeField.T2, d, _tiers, _band)
+					if (v2.x if v2.x < 0.999 else v2.y) <= EPS:
+						mid_hidden[int(d > float(_tiers[TreeField.T2]))] += 1
 				var shown: Array = []
 				var total := 0.0
 				for k in 4:
@@ -172,8 +177,20 @@ func _check_tiers(map: Vector3, step: int) -> int:
 	var ok_step := wrong_count == 0 and not_held == 0 and trees > 0
 	print(
 		(
-			"T-06-1 step %d: %d trees, wrong tier count %d, visible but not held %d%s"
-			% [step, trees, wrong_count, not_held, _flag(ok_step)]
+			(
+				"T-06-1 step %d: %d trees, wrong tier count %d, visible but not held %d%s;"
+				+ " mid tier holds %d, hidden %d nearer and %d beyond"
+			)
+			% [
+				step,
+				trees,
+				wrong_count,
+				not_held,
+				_flag(ok_step),
+				_field.mid_instances,
+				mid_hidden[0],
+				mid_hidden[1],
+			]
 		)
 	)
 	return int(not ok_step)
