@@ -14,6 +14,9 @@ unique and inside the grid in <models>/<category>_models.json, and holds
 part of a tree in the billboard atlas <content>/assets/texture_sets/trees/
 hi/<category>_billboards_ca.png (+ _n.png with the same coverage; the lo
 set at half size, T-22-8).
+Stumps and felled caps (22 §3), when <content>/assetgen/stumps.json exists:
+every mesh the preset asks for exists within its triangle budget and has
+exactly a bark and a cut surface.
 Engine side (unless --no-engine): the imported models are checked headless
 by res://src/tools/check_tree_models.gd.
 Prints each error, then RESULT PASS / FAIL; exit code 0 / 1.
@@ -32,6 +35,8 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 TIERS = ("t0", "t1", "t2")
 SURFACES = ("bark", "leaves")
 MODEL_DIR = os.path.join("assets", "models", "trees")
+STUMP_DIR = os.path.join("assets", "models", "stumps")
+STUMP_SURFACES = ["bark", "cut"]
 TEXTURE_DIR = os.path.join("assets", "texture_sets", "trees")
 TIMEOUT_S = 300
 
@@ -89,6 +94,28 @@ def check_trees(content):
         shape = shapes.get(tree["id"]) or shape_for(preset, {"id": tree["id"]}, tree)
         surfaces = SURFACES if "clumps" in shape else SURFACES[:1]
         errors += check_model(os.path.join(model_dir, name), name[: -len(".glb")], preset["budgets"][tree["size"]], surfaces)
+    return errors
+
+
+def check_stumps(content):
+    """Errors of the stump and cap models ([] without a stump preset)."""
+    preset_path = os.path.join(content, "assetgen", "stumps.json")
+    if not os.path.exists(preset_path):
+        return []
+    with open(preset_path, encoding="utf-8") as f:
+        preset = json.load(f)
+    model_dir = os.path.join(content, STUMP_DIR)
+    errors = glb.check(preset, model_dir)
+    for spec in preset["meshes"]:
+        for n in range(1, spec["variants"] + 1):
+            name = f"{preset['category']}_{spec['name']}_{n}"
+            path = os.path.join(model_dir, name + ".glb")
+            if not os.path.exists(path):
+                continue
+            for mesh, entry in glb.meshes(path).items():
+                materials = sorted(p["material"] or "" for p in entry["primitives"])
+                if materials != STUMP_SURFACES:
+                    errors.append(f"{name} {mesh}: surfaces {materials}, expected {STUMP_SURFACES}")
     return errors
 
 
@@ -183,7 +210,7 @@ def main(argv=None):
     ap.add_argument("content")
     ap.add_argument("--no-engine", action="store_true")
     a = ap.parse_args(argv)
-    errors = check_trees(a.content)
+    errors = check_trees(a.content) + check_stumps(a.content)
     for e in errors:
         print(f"  ERROR {e}")
     code = 0 if a.no_engine or errors else engine_check(a.content)
