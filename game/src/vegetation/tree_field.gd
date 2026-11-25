@@ -63,6 +63,8 @@ var near_instances := [0, 0]
 var near_assign_usec := 0
 ## Map position the current near set was built around.
 var near_map := Vector3(INF, INF, INF)
+## Trunk colliders around the players (06 §A5.1).
+var trunks: TrunkColliders
 
 var _world: WorldData
 var _defs: Array = []
@@ -115,6 +117,10 @@ func setup(world: WorldData, defs: Array, cfg: Dictionary, tiers: Array, root: S
 	if world.index_of(FOLDER).is_empty():
 		errors.append("%s/index.json: missing or changed" % FOLDER)
 	TreeShading.push(cfg, tiers)
+	if trunks == null:
+		trunks = TrunkColliders.new()
+		add_child(trunks)
+	trunks.setup(self, world, defs)
 	_quad = unit_quad()
 	_setup_models(root if root != "" else String(ContentDB.root))
 	return errors.is_empty()
