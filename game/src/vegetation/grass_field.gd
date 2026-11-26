@@ -70,6 +70,9 @@ var radius_m := 48.0
 var instances := 0
 ## Longest main-thread time of one update() in microseconds (T-06-10).
 var worst_update_usec := 0
+## Longest drawn-prefix cut of all cells in one update() in microseconds
+## (part of worst_update_usec).
+var worst_cut_usec := 0
 ## Longest worker build of one cell in microseconds (T-06-10).
 var worst_build_usec := 0
 
@@ -106,7 +109,7 @@ var _p_fade := PackedFloat32Array()
 var _p_phase := PackedFloat32Array()
 var _meshes: Array[Mesh] = []
 ## Added cells: cell -> [holder Node3D, plant count, Array of
-## [MultiMesh, bucket ends]].
+## [MultiMesh, bucket ends], fade bucket of the last cut (-1: none yet)].
 var _cells := {}
 ## Cells being built: cell -> worker task id.
 var _pending := {}
@@ -411,13 +414,17 @@ func _build_cell(
 ## last fade_band of radius_m); -1: all of them, also when the tuning sets
 ## no fade_band (the shader then uses its own default).
 func fade_cut(ends: PackedInt32Array, near_m: float) -> int:
-	if _fade_band < 0.0 or ends.is_empty():
-		return -1
+	var b := fade_bucket(near_m)
+	return -1 if b >= FADE_BUCKETS or ends.is_empty() else ends[b]
+
+
+## The last fade-key bucket the fade can show at `near_m` from the eye;
+## FADE_BUCKETS: every bucket.
+func fade_bucket(near_m: float) -> int:
+	if _fade_band < 0.0:
+		return FADE_BUCKETS
 	var keep := clampf((radius_m - near_m) / maxf(_fade_band * radius_m, 0.001), 0.0, 1.0)
-	var b := int(keep * FADE_BUCKETS)
-	if b >= FADE_BUCKETS:
-		return -1
-	return ends[b]
+	return mini(int(keep * FADE_BUCKETS), FADE_BUCKETS)
 
 
 ## Heights of the samples around a cell whose engine corner is `origin`:
@@ -785,7 +792,7 @@ func _assemble_step() -> void:
 	if _cells.has(c):
 		_free_cell(c)
 	holder.visible = true
-	_cells[c] = [holder, int(_assembly[4]), _assembly[6]]
+	_cells[c] = [holder, int(_assembly[4]), _assembly[6], -1]
 	instances += int(_assembly[4])
 	_assembly = []
 	_cut_eye = Vector3(INF, INF, INF)
@@ -798,16 +805,23 @@ func _cut_cells(eye: Vector3) -> void:
 	var m := _world.world_to_map(eye)
 	if Vector2(m.x - _cut_eye.x, m.z - _cut_eye.z).length() < CUT_STEP_M:
 		return
+	var t0 := Time.get_ticks_usec()
 	_cut_eye = m
 	for c: Vector2i in _cells:
-		var near := maxf(_cell_distance(m, c) - CUT_STEP_M, 0.0)
-		for pair: Array in (_cells[c] as Array)[2]:
+		var entry: Array = _cells[c]
+		var b := fade_bucket(maxf(_cell_distance(m, c) - CUT_STEP_M, 0.0))
+		if b == int(entry[3]):
+			continue  # every draw of the cell keeps its cut
+		entry[3] = b
+		for pair: Array in entry[2]:
 			var mm: MultiMesh = pair[0]
-			var n := fade_cut(pair[1], near)
+			var ends: PackedInt32Array = pair[1]
+			var n := -1 if b >= FADE_BUCKETS else ends[b]
 			if n >= mm.instance_count:
 				n = -1
 			if mm.visible_instance_count != n:
 				mm.visible_instance_count = n
+	worst_cut_usec = maxi(worst_cut_usec, Time.get_ticks_usec() - t0)
 
 
 func _free_cell(c: Vector2i) -> void:
