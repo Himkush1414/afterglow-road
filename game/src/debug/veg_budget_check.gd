@@ -85,8 +85,12 @@ class Runner:
 			var h := deg_to_rad(worst_heading)
 			cam.look_at_from_position(at, at + Vector3(sin(h), -0.05, -cos(h)))
 			await _counters(game)
-			get_viewport().get_texture().get_image().save_png(args[3])
-			print("frame saved: %s" % args[3])
+			var saved := get_viewport().get_texture().get_image().save_png(args[3])
+			if saved == OK:
+				print("frame saved: %s" % args[3])
+			else:
+				# Relative paths start in the project folder (the engine runs with --path).
+				printerr("frame not saved (error %d): %s" % [saved, args[3]])
 		var h := deg_to_rad(worst_heading)
 		cam.look_at_from_position(at, at + Vector3(sin(h), -0.05, -cos(h)))
 		var full := await _counters(game)

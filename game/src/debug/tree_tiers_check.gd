@@ -292,8 +292,12 @@ func _frame(start: Vector3, heading: float, path: String) -> void:
 		)
 	)
 	if path != "":
-		get_viewport().get_texture().get_image().save_png(path)
-		print("frame: %s" % path)
+		var saved := get_viewport().get_texture().get_image().save_png(path)
+		if saved == OK:
+			print("frame saved: %s" % path)
+		else:
+			# Relative paths start in the project folder (the engine runs with --path).
+			printerr("frame not saved (error %d): %s" % [saved, path])
 	_field.visible = false
 	for i in 3:
 		await RenderingServer.frame_post_draw

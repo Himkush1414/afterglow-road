@@ -76,8 +76,12 @@ class Runner:
 				await get_tree().process_frame
 			for i in 3:
 				await RenderingServer.frame_post_draw
-			get_viewport().get_texture().get_image().save_png(args[3])
-			print("frame saved: %s" % args[3])
+			var saved := get_viewport().get_texture().get_image().save_png(args[3])
+			if saved == OK:
+				print("frame saved: %s" % args[3])
+			else:
+				# Relative paths start in the project folder (the engine runs with --path).
+				printerr("frame not saved (error %d): %s" % [saved, args[3]])
 		grass.worst_update_usec = 0
 		grass.worst_cut_usec = 0
 		var most := 0
