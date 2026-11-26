@@ -206,17 +206,24 @@ func test_missing_models_are_reported_by_name() -> void:
 
 
 func test_draws_ordered_by_fade_bucket() -> void:
-	var arrays := _field().build_cell(CELL)
+	var ends: Array = []
+	var arrays := _field().build_cell(CELL, ends)
+	check_eq(ends.size(), arrays.size(), "bucket ends per draw")
 	var wrong := 0
-	for a in arrays:
+	var miscounted := 0
+	for d in arrays.size():
+		var a := arrays[d]
+		var e: PackedInt32Array = ends[d]
 		var last := -1
 		for k in a.size() / GrassField.STRIDE:
 			var b := int(a[k * GrassField.STRIDE + 12] * GrassField.FADE_BUCKETS)
 			wrong += int(b < last)
 			last = b
-		var ends := GrassField.fade_bucket_ends(a)
-		check_eq(ends[GrassField.FADE_BUCKETS - 1], a.size() / GrassField.STRIDE, "ends hold all")
+			# Plant k lies in bucket b: below the end of b, at or past the end of b - 1.
+			miscounted += int(k >= e[b] or (b > 0 and k < e[b - 1]))
+		check_eq(e[GrassField.FADE_BUCKETS - 1], a.size() / GrassField.STRIDE, "ends hold all")
 	check_eq(wrong, 0, "fade buckets ascending in every draw")
+	check_eq(miscounted, 0, "every plant inside its bucket's range")
 
 
 func test_fade_cut_keeps_every_plant_the_fade_shows() -> void:
@@ -224,8 +231,9 @@ func test_fade_cut_keeps_every_plant_the_fade_shows() -> void:
 	cfg["shader"] = {"fade_band": 0.3}
 	var f := _field(1.0, cfg)
 	f.radius_m = 40.0
-	var a := f.build_cell(CELL)[0]
-	var ends := GrassField.fade_bucket_ends(a)
+	var all_ends: Array = []
+	var a := f.build_cell(CELL, all_ends)[0]
+	var ends: PackedInt32Array = all_ends[0]
 	var n := a.size() / GrassField.STRIDE
 	check_eq(f.fade_cut(ends, 10.0), -1, "inside the full radius: all")
 	check_eq(f.fade_cut(ends, 41.0), ends[0], "beyond the radius: the lowest bucket only")

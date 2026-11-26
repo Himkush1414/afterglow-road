@@ -76,6 +76,8 @@ var worst_build_usec := 0
 var _world: WorldData
 var _cfg := {}
 var _mult := 1.0
+## The shader's fade band (share of radius_m); -1: not in the tuning.
+var _fade_band := -1.0
 var _seed := 0
 ## Per terrain layer: density in plants per m² (0: none).
 var _density := PackedFloat32Array()
@@ -109,7 +111,7 @@ var _cells := {}
 ## Cells being built: cell -> worker task id.
 var _pending := {}
 ## Finished builds, written by the workers: cell -> [Array[PackedFloat32Array],
-## Array of bucket ends (fade_bucket_ends) per draw].
+## bucket ends per draw (build_cell's ends_out)].
 var _done := {}
 var _mutex := Mutex.new()
 var _wanted: Array[Vector2i] = []
@@ -142,6 +144,8 @@ func configure(world: WorldData, cfg: Dictionary, terrain: Dictionary, density_m
 			"grass: cell_m %s is not a multiple of %s and %s" % [cell_m, SUB_M, world.sample_m]
 		)
 	_seed = int(cfg.get("seed", 0))
+	var params: Dictionary = cfg.get("shader", {})
+	_fade_band = maxf(float(params.fade_band), 0.0) if params.has("fade_band") else -1.0
 	mask = world.mask()
 	mask_side = world.mask_side() if not mask.is_empty() else 0
 	var layers: Array = terrain.get("layers", [])
@@ -266,12 +270,16 @@ func cell_origin(cell: Vector2i) -> Vector3:
 
 
 ## The cell's instances, one PackedFloat32Array of STRIDE floats per
-## instance for each entry of `draws` (any thread: reads only).
-func build_cell(cell: Vector2i) -> Array[PackedFloat32Array]:
-	return _build_cell(cell, holes)
+## instance for each entry of `draws` (any thread: reads only). Each draw's
+## plants are ordered by fade-key bucket; `ends_out`, when given, receives
+## per draw the plant count of buckets 0..b for every bucket b.
+func build_cell(cell: Vector2i, ends_out: Array = []) -> Array[PackedFloat32Array]:
+	return _build_cell(cell, holes, ends_out)
 
 
-func _build_cell(cell: Vector2i, hole_list: PackedVector3Array) -> Array[PackedFloat32Array]:
+func _build_cell(
+	cell: Vector2i, hole_list: PackedVector3Array, ends_out: Array = []
+) -> Array[PackedFloat32Array]:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = _cell_seed(cell)
 	var origin := cell_origin(cell)
@@ -285,10 +293,12 @@ func _build_cell(cell: Vector2i, hole_list: PackedVector3Array) -> Array[PackedF
 	var inv_step := 1.0 / _world.sample_m
 	var w := PackedFloat32Array()
 	w.resize(_density.size())
-	# Every plant goes to one flat buffer first; split by draw at the end.
-	var flat := PackedFloat32Array()
-	var ids := PackedInt32Array()
-	var count := 0
+	# Every plant goes to the list of its draw and fade-key bucket; each
+	# draw's lists are joined in bucket order at the end.
+	var parts: Array[PackedFloat32Array] = []
+	parts.resize(draws.size() * FADE_BUCKETS)
+	var sizes := PackedInt32Array()
+	sizes.resize(parts.size())
 	for sj in subs:
 		for si in subs:
 			var x0 := si * SUB_M
@@ -308,9 +318,6 @@ func _build_cell(cell: Vector2i, hole_list: PackedVector3Array) -> Array[PackedF
 			if n == 0:
 				continue
 			var water := _water_near(origin + Vector3(x0, 0.0, z0), mw.y)
-			if flat.size() < (count + n) * STRIDE:
-				flat.resize(maxi(flat.size() * 2, (count + n) * STRIDE))
-				ids.resize(flat.size() / STRIDE)
 			var base := (rng.randi() % PATTERNS) * _cap
 			for k in mini(n, _cap):
 				var q := base + k
@@ -357,62 +364,45 @@ func _build_cell(cell: Vector2i, hole_list: PackedVector3Array) -> Array[PackedF
 				var sc := _type_scale_lo[ti] + (_type_scale_hi[ti] - _type_scale_lo[ti]) * size
 				var c := _p_cos[q] * sc
 				var sn := _p_sin[q] * sc
-				var f := count * STRIDE
-				flat[f] = c
-				flat[f + 1] = 0.0
-				flat[f + 2] = sn
-				flat[f + 3] = lx
-				flat[f + 4] = 0.0
-				flat[f + 5] = sc
-				flat[f + 6] = 0.0
-				flat[f + 7] = y
-				flat[f + 8] = -sn
-				flat[f + 9] = 0.0
-				flat[f + 10] = c
-				flat[f + 11] = lz
-				flat[f + 12] = _p_fade[q]
-				flat[f + 13] = _p_phase[q]
-				flat[f + 14] = 0.0
-				flat[f + 15] = 0.0
-				ids[count] = draw
-				count += 1
-	# Split by draw, each draw's plants in fade-key bucket order (stable).
-	var slots := PackedInt32Array()
-	slots.resize(draws.size() * FADE_BUCKETS)
-	var keys := PackedInt32Array()
-	keys.resize(count)
-	for k in count:
-		var b := mini(int(flat[k * STRIDE + 12] * FADE_BUCKETS), FADE_BUCKETS - 1)
-		keys[k] = ids[k] * FADE_BUCKETS + b
-		slots[keys[k]] += 1
-	var run := 0
-	for q in slots.size():
-		var n := slots[q]
-		slots[q] = run
-		run += n
-	var order := PackedInt32Array()
-	order.resize(count)
-	for k in count:
-		order[slots[keys[k]]] = k
-		slots[keys[k]] += 1
+				var key := _p_fade[q]
+				var slot := draw * FADE_BUCKETS + mini(int(key * FADE_BUCKETS), FADE_BUCKETS - 1)
+				parts[slot].append_array(
+					PackedFloat32Array(
+						[
+							c,
+							0.0,
+							sn,
+							lx,
+							0.0,
+							sc,
+							0.0,
+							y,
+							-sn,
+							0.0,
+							c,
+							lz,
+							key,
+							_p_phase[q],
+							0.0,
+							0.0
+						]
+					)
+				)
+				sizes[slot] += 1
+	ends_out.clear()
 	var out: Array[PackedFloat32Array] = []
 	for d in draws.size():
-		out.append(PackedFloat32Array())
-	for k in order:
-		out[ids[k]].append_array(flat.slice(k * STRIDE, (k + 1) * STRIDE))
+		var arr := PackedFloat32Array()
+		var e := PackedInt32Array()
+		e.resize(FADE_BUCKETS)
+		var run := 0
+		for b in FADE_BUCKETS:
+			arr.append_array(parts[d * FADE_BUCKETS + b])
+			run += sizes[d * FADE_BUCKETS + b]
+			e[b] = run
+		out.append(arr)
+		ends_out.append(e)
 	return out
-
-
-## Per fade-key bucket b, the number of plants of a draw's array (ordered by
-## bucket, as build_cell makes it) in buckets 0..b.
-static func fade_bucket_ends(arr: PackedFloat32Array) -> PackedInt32Array:
-	var ends := PackedInt32Array()
-	ends.resize(FADE_BUCKETS)
-	for k in arr.size() / STRIDE:
-		ends[mini(int(arr[k * STRIDE + 12] * FADE_BUCKETS), FADE_BUCKETS - 1)] += 1
-	for b in range(1, FADE_BUCKETS):
-		ends[b] += ends[b - 1]
-	return ends
 
 
 ## How many plants of a draw (bucket ends `ends`) a cell must draw when its
@@ -421,11 +411,9 @@ static func fade_bucket_ends(arr: PackedFloat32Array) -> PackedInt32Array:
 ## last fade_band of radius_m); -1: all of them, also when the tuning sets
 ## no fade_band (the shader then uses its own default).
 func fade_cut(ends: PackedInt32Array, near_m: float) -> int:
-	var params: Dictionary = _cfg.get("shader", {})
-	if not params.has("fade_band") or ends.is_empty():
+	if _fade_band < 0.0 or ends.is_empty():
 		return -1
-	var band := maxf(float(params.fade_band), 0.0)
-	var keep := clampf((radius_m - near_m) / maxf(band * radius_m, 0.001), 0.0, 1.0)
+	var keep := clampf((radius_m - near_m) / maxf(_fade_band * radius_m, 0.001), 0.0, 1.0)
 	var b := int(keep * FADE_BUCKETS)
 	if b >= FADE_BUCKETS:
 		return -1
@@ -721,10 +709,8 @@ func _cell_distance(map: Vector3, c: Vector2i) -> float:
 
 func _build(cell: Vector2i, hole_list: PackedVector3Array) -> void:
 	var t0 := Time.get_ticks_usec()
-	var arrays := _build_cell(cell, hole_list)
 	var ends: Array = []
-	for a in arrays:
-		ends.append(fade_bucket_ends(a))
+	var arrays := _build_cell(cell, hole_list, ends)
 	var took := Time.get_ticks_usec() - t0
 	_mutex.lock()
 	_done[cell] = [arrays, ends]
