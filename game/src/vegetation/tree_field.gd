@@ -49,6 +49,9 @@ const CHUNK_CUT_STEP_M := 4.0
 ## A kept chunk is sorted again around the eye once the eye is this far from
 ## the point its instances were sorted around.
 const CHUNK_RESORT_M := 64.0
+## A kept billboard tile is sorted again once the eye is this far from its
+## sort point.
+const TILE_RESORT_M := 128.0
 ## 16 floats per instance: a 3 x 4 transform, then custom data.
 const STRIDE := 16
 const CELLS := 64
@@ -222,9 +225,23 @@ func chunk_records(chunk: Vector2i) -> PackedByteArray:
 
 
 ## The MultiMesh buffer of a tile: [buffer, instance count].
-func tile_buffer(tile: Vector2i) -> Array:
+## Billboard buffer of a tile: [buffer, count, keys, sign]. With a finite
+## `from` (map position) the instances are ordered by key = sign x their
+## distance from it: sign -1 (farthest first) when the whole tile lies
+## within the far reach seen from `from`, so a prefix drops the billboards
+## nearer than the T3 start; +1 otherwise, so a prefix drops those past the
+## T3 end. With `from` = INF: record order, no keys, sign 0.
+func tile_buffer(tile: Vector2i, from: Vector3 = Vector3.INF) -> Array:
 	var buf := PackedFloat32Array()
+	var keys := PackedFloat32Array()
 	var count := 0
+	var sorted := from.is_finite()
+	var sign := 0
+	if sorted:
+		var lo := Vector2(tile) * TILE_M
+		var dx := maxf(absf(from.x - lo.x), absf(from.x - lo.x - TILE_M))
+		var dz := maxf(absf(from.z - lo.y), absf(from.z - lo.y - TILE_M))
+		sign = -1 if Vector2(dx, dz).length() <= _far_edge_m(T3, true) else 1
 	var per := int(TILE_M / WorldData.TREE_CHUNK_M)
 	for cz in per:
 		for cx in per:
@@ -245,7 +262,22 @@ func tile_buffer(tile: Vector2i) -> Array:
 				buf.append_array([k, 0.0, 0.0, pos.x, 0.0, k, 0.0, pos.y, 0.0, 0.0, k, pos.z])
 				buf.append_array([((h >> 8) & 255) / 255.0, tint, 0.0, float(v[0])])
 				count += 1
-	return [buf, count]
+				if sorted:
+					keys.append(sign * Vector2(r.map.x - from.x, r.map.y - from.z).length())
+	if sorted:
+		var slot := [buf, count, keys]
+		_sort_slot(slot)
+		buf = slot[0]
+		keys = slot[2]
+	return [buf, count, keys, sign]
+
+
+## Tier k's visible range edge (T2 chunks, T3 tiles): the end + half a band
+## (`outer`), or the start - half a band.
+func _far_edge_m(k: int, outer: bool) -> float:
+	if outer:
+		return float(tiers_m[k]) + _band() * 0.5
+	return float(tiers_m[k - 1]) - _band() * 0.5
 
 
 ## Tiles whose nearest point is within `reach_m` of the engine position.
@@ -517,6 +549,20 @@ func _cut_near(map: Vector3) -> void:
 				n = -1
 			if mm.visible_instance_count != n:
 				mm.visible_instance_count = n
+	for t: Vector2i in _tiles:
+		var tile: Array = _tiles[t]
+		var keys: PackedFloat32Array = tile[2]
+		var mm: MultiMesh = (tile[0] as MultiMeshInstance3D).multimesh
+		var at: Vector3 = tile[1]
+		var off := Vector2(map.x - at.x, map.z - at.z).length() + CHUNK_CUT_STEP_M
+		var limit := _tile_cut_key(int(tile[3]), off)
+		var n := -1
+		if limit < INF and not keys.is_empty():
+			n = keys.bsearch(limit, false)
+			if n >= mm.instance_count:
+				n = -1
+		if mm.visible_instance_count != n:
+			mm.visible_instance_count = n
 
 
 ## k: 0 T0, 1 T1 (both draw only), 2 T1's shadow caster (T2 mesh), 3 T0's
@@ -627,16 +673,35 @@ func chunk_buffers(chunk: Vector2i, from: Vector3 = Vector3.ZERO) -> Dictionary:
 ## Distance from a chunk's sort point beyond which no T2 tree can be visible
 ## while the eye is `offset_m` from that point (T2 end + half a band).
 func _chunk_cut_m(offset_m: float) -> float:
-	return float(tiers_m[T2]) + _band() * 0.5 + offset_m
+	return _far_edge_m(T2, true) + offset_m
 
 
-## The cut now in use for chunk c (built and added): [sort point (map), cut
-## distance from it]; trees farther are in the buffer but not drawn.
-func chunk_cut_now(c: Vector2i) -> Array:
-	var entry: Array = _chunks[c]
-	var from: Vector3 = entry[2]
-	var o := Vector2(_chunk_cut_eye.x - from.x, _chunk_cut_eye.z - from.z).length()
-	return [from, _chunk_cut_m(o + CHUNK_CUT_STEP_M)]
+## Key limit of a tile sorted with `sign` while the eye is `offset_m` from
+## its sort point: billboards with a larger key cannot be visible; INF: none
+## cut.
+func _tile_cut_key(sign: int, offset_m: float) -> float:
+	if sign > 0:
+		return _far_edge_m(T3, true) + offset_m
+	if sign < 0:
+		var inner := _far_edge_m(T3, false) - offset_m
+		return -inner if inner > 0.0 else INF
+	return INF
+
+
+## The cut now in use for a built T2 chunk or T3 tile `cell` (k = T2 or T3):
+## [sort point (map), sign, key limit]; an instance whose key (sign x its
+## distance from the sort point) is above the limit is in the buffer but not
+## drawn.
+func far_cut_now(k: int, cell: Vector2i) -> Array:
+	if k == T2:
+		var entry: Array = _chunks[cell]
+		var from: Vector3 = entry[2]
+		var o := Vector2(_chunk_cut_eye.x - from.x, _chunk_cut_eye.z - from.z).length()
+		return [from, 1, _chunk_cut_m(o + CHUNK_CUT_STEP_M)]
+	var tile: Array = _tiles[cell]
+	var at: Vector3 = tile[1]
+	var off := Vector2(_chunk_cut_eye.x - at.x, _chunk_cut_eye.z - at.z).length()
+	return [at, int(tile[3]), _tile_cut_key(int(tile[3]), off + CHUNK_CUT_STEP_M)]
 
 
 func _build_chunk(chunk: Vector2i, from: Vector3) -> void:
@@ -693,9 +758,9 @@ func _add_chunk(c: Vector2i, buffers: Dictionary, from: Vector3) -> void:
 	_chunk_cut_eye = Vector3(INF, INF, INF)
 
 
-## Draws only the prefix of each chunk buffer that can be visible from the
-## eye at map position `map` (_chunk_cut_m), widened by CHUNK_CUT_STEP_M and
-## worked out again when the eye moved that far.
+## Draws only the prefix of each chunk and tile buffer that can be visible
+## from the eye at map position `map` (_chunk_cut_m, _tile_cut_key), widened
+## by CHUNK_CUT_STEP_M and worked out again when the eye moved that far.
 func _cut_chunks(map: Vector3) -> void:
 	if Vector2(map.x - _chunk_cut_eye.x, map.z - _chunk_cut_eye.z).length() < CHUNK_CUT_STEP_M:
 		return
@@ -838,11 +903,18 @@ func update_for(eye: Vector3) -> void:
 			if not keep.has(t):
 				_free_tile(t)
 	_finish_builds()
+	var eye_map := _world.world_to_map(eye)
 	for t in _wanted:
 		if _pending.size() >= MAX_BUILDS:
 			break
-		if not _tiles.has(t) and not _pending.has(t):
-			_pending[t] = WorkerThreadPool.add_task(_build.bind(t), false, "tree tile")
+		if _pending.has(t):
+			continue
+		var stale := false
+		if _tiles.has(t):
+			var at: Vector3 = (_tiles[t] as Array)[1]
+			stale = Vector2(eye_map.x - at.x, eye_map.z - at.z).length() > TILE_RESORT_M
+		if not _tiles.has(t) or stale:
+			_pending[t] = WorkerThreadPool.add_task(_build.bind(t, eye_map), false, "tree tile")
 	if _models.is_empty():
 		return
 	_update_near(eye)
@@ -871,8 +943,9 @@ func update_for(eye: Vector3) -> void:
 			)
 
 
-func _build(tile: Vector2i) -> void:
-	var result := tile_buffer(tile)
+func _build(tile: Vector2i, from: Vector3) -> void:
+	var result := tile_buffer(tile, from)
+	result.append(from)
 	_mutex.lock()
 	_done[tile] = result
 	_mutex.unlock()
@@ -890,10 +963,15 @@ func _finish_builds() -> void:
 		_mutex.unlock()
 		if result.is_empty() or not _wanted.has(t):
 			continue
-		_add_tile(t, result[0], result[1])
+		if _tiles.has(t):
+			_free_tile(t)  # sorted again: the new version replaces it
+		_add_tile(t, result)
 
 
-func _add_tile(t: Vector2i, buf: PackedFloat32Array, count: int) -> void:
+## Adds a tile from a finished build: [buffer, count, keys, sign, sort point].
+func _add_tile(t: Vector2i, result: Array) -> void:
+	var buf: PackedFloat32Array = result[0]
+	var count: int = result[1]
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.use_custom_data = true
@@ -909,12 +987,13 @@ func _add_tile(t: Vector2i, buf: PackedFloat32Array, count: int) -> void:
 	var lo := _world.map_to_world(Vector3(t.x * TILE_M, 0.0, t.y * TILE_M))
 	node.custom_aabb = AABB(Vector3(lo.x, -200.0, lo.z), Vector3(TILE_M, 2400.0, TILE_M))
 	add_child(node)
-	_tiles[t] = node
+	_tiles[t] = [node, result[4], result[2], result[3]]
 	instances += count
+	_chunk_cut_eye = Vector3(INF, INF, INF)
 
 
 func _free_tile(t: Vector2i) -> void:
-	var node: MultiMeshInstance3D = _tiles[t]
+	var node: MultiMeshInstance3D = (_tiles[t] as Array)[0]
 	instances -= node.multimesh.instance_count
 	node.queue_free()
 	_tiles.erase(t)
