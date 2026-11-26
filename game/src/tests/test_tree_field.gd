@@ -132,3 +132,21 @@ func test_near_cut_covers_every_visible_tree() -> void:
 	# tree within it of the eye is within end + offset of the build point.
 	check_eq(_field.near_cut_m(TreeField.T0, 2.5), 42.5, "T0 end + offset")
 	check_eq(_field.near_cut_m(TreeField.T1, 0.0), 120.0, "T1 end")
+
+
+func test_t2_casters_ring_ends_at_the_shadow_distance() -> void:
+	if not _setup():
+		return
+	check(not _field.t2_ring(), "no T2 shadows: no ring")
+	check(_field.near_window(TreeField.T2).y < _field.near_window(TreeField.T2).x, "empty window")
+	_field.t2_shadows = true
+	_field.shadow_distance_m = 100.0
+	check(not _field.t2_ring(), "shadows end inside T1: no ring")
+	_field.shadow_distance_m = 200.0
+	check(_field.t2_ring(), "shadows reach into T2: ring")
+	check_eq(_field.near_cut_m(TreeField.T2, 3.0), 203.0, "cut at the shadow distance + offset")
+	var w := _field.near_window(TreeField.T2)
+	check_near(w.x, 120.0 - TreeField.NEAR_SLACK_M, 1e-4, "from the T1 end less the slack")
+	check_near(w.y, 200.0 + TreeField.NEAR_SLACK_M, 1e-4, "to the shadow distance plus the slack")
+	_field.shadow_distance_m = 900.0
+	check_eq(_field.near_cut_m(TreeField.T2, 0.0), 450.0, "never past the T2 end")

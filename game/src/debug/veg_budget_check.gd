@@ -5,7 +5,7 @@ extends Node
 ## reads the frame counters (draw calls and triangles of the main and the
 ## shadow passes) looking toward four headings. Prints each heading and the
 ## share of the ground cover, the trees and each tree tier (near T0, near
-## T1, near T0 and T1 shadow casters, mid-tier chunks, billboard tiles) in the
+## T1, near T0, T1 and T2 shadow casters, mid-tier chunks, billboard tiles) in the
 ## heaviest one, and checks
 ## each counter's largest value against the budget of the renderer:
 ## Forward+ uses the desktop budget, Mobile the phone budget. Needs a display:
@@ -19,7 +19,9 @@ const EYE_M := 1.62
 const DESKTOP := [2000, 3000000, 2500000]
 const PHONE := [450, 450000, 250000]
 ## Tree tier groups whose share is reported (see Runner._tier_of).
-const TIERS := ["near_t0", "near_t1", "near_t0_shadow", "near_t1_shadow", "mid", "tile"]
+const TIERS := [
+	"near_t0", "near_t1", "near_t0_shadow", "near_t1_shadow", "near_t2_shadow", "mid", "tile"
+]
 
 
 ## Runs from the tree root: starting the game replaces the current scene.
@@ -173,7 +175,7 @@ class Runner:
 			menu.close()
 
 	## The tier group of a TreeField node by its name (TreeField names them
-	## Near_<model>_<t0|t1|t0_shadow|t1_shadow>_<n>, Mid_<model>, Tile_<x>_<z>), or "".
+	## Near_<model>_<t0|t1|t0_shadow|t1_shadow|t2_shadow>_<n>, Mid_<model>, Tile_<x>_<z>), or "".
 	static func _tier_of(n: Node3D) -> String:
 		var name := String(n.name)
 		if name.begins_with("Mid_"):
