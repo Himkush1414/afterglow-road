@@ -4,7 +4,9 @@ extends Node
 ## (x, z), waits until loading, ground cover and trees are settled, and
 ## reads the frame counters (draw calls and triangles of the main and the
 ## shadow passes) looking toward four headings. Prints each heading and the
-## share of the ground cover and the trees in the heaviest one, and checks
+## share of the ground cover, the trees and each tree tier (near T0, near
+## T1, near T1 shadow casters, mid-tier chunks, billboard tiles) in the
+## heaviest one, and checks
 ## each counter's largest value against the budget of the renderer:
 ## Forward+ uses the desktop budget, Mobile the phone budget. Needs a display:
 ##   tools/godot.sh [--rendering-method mobile] res://scenes/debug/veg_budget_check.tscn \
@@ -16,6 +18,8 @@ const EYE_M := 1.62
 ## [draw calls, main-pass triangles, shadow-pass triangles] (23 §4).
 const DESKTOP := [2000, 3000000, 2500000]
 const PHONE := [450, 450000, 250000]
+## Tree tier groups whose share is reported (see Runner._tier_of).
+const TIERS := ["near_t0", "near_t1", "near_t1_shadow", "mid", "tile"]
 
 
 ## Runs from the tree root: starting the game replaces the current scene.
@@ -91,10 +95,7 @@ class Runner:
 			var g := await _counters(game)
 			game.grass_field.visible = true
 			print(
-				(
-					"ground cover share: %d draw calls, %d triangles"
-					% [worst[0] - g[0], worst[1] - g[1]]
-				)
+				"ground cover share: %d draw calls, %d triangles" % [full[0] - g[0], full[1] - g[1]]
 			)
 		game.tree_field.visible = false
 		var t := await _counters(game)
@@ -105,6 +106,22 @@ class Runner:
 				% [full[0] - t[0], full[1] - t[1], full[2] - t[2]]
 			)
 		)
+		for tier: String in TIERS:
+			var hidden: Array[Node3D] = []
+			for node in game.tree_field.find_children("*", "Node3D", true, false):
+				var n := node as Node3D
+				if n.visible and _tier_of(n) == tier:
+					n.visible = false
+					hidden.append(n)
+			var s := await _counters(game)
+			for n in hidden:
+				n.visible = true
+			print(
+				(
+					"tree tier %s: %d nodes, %d draw calls, %d triangles, shadow %d triangles"
+					% [tier, hidden.size(), full[0] - s[0], full[1] - s[1], full[2] - s[2]]
+				)
+			)
 		var bad := 0
 		for k in 3:
 			var ok: bool = worst[k] <= budget[k]
@@ -150,6 +167,21 @@ class Runner:
 		var menu := game.get_node_or_null("UI/PauseMenu")
 		if menu and menu.visible:
 			menu.close()
+
+	## The tier group of a TreeField node by its name (TreeField names them
+	## Near_<model>_<t0|t1|t1_shadow>_<n>, Mid_<model>, Tile_<x>_<z>), or "".
+	static func _tier_of(n: Node3D) -> String:
+		var name := String(n.name)
+		if name.begins_with("Mid_"):
+			return "mid"
+		if name.begins_with("Tile_"):
+			return "tile"
+		if not name.begins_with("Near_"):
+			return ""
+		var parts := name.split("_")
+		if parts.size() >= 4 and parts[parts.size() - 2] == "shadow":
+			return "near_t1_shadow"
+		return "near_" + parts[parts.size() - 2] if parts.size() >= 4 else ""
 
 	static func _flag(ok: bool) -> String:
 		return "" if ok else "  <-- FAIL"
