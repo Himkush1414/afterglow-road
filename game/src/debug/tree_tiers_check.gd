@@ -164,6 +164,11 @@ func _check_tiers(map: Vector3, step: int) -> int:
 							)
 						2:
 							held = chunks.has(chunk)
+							if held:
+								var cut: Array = _field.chunk_cut_now(chunk)
+								var from: Vector3 = cut[0]
+								var df := Vector2(r.map.x - from.x, r.map.y - from.z).length()
+								held = df <= float(cut[1])
 						3:
 							held = tiles.has(Vector2i(cx / per, cz / per))
 					not_held += int(not held)
