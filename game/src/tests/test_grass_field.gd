@@ -203,3 +203,41 @@ func test_missing_models_are_reported_by_name() -> void:
 		check(text.contains("ground_cover_%s_lo.glb: missing" % stem), stem)
 	check(text.contains("lo/ground_cover_ca.png: missing"), "the atlas")
 	check_eq(f.errors.size(), 7, text)
+
+
+func test_draws_ordered_by_fade_bucket() -> void:
+	var arrays := _field().build_cell(CELL)
+	var wrong := 0
+	for a in arrays:
+		var last := -1
+		for k in a.size() / GrassField.STRIDE:
+			var b := int(a[k * GrassField.STRIDE + 12] * GrassField.FADE_BUCKETS)
+			wrong += int(b < last)
+			last = b
+		var ends := GrassField.fade_bucket_ends(a)
+		check_eq(ends[GrassField.FADE_BUCKETS - 1], a.size() / GrassField.STRIDE, "ends hold all")
+	check_eq(wrong, 0, "fade buckets ascending in every draw")
+
+
+func test_fade_cut_keeps_every_plant_the_fade_shows() -> void:
+	var cfg := CFG.duplicate(true)
+	cfg["shader"] = {"fade_band": 0.3}
+	var f := _field(1.0, cfg)
+	f.radius_m = 40.0
+	var a := f.build_cell(CELL)[0]
+	var ends := GrassField.fade_bucket_ends(a)
+	var n := a.size() / GrassField.STRIDE
+	check_eq(f.fade_cut(ends, 10.0), -1, "inside the full radius: all")
+	check_eq(f.fade_cut(ends, 41.0), ends[0], "beyond the radius: the lowest bucket only")
+	for near: float in [29.0, 32.0, 35.0, 38.0]:
+		var keep := clampf((40.0 - near) / (0.3 * 40.0), 0.0, 1.0)
+		var cut := f.fade_cut(ends, near)
+		var shown := 0
+		var beyond := 0
+		for k in n:
+			if a[k * GrassField.STRIDE + 12] < keep:
+				shown += 1
+				beyond += int(cut >= 0 and k >= cut)
+		check_eq(beyond, 0, "at %.0f m every shown plant is within the cut" % near)
+		check(cut >= 0 and cut < n, "at %.0f m the cut drops plants (%d of %d)" % [near, cut, n])
+	check_eq(_field().fade_cut(ends, 38.0), -1, "no fade_band in the tuning: no cut")

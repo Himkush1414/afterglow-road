@@ -36,6 +36,12 @@ const MAX_BUILDS := 2
 const KEEP_EXTRA_M := 8.0
 ## The wanted cells are worked out again when the eye moved this far.
 const RESELECT_M := 4.0
+## Fade-key buckets: a cell's draws hold their plants ordered by bucket
+## (key × FADE_BUCKETS), so a prefix holds every plant the fade can show.
+const FADE_BUCKETS := 16
+## The cells' drawn prefixes are worked out again when the eye moved this
+## far; each cut is widened by the same distance.
+const CUT_STEP_M := 1.0
 const MODEL_DIR := "assets/models/ground_cover"
 const TEXTURE_DIR := "assets/textures/ground_cover"
 const CATEGORY := "ground_cover"
@@ -97,19 +103,24 @@ var _p_size := PackedFloat32Array()
 var _p_fade := PackedFloat32Array()
 var _p_phase := PackedFloat32Array()
 var _meshes: Array[Mesh] = []
-## Added cells: cell -> [holder Node3D, plant count].
+## Added cells: cell -> [holder Node3D, plant count, Array of
+## [MultiMesh, bucket ends]].
 var _cells := {}
 ## Cells being built: cell -> worker task id.
 var _pending := {}
-## Finished builds, written by the workers: cell -> Array[PackedFloat32Array].
+## Finished builds, written by the workers: cell -> [Array[PackedFloat32Array],
+## Array of bucket ends (fade_bucket_ends) per draw].
 var _done := {}
 var _mutex := Mutex.new()
 var _wanted: Array[Vector2i] = []
 ## Added cells waiting for a rebuild after a hole change.
 var _stale := {}
-## The cell being assembled: [cell, holder, arrays, next draw, plants], or [].
+## The cell being assembled: [cell, holder, arrays, next draw, plants,
+## bucket ends per draw, [MultiMesh, bucket ends] added so far], or [].
 var _assembly: Array = []
 var _last_eye := Vector3(INF, INF, INF)
+## Eye (map) at the last cut of the cells' drawn prefixes.
+var _cut_eye := Vector3(INF, INF, INF)
 var _biome_layer := PackedInt32Array()
 var _slope_layer := PackedInt32Array()
 var _slope_deg := PackedFloat32Array()
@@ -365,12 +376,60 @@ func _build_cell(cell: Vector2i, hole_list: PackedVector3Array) -> Array[PackedF
 				flat[f + 15] = 0.0
 				ids[count] = draw
 				count += 1
+	# Split by draw, each draw's plants in fade-key bucket order (stable).
+	var slots := PackedInt32Array()
+	slots.resize(draws.size() * FADE_BUCKETS)
+	var keys := PackedInt32Array()
+	keys.resize(count)
+	for k in count:
+		var b := mini(int(flat[k * STRIDE + 12] * FADE_BUCKETS), FADE_BUCKETS - 1)
+		keys[k] = ids[k] * FADE_BUCKETS + b
+		slots[keys[k]] += 1
+	var run := 0
+	for q in slots.size():
+		var n := slots[q]
+		slots[q] = run
+		run += n
+	var order := PackedInt32Array()
+	order.resize(count)
+	for k in count:
+		order[slots[keys[k]]] = k
+		slots[keys[k]] += 1
 	var out: Array[PackedFloat32Array] = []
 	for d in draws.size():
 		out.append(PackedFloat32Array())
-	for k in count:
+	for k in order:
 		out[ids[k]].append_array(flat.slice(k * STRIDE, (k + 1) * STRIDE))
 	return out
+
+
+## Per fade-key bucket b, the number of plants of a draw's array (ordered by
+## bucket, as build_cell makes it) in buckets 0..b.
+static func fade_bucket_ends(arr: PackedFloat32Array) -> PackedInt32Array:
+	var ends := PackedInt32Array()
+	ends.resize(FADE_BUCKETS)
+	for k in arr.size() / STRIDE:
+		ends[mini(int(arr[k * STRIDE + 12] * FADE_BUCKETS), FADE_BUCKETS - 1)] += 1
+	for b in range(1, FADE_BUCKETS):
+		ends[b] += ends[b - 1]
+	return ends
+
+
+## How many plants of a draw (bucket ends `ends`) a cell must draw when its
+## nearest point is `near_m` from the eye: every plant whose fade key is
+## below the shader's fade factor there (1 inside, falling to 0 over the
+## last fade_band of radius_m); -1: all of them, also when the tuning sets
+## no fade_band (the shader then uses its own default).
+func fade_cut(ends: PackedInt32Array, near_m: float) -> int:
+	var params: Dictionary = _cfg.get("shader", {})
+	if not params.has("fade_band") or ends.is_empty():
+		return -1
+	var band := maxf(float(params.fade_band), 0.0)
+	var keep := clampf((radius_m - near_m) / maxf(band * radius_m, 0.001), 0.0, 1.0)
+	var b := int(keep * FADE_BUCKETS)
+	if b >= FADE_BUCKETS:
+		return -1
+	return ends[b]
 
 
 ## Heights of the samples around a cell whose engine corner is `origin`:
@@ -588,6 +647,7 @@ func update(eye: Vector3) -> void:
 				_free_cell(c)
 	_assemble_step()
 	_finish_one()
+	_cut_cells(eye)
 	for c in _wanted:
 		if _pending.size() >= MAX_BUILDS:
 			break
@@ -662,9 +722,12 @@ func _cell_distance(map: Vector3, c: Vector2i) -> float:
 func _build(cell: Vector2i, hole_list: PackedVector3Array) -> void:
 	var t0 := Time.get_ticks_usec()
 	var arrays := _build_cell(cell, hole_list)
+	var ends: Array = []
+	for a in arrays:
+		ends.append(fade_bucket_ends(a))
 	var took := Time.get_ticks_usec() - t0
 	_mutex.lock()
-	_done[cell] = arrays
+	_done[cell] = [arrays, ends]
 	worst_build_usec = maxi(worst_build_usec, took)
 	_mutex.unlock()
 
@@ -681,10 +744,10 @@ func _finish_one() -> void:
 			WorkerThreadPool.wait_for_task_completion(task)
 		_pending.erase(c)
 		_mutex.lock()
-		var arrays: Variant = _done.get(c)
+		var built: Variant = _done.get(c)
 		_done.erase(c)
 		_mutex.unlock()
-		if arrays == null or not _wanted.has(c):
+		if built == null or not _wanted.has(c):
 			continue
 		var holder := Node3D.new()
 		holder.name = "Cell_%d_%d" % [c.x, c.y]
@@ -692,7 +755,7 @@ func _finish_one() -> void:
 		# In the tree but hidden: each MultiMesh enters the tree in its own step.
 		holder.visible = false
 		add_child(holder)
-		_assembly = [c, holder, arrays, 0, 0]
+		_assembly = [c, holder, built[0], 0, 0, built[1], []]
 		return
 
 
@@ -729,15 +792,36 @@ func _assemble_step() -> void:
 		node.multimesh = mm
 		node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		holder.add_child(node)
+		(_assembly[6] as Array).append([mm, (_assembly[5] as Array)[d]])
 		_assembly[3] = d + 1
 		_assembly[4] = int(_assembly[4]) + n
 		return
 	if _cells.has(c):
 		_free_cell(c)
 	holder.visible = true
-	_cells[c] = [holder, int(_assembly[4])]
+	_cells[c] = [holder, int(_assembly[4]), _assembly[6]]
 	instances += int(_assembly[4])
 	_assembly = []
+	_cut_eye = Vector3(INF, INF, INF)
+
+
+## Draws only the plants of each cell that the fade can show from `eye`
+## (fade_cut at the cell's nearest point, CUT_STEP_M nearer), worked out
+## again when the eye moved CUT_STEP_M or a cell was added.
+func _cut_cells(eye: Vector3) -> void:
+	var m := _world.world_to_map(eye)
+	if Vector2(m.x - _cut_eye.x, m.z - _cut_eye.z).length() < CUT_STEP_M:
+		return
+	_cut_eye = m
+	for c: Vector2i in _cells:
+		var near := maxf(_cell_distance(m, c) - CUT_STEP_M, 0.0)
+		for pair: Array in (_cells[c] as Array)[2]:
+			var mm: MultiMesh = pair[0]
+			var n := fade_cut(pair[1], near)
+			if n >= mm.instance_count:
+				n = -1
+			if mm.visible_instance_count != n:
+				mm.visible_instance_count = n
 
 
 func _free_cell(c: Vector2i) -> void:
