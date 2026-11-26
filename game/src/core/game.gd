@@ -100,6 +100,8 @@ func _ready() -> void:
 		)
 		var tiers: Variant = Quality.value("tree_tiers_m")
 		tree_field.t2_shadows = Quality.value("t2_tree_shadows") == true
+		var shadow_m: Variant = Quality.value("shadow_distance_m")
+		tree_field.shadow_distance_m = float(shadow_m) if shadow_m != null else 0.0
 		var sectors: Variant = Quality.value("tree_near_sectors")
 		tree_field.near_sectors = int(sectors) if sectors != null else 1
 		if not tree_field.setup(

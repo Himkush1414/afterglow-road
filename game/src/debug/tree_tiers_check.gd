@@ -51,6 +51,7 @@ func _run() -> void:
 	)
 	_field = TreeField.new()
 	_field.t2_shadows = presets[args[0]].get("t2_tree_shadows", false) == true
+	_field.shadow_distance_m = float(presets[args[0]].get("shadow_distance_m", 0.0))
 	_field.near_sectors = int(presets[args[0]].get("tree_near_sectors", 1))
 	add_child(_field)
 	if not _field.setup(_world, defs, cfg, _tiers):

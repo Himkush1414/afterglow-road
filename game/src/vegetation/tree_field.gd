@@ -31,7 +31,7 @@ const MAX_BUILDS := 2
 const T0 := 0
 const T1 := 1
 ## Near kinds (see _near): the tier whose buffer and fade each one uses.
-const NEAR_KIND_TIER := [0, 1, 1, 0]
+const NEAR_KIND_TIER := [0, 1, 1, 0, 2]
 const NEAR_LINE_M := 16.0
 ## How far the camera can move between near-set rebuilds (a 16 m cell's diagonal).
 const NEAR_SLACK_M := 22.7
@@ -54,6 +54,9 @@ var instances := 0
 var tiers_m: Array = []
 ## Whether T2 trees cast sun shadows (quality preset), set before setup.
 var t2_shadows := false
+## Sun shadow distance in metres (quality preset), set before setup: T2
+## shadows are cast by a near-set ring out to here (t2_ring()).
+var shadow_distance_m := 0.0
 ## Angular sectors the near set is split into around its build point, so
 ## frustum and shadow-cascade culling can drop the ones out of view (quality
 ## preset; 1 = no split). Set before setup.
@@ -97,9 +100,10 @@ var _last_chunk_eye := Vector3(INF, INF, INF)
 var _wanted_chunks: Array[Vector2i] = []
 ## Per model: MultiMeshInstance3D or null for each (kind, sector) at
 ## kind * near_sectors + sector; kinds T0, T1, T1 shadow caster, T0 shadow
-## caster. Shadows are cast one mesh coarser (06 §A3, Q-109f): the T1
-## instances drawn again as shadow-only T2 meshes, the T0 instances as
-## shadow-only T1 meshes.
+## caster, T2 shadow caster. Shadows are cast one mesh coarser (06 §A3,
+## Q-109f): the T1 instances drawn again as shadow-only T2 meshes, the T0
+## instances as shadow-only T1 meshes; T2 trees within the shadow distance
+## cast as shadow-only T2 meshes (Q-109g).
 var _near: Array = []
 var _near_line := Vector2i(1 << 30, 1 << 30)
 var _near_task := -1
@@ -278,11 +282,30 @@ func is_settled() -> bool:
 	return _pending.is_empty() and _pending_chunks.is_empty() and tiles and chunks and near
 
 
+## Whether T2 shadows come from the near set (06 §A3, Q-109g): T2 casts,
+## and the shadow distance reaches past the T1 end into the T2 range.
+func t2_ring() -> bool:
+	return (
+		t2_shadows
+		and float(tiers_m[T2]) > float(tiers_m[T1])
+		and shadow_distance_m > float(tiers_m[T1])
+	)
+
+
+## Where the near buffer of tier k ends before padding: the tier's end; for
+## T2 (shadow casters only) the shadow distance, within the T2 range.
+func _near_end(k: int) -> float:
+	if k == T2:
+		return minf(shadow_distance_m, float(tiers_m[T2])) if t2_ring() else 0.0
+	return float(tiers_m[k])
+
+
 ## Distance window [from, to] (metres) in which a tree goes into tier k's
-## near buffer: the tier's range widened by half a band and the slack.
+## near buffer (T0, T1, T2 casters): the range widened by half a band and
+## the slack.
 func near_window(k: int) -> Vector2:
 	var start := 0.0 if k == 0 else float(tiers_m[k - 1])
-	var end := float(tiers_m[k])
+	var end := _near_end(k)
 	if end <= start:
 		return Vector2(1.0, 0.0)
 	var pad := _band() * 0.5 + NEAR_SLACK_M
@@ -291,13 +314,15 @@ func near_window(k: int) -> Vector2:
 
 ## Near-set buffers around a map position: per model index an array of
 ## [buffer, count, distances] slots at tier * near_sectors + sector (tiers
-## T0, T1), each slot's instances ordered by their distance from `map`
+## T0, T1, T2 casters), each slot's instances ordered by their distance from `map`
 ## (ascending, in `distances`) so a prefix holds the nearer trees.
 func near_buffers(map: Vector3) -> Dictionary:
 	var out := {}
 	var sectors := maxi(1, near_sectors)
-	var windows := [near_window(T0), near_window(T1)]
-	var reach: float = maxf((windows[0] as Vector2).y, (windows[1] as Vector2).y)
+	var windows := [near_window(T0), near_window(T1), near_window(T2)]
+	var reach := 0.0
+	for w: Vector2 in windows:
+		reach = maxf(reach, w.y)
 	var lo := WorldData.tree_chunk_of_map(map - Vector3(reach, 0.0, reach))
 	var hi := WorldData.tree_chunk_of_map(map + Vector3(reach, 0.0, reach))
 	for cz in range(lo.y, hi.y + 1):
@@ -317,11 +342,11 @@ func near_buffers(map: Vector3) -> Dictionary:
 				var v: Array = options[h % options.size()]
 				if int(v[3]) < 0:
 					continue
-				var entry: Array = out.get_or_add(int(v[3]), _empty_slots(2 * sectors))
+				var entry: Array = out.get_or_add(int(v[3]), _empty_slots(3 * sectors))
 				var angle := atan2(r.map.y - map.z, r.map.x - map.x) + PI
 				var sector := mini(int(angle / TAU * sectors), sectors - 1)
 				var row := PackedFloat32Array()
-				for k in 2:
+				for k in 3:
 					var w: Vector2 = windows[k]
 					if d < w.x or d > w.y:
 						continue
@@ -363,11 +388,12 @@ static func _sort_slot(slot: Array) -> void:
 
 
 ## Distance from a near set's build point beyond which no tree of tier k
-## (T0, T1) can be visible while the eye is `offset_m` from that point: the
-## shader fades on the distance to the eye and keeps nothing past the
-## tier's end + half a band (06 §A3).
+## (T0, T1; T2 casters) can be visible while the eye is `offset_m` from
+## that point: the shader fades on the distance to the eye and keeps nothing
+## past the tier's end + half a band (06 §A3); T2 casters end at the shadow
+## distance.
 func near_cut_m(k: int, offset_m: float) -> float:
-	return float(tiers_m[k]) + _band() * 0.5 + offset_m
+	return _near_end(k) + _band() * 0.5 + offset_m
 
 
 static func _empty_slots(n: int) -> Array:
@@ -423,7 +449,7 @@ func _assign_near_slice() -> void:
 	var sectors := maxi(1, near_sectors)
 	var model: int = _near_assigning[2]
 	while model < _models.size() and Time.get_ticks_usec() - t0 < NEAR_SLICE_USEC:
-		var entry: Array = buffers.get(model, _empty_slots(2 * sectors))
+		var entry: Array = buffers.get(model, _empty_slots(3 * sectors))
 		for j in NEAR_KIND_TIER.size() * sectors:
 			var k := j / sectors
 			var slot: Array = entry[int(NEAR_KIND_TIER[k]) * sectors + j % sectors]
@@ -486,15 +512,18 @@ func _cut_near(map: Vector3) -> void:
 
 
 ## k: 0 T0, 1 T1 (both draw only), 2 T1's shadow caster (T2 mesh), 3 T0's
-## shadow caster (T1 mesh); j: its slot (kind * near_sectors + sector).
+## shadow caster (T1 mesh), 4 T2's shadow caster (T2 mesh, the ring of
+## t2_ring()); j: its slot (kind * near_sectors + sector).
 func _near_node(model: int, k: int, j: int) -> MultiMeshInstance3D:
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.use_custom_data = true
 	var m: Dictionary = _models[model]
-	mm.mesh = [(m.meshes as Array)[T0], (m.meshes as Array)[T1], m.shadow, m.shadow_t0][k]
+	var meshes: Array = m.meshes
+	mm.mesh = [meshes[T0], meshes[T1], m.shadow, m.shadow_t0, meshes[T2]][k]
 	var node := MultiMeshInstance3D.new()
-	node.name = "Near_%s_%s_%d" % [m.stem, ["t0", "t1", "t1_shadow", "t0_shadow"][k], j]
+	var kinds := ["t0", "t1", "t1_shadow", "t0_shadow", "t2_shadow"]
+	node.name = "Near_%s_%s_%d" % [m.stem, kinds[k], j]
 	node.multimesh = mm
 	node.cast_shadow = (
 		GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -619,7 +648,7 @@ func _add_chunk(c: Vector2i, buffers: Dictionary) -> void:
 		node.multimesh = mm
 		node.cast_shadow = (
 			GeometryInstance3D.SHADOW_CASTING_SETTING_ON
-			if t2_shadows
+			if t2_shadows and not t2_ring()
 			else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		)
 		holder.add_child(node)
