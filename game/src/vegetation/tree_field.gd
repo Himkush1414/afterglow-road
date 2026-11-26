@@ -43,6 +43,12 @@ const T2 := 2
 const T3 := 3
 const CHUNK_RESELECT_M := 16.0
 const T2_KEEP_EXTRA_M := 64.0
+## Mid-tier chunk cut (_chunk_cut_m): worked out again when the eye moved this
+## far, and widened by the same distance.
+const CHUNK_CUT_STEP_M := 4.0
+## A kept chunk is sorted again around the eye once the eye is this far from
+## the point its instances were sorted around.
+const CHUNK_RESORT_M := 64.0
 ## 16 floats per instance: a 3 x 4 transform, then custom data.
 const STRIDE := 16
 const CELLS := 64
@@ -98,6 +104,8 @@ var _pending_chunks := {}
 var _done_chunks := {}
 var _last_chunk_eye := Vector3(INF, INF, INF)
 var _wanted_chunks: Array[Vector2i] = []
+## Eye (map) at the last mid-tier chunk cut.
+var _chunk_cut_eye := Vector3(INF, INF, INF)
 ## Per model: MultiMeshInstance3D or null for each (kind, sector) at
 ## kind * near_sectors + sector; kinds T0, T1, T1 shadow caster, T0 shadow
 ## caster, T2 shadow caster. Shadows are cast one mesh coarser (06 §A3,
@@ -578,9 +586,11 @@ func mid_chunks(eye: Vector3) -> Array[Vector2i]:
 	return out
 
 
-## T2 instance buffers of a chunk: {model index: [buffer, count]}; each
-## instance turned by the record's yaw, scaled, standing on the ground.
-func chunk_buffers(chunk: Vector2i) -> Dictionary:
+## T2 instance buffers of a chunk: {model index: [buffer, count, distances]};
+## each instance turned by the record's yaw, scaled, standing on the ground,
+## and ordered by its distance from map position `from` (ascending, in
+## distances), so a prefix holds the nearer trees.
+func chunk_buffers(chunk: Vector2i, from: Vector3 = Vector3.ZERO) -> Dictionary:
 	var out := {}
 	var raw := chunk_records(chunk)
 	var ci := WorldData.tree_chunk_index(chunk)
@@ -597,7 +607,7 @@ func chunk_buffers(chunk: Vector2i) -> Dictionary:
 		var pos := _world.map_to_world(Vector3(r.map.x, 0.0, r.map.y))
 		pos.y = _world.height_at(pos.x, pos.z)
 		var b := Basis(Vector3.UP, r.yaw).scaled(Vector3.ONE * r.scale)
-		var entry: Array = out.get_or_add(model, [PackedFloat32Array(), 0])
+		var entry: Array = out.get_or_add(model, [PackedFloat32Array(), 0, PackedFloat32Array()])
 		var buf: PackedFloat32Array = entry[0]
 		buf.append_array([b.x.x, b.y.x, b.z.x, pos.x, b.x.y, b.y.y, b.z.y, pos.y])
 		buf.append_array([b.x.z, b.y.z, b.z.z, pos.z])
@@ -606,13 +616,33 @@ func chunk_buffers(chunk: Vector2i) -> Dictionary:
 		)
 		entry[0] = buf
 		entry[1] = int(entry[1]) + 1
+		var dists: PackedFloat32Array = entry[2]
+		dists.append(Vector2(r.map.x - from.x, r.map.y - from.z).length())
+		entry[2] = dists
+	for entry: Array in out.values():
+		_sort_slot(entry)
 	return out
 
 
-func _build_chunk(chunk: Vector2i) -> void:
-	var result := chunk_buffers(chunk)
+## Distance from a chunk's sort point beyond which no T2 tree can be visible
+## while the eye is `offset_m` from that point (T2 end + half a band).
+func _chunk_cut_m(offset_m: float) -> float:
+	return float(tiers_m[T2]) + _band() * 0.5 + offset_m
+
+
+## The cut now in use for chunk c (built and added): [sort point (map), cut
+## distance from it]; trees farther are in the buffer but not drawn.
+func chunk_cut_now(c: Vector2i) -> Array:
+	var entry: Array = _chunks[c]
+	var from: Vector3 = entry[2]
+	var o := Vector2(_chunk_cut_eye.x - from.x, _chunk_cut_eye.z - from.z).length()
+	return [from, _chunk_cut_m(o + CHUNK_CUT_STEP_M)]
+
+
+func _build_chunk(chunk: Vector2i, from: Vector3) -> void:
+	var result := chunk_buffers(chunk, from)
 	_mutex.lock()
-	_done_chunks[chunk] = result
+	_done_chunks[chunk] = [from, result]
 	_mutex.unlock()
 
 
@@ -628,13 +658,16 @@ func _finish_chunks() -> void:
 		_mutex.unlock()
 		if result == null or not _wanted_chunks.has(c):
 			continue
-		_add_chunk(c, result)
+		if _chunks.has(c):
+			_free_chunk(c)  # sorted again: the new version replaces it
+		_add_chunk(c, result[1], result[0])
 
 
-func _add_chunk(c: Vector2i, buffers: Dictionary) -> void:
+func _add_chunk(c: Vector2i, buffers: Dictionary, from: Vector3) -> void:
 	var holder := Node3D.new()
 	holder.name = "Chunk_%d_%d" % [c.x, c.y]
 	var count := 0
+	var cuts: Array = []
 	for model: int in buffers:
 		var entry: Array = buffers[model]
 		var mm := MultiMesh.new()
@@ -653,9 +686,38 @@ func _add_chunk(c: Vector2i, buffers: Dictionary) -> void:
 		)
 		holder.add_child(node)
 		count += int(entry[1])
+		cuts.append([mm, entry[2]])
 	add_child(holder)
-	_chunks[c] = [holder, count]
+	_chunks[c] = [holder, count, from, cuts]
 	mid_instances += count
+	_chunk_cut_eye = Vector3(INF, INF, INF)
+
+
+## Draws only the prefix of each chunk buffer that can be visible from the
+## eye at map position `map` (_chunk_cut_m), widened by CHUNK_CUT_STEP_M and
+## worked out again when the eye moved that far.
+func _cut_chunks(map: Vector3) -> void:
+	if Vector2(map.x - _chunk_cut_eye.x, map.z - _chunk_cut_eye.z).length() < CHUNK_CUT_STEP_M:
+		return
+	_chunk_cut_eye = map
+	for c: Vector2i in _chunks:
+		var entry: Array = _chunks[c]
+		var from: Vector3 = entry[2]
+		var cut := _chunk_cut_m(Vector2(map.x - from.x, map.z - from.z).length() + CHUNK_CUT_STEP_M)
+		var lo := Vector2(c) * WorldData.TREE_CHUNK_M
+		var p := Vector2(from.x, from.z)
+		var dx := maxf(absf(p.x - lo.x), absf(p.x - lo.x - WorldData.TREE_CHUNK_M))
+		var dz := maxf(absf(p.y - lo.y), absf(p.y - lo.y - WorldData.TREE_CHUNK_M))
+		var whole := Vector2(dx, dz).length() <= cut
+		for pair: Array in entry[3]:
+			var mm: MultiMesh = pair[0]
+			var n := -1
+			if not whole:
+				n = (pair[1] as PackedFloat32Array).bsearch(cut, false)
+				if n >= mm.instance_count:
+					n = -1
+			if mm.visible_instance_count != n:
+				mm.visible_instance_count = n
 
 
 func _free_chunk(c: Vector2i) -> void:
@@ -792,12 +854,20 @@ func update_for(eye: Vector3) -> void:
 			if _chunk_near(eye, c) > far:
 				_free_chunk(c)
 	_finish_chunks()
+	var map := _world.world_to_map(eye)
+	_cut_chunks(map)
 	for c in _wanted_chunks:
 		if _pending_chunks.size() >= MAX_BUILDS:
 			break
-		if not _chunks.has(c) and not _pending_chunks.has(c):
+		if _pending_chunks.has(c):
+			continue
+		var stale := false
+		if _chunks.has(c):
+			var from: Vector3 = (_chunks[c] as Array)[2]
+			stale = Vector2(map.x - from.x, map.z - from.z).length() > CHUNK_RESORT_M
+		if not _chunks.has(c) or stale:
 			_pending_chunks[c] = WorkerThreadPool.add_task(
-				_build_chunk.bind(c), false, "tree chunk"
+				_build_chunk.bind(c, map), false, "tree chunk"
 			)
 
 
