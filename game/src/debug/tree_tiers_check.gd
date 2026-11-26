@@ -157,7 +157,9 @@ func _check_tiers(map: Vector3, step: int) -> int:
 								. length()
 							)
 							held = (
-								dn >= (windows[k] as Vector2).x and dn <= (windows[k] as Vector2).y
+								dn >= (windows[k] as Vector2).x
+								and dn <= (windows[k] as Vector2).y
+								and dn <= _field.near_cut_now_m(k)
 							)
 						2:
 							held = chunks.has(chunk)

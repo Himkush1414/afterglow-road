@@ -34,6 +34,9 @@ const NEAR_LINE_M := 16.0
 ## How far the camera can move between near-set rebuilds (a 16 m cell's diagonal).
 const NEAR_SLACK_M := 22.7
 const NEAR_SLICE_USEC := 700
+## The near-set cut (near_cut_m) is worked out again when the eye moved this
+## far; the cut is widened by the same distance.
+const CUT_STEP_M := 1.0
 const T2 := 2
 const T3 := 3
 const CHUNK_RESELECT_M := 16.0
@@ -99,6 +102,12 @@ var _near_task := -1
 var _near_result: Variant = null
 ## A near set being assigned: [map, buffers, next model, instance totals].
 var _near_assigning: Array = []
+## Per model: the map position its near buffers were built around and, per
+## node of _near, the sorted distances of its instances from there.
+var _near_from: Array[Vector3] = []
+var _near_dists: Array = []
+## Eye (map) at the last near-set cut.
+var _cut_eye := Vector3(INF, INF, INF)
 
 
 ## False with `errors` when the tree data cannot be read. `defs`: the tree
@@ -277,7 +286,9 @@ func near_window(k: int) -> Vector2:
 
 
 ## Near-set buffers around a map position: per model index an array of
-## [buffer, count] slots at tier * near_sectors + sector (tiers T0, T1).
+## [buffer, count, distances] slots at tier * near_sectors + sector (tiers
+## T0, T1), each slot's instances ordered by their distance from `map`
+## (ascending, in `distances`) so a prefix holds the nearer trees.
 func near_buffers(map: Vector3) -> Dictionary:
 	var out := {}
 	var sectors := maxi(1, near_sectors)
@@ -317,13 +328,48 @@ func near_buffers(map: Vector3) -> Dictionary:
 					buf.append_array(row)
 					slot[0] = buf
 					slot[1] = int(slot[1]) + 1
+					var dists: PackedFloat32Array = slot[2]
+					dists.append(d)
+					slot[2] = dists
+	for entry: Array in out.values():
+		for slot: Array in entry:
+			_sort_slot(slot)
 	return out
+
+
+## Orders a near-set slot's instances by distance (Vector2 sorts by x first).
+static func _sort_slot(slot: Array) -> void:
+	var dists: PackedFloat32Array = slot[2]
+	if dists.size() < 2:
+		return
+	var keys: Array[Vector2] = []
+	for i in dists.size():
+		keys.append(Vector2(dists[i], i))
+	keys.sort()
+	var src: PackedFloat32Array = slot[0]
+	var buf := PackedFloat32Array()
+	buf.resize(src.size())
+	for n in keys.size():
+		var i := int(keys[n].y)
+		dists[n] = keys[n].x
+		for c in STRIDE:
+			buf[n * STRIDE + c] = src[i * STRIDE + c]
+	slot[0] = buf
+	slot[2] = dists
+
+
+## Distance from a near set's build point beyond which no tree of tier k
+## (T0, T1) can be visible while the eye is `offset_m` from that point: the
+## shader fades on the distance to the eye and keeps nothing past the
+## tier's end + half a band (06 §A3).
+func near_cut_m(k: int, offset_m: float) -> float:
+	return float(tiers_m[k]) + _band() * 0.5 + offset_m
 
 
 static func _empty_slots(n: int) -> Array:
 	var out: Array = []
 	for i in n:
-		out.append([PackedFloat32Array(), 0])
+		out.append([PackedFloat32Array(), 0, PackedFloat32Array()])
 	return out
 
 
@@ -351,6 +397,7 @@ func _update_near(eye: Vector3) -> void:
 			near_assign_usec = 0
 	if not _near_assigning.is_empty():
 		_assign_near_slice()
+	_cut_near(map)
 	var line := Vector2i(floori(map.x / NEAR_LINE_M), floori(map.z / NEAR_LINE_M))
 	if line != _near_line and _near_task < 0:
 		_near_line = line
@@ -382,13 +429,17 @@ func _assign_near_slice() -> void:
 					continue
 				node = _near_node(model, k, j)
 			var mm := node.multimesh
+			mm.visible_instance_count = -1
 			if mm.instance_count != int(slot[1]):
 				mm.instance_count = int(slot[1])
 			if int(slot[1]) > 0:
 				mm.buffer = slot[0]
 			node.visible = int(slot[1]) > 0
+			(_near_dists[model] as Array)[j] = slot[2]
 			if k < 2:
 				totals[k] += int(slot[1])
+		_near_from[model] = _near_assigning[0]
+		_cut_eye = Vector3(INF, INF, INF)
 		model += 1
 	_near_assigning[2] = model
 	near_assign_usec = maxi(near_assign_usec, Time.get_ticks_usec() - t0)
@@ -396,6 +447,38 @@ func _assign_near_slice() -> void:
 		near_map = _near_assigning[0]
 		near_instances = totals
 		_near_assigning = []
+
+
+## The cut now in use for tier k (T0, T1) of the near set built around
+## near_map: trees farther from near_map are in the buffer but not drawn.
+func near_cut_now_m(k: int) -> float:
+	var o := Vector2(_cut_eye.x - near_map.x, _cut_eye.z - near_map.z).length()
+	return near_cut_m(k, o + CUT_STEP_M)
+
+
+## Draws only the prefix of each near buffer that can be visible from the
+## eye at `map` (near_cut_m), widened by CUT_STEP_M and worked out again
+## when the eye moved that far. A shadow caster is cut like its tier.
+func _cut_near(map: Vector3) -> void:
+	if Vector2(map.x - _cut_eye.x, map.z - _cut_eye.z).length() < CUT_STEP_M:
+		return
+	_cut_eye = map
+	var sectors := maxi(1, near_sectors)
+	for model in _near.size():
+		var from: Vector3 = _near_from[model]
+		var offset := Vector2(map.x - from.x, map.z - from.z).length() + CUT_STEP_M
+		var nodes: Array = _near[model]
+		for j in nodes.size():
+			var node: MultiMeshInstance3D = nodes[j]
+			if node == null or not node.visible:
+				continue
+			var dists: PackedFloat32Array = (_near_dists[model] as Array)[j]
+			var n := dists.bsearch(near_cut_m(mini(j / sectors, 1), offset), false)
+			var mm := node.multimesh
+			if n >= mm.instance_count:
+				n = -1
+			if mm.visible_instance_count != n:
+				mm.visible_instance_count = n
 
 
 ## k: 0 T0 (draws and casts), 1 T1 (draws only), 2 T1's shadow caster (T2
@@ -590,6 +673,10 @@ func _load_model(root: String, stem: String, e: Dictionary, d: Dictionary) -> in
 	var slots: Array = []
 	slots.resize(3 * maxi(1, near_sectors))
 	_near.append(slots)
+	var dists: Array = []
+	dists.resize(slots.size())
+	_near_dists.append(dists)
+	_near_from.append(Vector3(INF, INF, INF))
 	return _models.size() - 1
 
 

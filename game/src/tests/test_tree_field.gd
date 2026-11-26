@@ -105,3 +105,30 @@ func test_mid_tier_chunks_reach_into_the_t2_range() -> void:
 	check(chunks.has(Vector2i(0, 0)), "a chunk reaching past T1 is kept")
 	_field.tiers_m = [40.0, 120.0, 120.0, 2400.0]
 	check_eq(_field.mid_chunks(centre), [], "an empty T2 range has no chunks")
+
+
+func test_near_slot_sorted_by_distance() -> void:
+	var buf := PackedFloat32Array()
+	for tag: float in [5.0, 1.0, 3.0]:
+		var row := PackedFloat32Array()
+		row.resize(TreeField.STRIDE)
+		row.fill(tag)
+		buf.append_array(row)
+	var slot: Array = [buf, 3, PackedFloat32Array([5.0, 1.0, 3.0])]
+	TreeField._sort_slot(slot)
+	check_eq(slot[2], PackedFloat32Array([1.0, 3.0, 5.0]), "distances ascending")
+	var out: PackedFloat32Array = slot[0]
+	for n in 3:
+		var first := out[n * TreeField.STRIDE]
+		var last := out[(n + 1) * TreeField.STRIDE - 1]
+		check_eq(first, (slot[2] as PackedFloat32Array)[n], "row %d moved with its distance" % n)
+		check_eq(last, first, "row %d kept whole" % n)
+
+
+func test_near_cut_covers_every_visible_tree() -> void:
+	if not _setup():
+		return
+	# No fade band in this tuning: a tier keeps nothing past its end, and a
+	# tree within it of the eye is within end + offset of the build point.
+	check_eq(_field.near_cut_m(TreeField.T0, 2.5), 42.5, "T0 end + offset")
+	check_eq(_field.near_cut_m(TreeField.T1, 0.0), 120.0, "T1 end")
