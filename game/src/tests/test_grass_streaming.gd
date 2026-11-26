@@ -43,10 +43,10 @@ func after_each() -> void:
 	_world.free()
 
 
-func _setup() -> bool:
+func _setup(cfg: Dictionary = CFG) -> bool:
 	if not check(_world.load_dir(ContentDB.SAMPLE_ROOT + "/world"), ", ".join(_world.errors)):
 		return false
-	if not check(_field.configure(_world, CFG, TERRAIN, 1.0), ", ".join(_field.errors)):
+	if not check(_field.configure(_world, cfg, TERRAIN, 1.0), ", ".join(_field.errors)):
 		return false
 	_field.radius_m = 48.0
 	var meshes: Array[Mesh] = [BoxMesh.new(), BoxMesh.new()]
@@ -149,3 +149,43 @@ func test_a_hole_rebuilds_its_cell_without_a_gap() -> void:
 	check(_field.is_settled(), "settles")
 	check_eq(gaps, 0, "the cell never went bare")
 	check_eq(_field.instances, before - inside, "only the plants in the hole went")
+
+
+func test_added_cells_draw_only_what_the_fade_shows() -> void:
+	var cfg := CFG.duplicate(true)
+	cfg["shader"] = {"fade_band": 0.3}
+	if not _setup(cfg):
+		return
+	# Cell (8, 6) starts 36 m away along +x: inside the fade band (33.6..48 m).
+	var eye := _eye(220.0, 208.0)
+	if not check(_settle(eye), "settled"):
+		return
+	_field.update(eye + Vector3(GrassField.CUT_STEP_M, 0.0, 0.0))
+	eye += Vector3(GrassField.CUT_STEP_M, 0.0, 0.0)
+	var cut := 0
+	var hidden_shown := 0
+	var draw_of := {}
+	for d in _field.draws.size():
+		draw_of["%s_%d" % _field.draws[d]] = d
+	for holder in _field.get_children():
+		if holder.is_queued_for_deletion():
+			continue
+		for node in holder.get_children():
+			var mm := (node as MultiMeshInstance3D).multimesh
+			var n := mm.visible_instance_count
+			if n < 0:
+				continue
+			cut += 1
+			# The headless renderer keeps no buffer: rebuild the cell's arrays.
+			var c := _field.cell_of((holder as Node3D).position + Vector3(1.0, 0.0, 1.0))
+			var a: PackedFloat32Array = _field.build_cell(c)[draw_of[String(node.name)]]
+			var o := _field.cell_origin(c)
+			for k in range(n, a.size() / GrassField.STRIDE):
+				var p := Vector2(
+					o.x + a[k * GrassField.STRIDE + 3], o.z + a[k * GrassField.STRIDE + 11]
+				)
+				var d := p.distance_to(Vector2(eye.x, eye.z))
+				var keep := clampf((48.0 - d) / (0.3 * 48.0), 0.0, 1.0)
+				hidden_shown += int(a[k * GrassField.STRIDE + 12] < keep)
+	check(cut > 0, "some draws are cut")
+	check_eq(hidden_shown, 0, "no plant past a cut is one the fade shows")

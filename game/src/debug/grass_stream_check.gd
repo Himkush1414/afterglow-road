@@ -79,6 +79,7 @@ class Runner:
 			get_viewport().get_texture().get_image().save_png(args[3])
 			print("frame saved: %s" % args[3])
 		grass.worst_update_usec = 0
+		grass.worst_cut_usec = 0
 		var most := 0
 		for f in FRAMES:
 			at.x += STEP_M
@@ -98,8 +99,12 @@ class Runner:
 		)
 		print(
 			(
-				"worst main-thread update %.2f ms (limit 1)%s"
-				% [grass.worst_update_usec / 1000.0, _flag(update_ok)]
+				"worst main-thread update %.2f ms (limit 1)%s, of which fade cut up to %.2f ms"
+				% [
+					grass.worst_update_usec / 1000.0,
+					_flag(update_ok),
+					grass.worst_cut_usec / 1000.0
+				]
 			)
 		)
 		var ok := build_ok and update_ok
