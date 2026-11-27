@@ -2622,6 +2622,28 @@
 		}
 	},
 	"files": {
+		"customization.json": {
+			"required": false,
+			"spec": {
+				"type": "object",
+				"fields": {
+					"body_types": {
+						"type": "list",
+						"of": {
+							"type": "string"
+						},
+						"min_len": 2
+					},
+					"skin_tones": {
+						"type": "list",
+						"of": {
+							"type": "string"
+						},
+						"min_len": 1
+					}
+				}
+			}
+		},
 		"tuning.json": {
 			"required": true,
 			"spec": {
