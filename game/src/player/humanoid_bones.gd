@@ -1,7 +1,8 @@
 class_name HumanoidBones
 extends RefCounted
 ## Names of the player skeleton's bones (the game-engine rig of the body
-## generator, 22 §4) for each bone of SkeletonProfileHumanoid.
+## generator, 22 §4) for each bone of SkeletonProfileHumanoid, and of the
+## Rigify deform bones (DEF-*) that animation sources use.
 
 ## Profile bone without its Left/Right prefix -> rig bone without _l/_r.
 const SIDE_MAP := {
@@ -38,6 +39,41 @@ const CENTRE_MAP := {
 	"Neck": "neck_01",
 	"Head": "head",
 }
+## Profile bone without Left/Right -> Rigify deform bone without DEF- and .L/.R.
+const RIGIFY_SIDE := {
+	"Shoulder": "shoulder",
+	"UpperArm": "upper_arm",
+	"LowerArm": "forearm",
+	"Hand": "hand",
+	"ThumbMetacarpal": "thumb.01",
+	"ThumbProximal": "thumb.02",
+	"ThumbDistal": "thumb.03",
+	"IndexProximal": "f_index.01",
+	"IndexIntermediate": "f_index.02",
+	"IndexDistal": "f_index.03",
+	"MiddleProximal": "f_middle.01",
+	"MiddleIntermediate": "f_middle.02",
+	"MiddleDistal": "f_middle.03",
+	"RingProximal": "f_ring.01",
+	"RingIntermediate": "f_ring.02",
+	"RingDistal": "f_ring.03",
+	"LittleProximal": "f_pinky.01",
+	"LittleIntermediate": "f_pinky.02",
+	"LittleDistal": "f_pinky.03",
+	"UpperLeg": "thigh",
+	"LowerLeg": "shin",
+	"Foot": "foot",
+	"Toes": "toe",
+}
+const RIGIFY_CENTRE := {
+	"Root": "root",
+	"Hips": "DEF-hips",
+	"Spine": "DEF-spine.001",
+	"Chest": "DEF-spine.002",
+	"UpperChest": "DEF-spine.003",
+	"Neck": "DEF-neck",
+	"Head": "DEF-head",
+}
 ## Extra deform bones of the player skeleton (two per forearm), with their
 ## parent.
 const TWIST := {
@@ -60,16 +96,30 @@ static func rig_bone(profile_bone: String) -> String:
 	return ""
 
 
-## A BoneMap onto SkeletonProfileHumanoid for `skeleton`, and the required
-## profile bones it could not map: [BoneMap, PackedStringArray].
+## The Rigify deform bone for a profile bone name, or "".
+static func rigify_bone(profile_bone: String) -> String:
+	if RIGIFY_CENTRE.has(profile_bone):
+		return RIGIFY_CENTRE[profile_bone]
+	for side: String in ["Left", "Right"]:
+		if profile_bone.begins_with(side):
+			var rest := profile_bone.substr(side.length())
+			if RIGIFY_SIDE.has(rest):
+				return "DEF-%s.%s" % [RIGIFY_SIDE[rest], "L" if side == "Left" else "R"]
+	return ""
+
+
+## A BoneMap onto SkeletonProfileHumanoid for `skeleton` (player rig names,
+## or Rigify names when the skeleton has DEF-hips), and the required profile
+## bones it could not map: [BoneMap, PackedStringArray].
 static func bone_map(skeleton: Skeleton3D) -> Array:
+	var rigify := skeleton.find_bone("DEF-hips") >= 0
 	var profile := SkeletonProfileHumanoid.new()
 	var map := BoneMap.new()
 	map.profile = profile
 	var missing := PackedStringArray()
 	for i in profile.bone_size:
 		var name := profile.get_bone_name(i)
-		var target := rig_bone(name)
+		var target := rigify_bone(name) if rigify else rig_bone(name)
 		if target != "" and skeleton.find_bone(target) >= 0:
 			map.set_skeleton_bone_name(name, target)
 		elif profile.is_required(i):
