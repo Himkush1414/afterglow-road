@@ -115,7 +115,8 @@ var _near: Array = []
 var _near_line := Vector2i(1 << 30, 1 << 30)
 var _near_task := -1
 var _near_result: Variant = null
-## A near set being assigned: [map, buffers, next model, instance totals].
+## A near set being assigned: [map, buffers, next model, instance totals,
+## costliest model so far in microseconds].
 var _near_assigning: Array = []
 ## Per model: the map position its near buffers were built around and, per
 ## node of _near, the sorted distances of its instances from there.
@@ -462,7 +463,7 @@ func _update_near(eye: Vector3) -> void:
 		_near_result = null
 		_mutex.unlock()
 		if result is Array:
-			_near_assigning = [result[0], result[1], 0, [0, 0]]
+			_near_assigning = [result[0], result[1], 0, [0, 0], 0]
 			near_assign_usec = 0
 	if not _near_assigning.is_empty():
 		_assign_near_slice()
@@ -480,14 +481,20 @@ func _build_near(map: Vector3) -> void:
 	_mutex.unlock()
 
 
-## Assigns the pending near set's models until the time slice is used.
+## Assigns the pending near set's models until the time slice is used: a
+## further model starts only while the costliest model of this assignment
+## so far still fits in the slice.
 func _assign_near_slice() -> void:
 	var t0 := Time.get_ticks_usec()
 	var buffers: Dictionary = _near_assigning[1]
 	var totals: Array = _near_assigning[3]
 	var cells := _cells()
-	var model: int = _near_assigning[2]
-	while model < _models.size() and Time.get_ticks_usec() - t0 < NEAR_SLICE_USEC:
+	var first: int = _near_assigning[2]
+	var model := first
+	while model < _models.size():
+		var start := Time.get_ticks_usec()
+		if model > first and start - t0 + int(_near_assigning[4]) > NEAR_SLICE_USEC:
+			break
 		var entry: Array = buffers.get(model, _empty_slots(3 * cells))
 		for j in NEAR_KIND_TIER.size() * cells:
 			var k := j / cells
@@ -509,6 +516,7 @@ func _assign_near_slice() -> void:
 				totals[k] += int(slot[1])
 		_near_from[model] = _near_assigning[0]
 		_cut_eye = Vector3(INF, INF, INF)
+		_near_assigning[4] = maxi(int(_near_assigning[4]), Time.get_ticks_usec() - start)
 		model += 1
 	_near_assigning[2] = model
 	near_assign_usec = maxi(near_assign_usec, Time.get_ticks_usec() - t0)
