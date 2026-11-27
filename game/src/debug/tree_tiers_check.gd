@@ -53,6 +53,13 @@ func _run() -> void:
 	_field.t2_shadows = presets[args[0]].get("t2_tree_shadows", false) == true
 	_field.shadow_distance_m = float(presets[args[0]].get("shadow_distance_m", 0.0))
 	_field.near_sectors = int(presets[args[0]].get("tree_near_sectors", 1))
+	var lights := SkyLights.new()
+	lights.set_shadows(
+		int(presets[args[0]].get("shadow_cascades", 4)),
+		float(presets[args[0]].get("shadow_distance_m", 100.0))
+	)
+	_field.near_splits_m = lights.cascade_splits_m()
+	lights.free()
 	add_child(_field)
 	if not _field.setup(_world, defs, cfg, _tiers):
 		printerr("tree tiers check: %s" % ", ".join(_field.errors))

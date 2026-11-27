@@ -108,6 +108,7 @@ func _ready() -> void:
 		tree_field.shadow_distance_m = float(shadow_m) if shadow_m != null else 0.0
 		var sectors: Variant = Quality.value("tree_near_sectors")
 		tree_field.near_sectors = int(sectors) if sectors != null else 1
+		tree_field.near_splits_m = sky_lights.cascade_splits_m()
 		if not tree_field.setup(
 			world, trees, ContentDB.tuning("trees"), tiers if tiers is Array else []
 		):

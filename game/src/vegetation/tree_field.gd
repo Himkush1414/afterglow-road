@@ -63,6 +63,11 @@ var shadow_distance_m := 0.0
 ## frustum and shadow-cascade culling can drop the ones out of view (quality
 ## preset; 1 = no split). Set before setup.
 var near_sectors := 1
+## Distances (metres, ascending) from the near set's build point at which
+## each sector is split again, so shadow-cascade culling can drop the parts
+## outside a cascade: the sun's cascade split distances (06 §A3, Q-109i).
+## Empty = no split. Set before setup.
+var near_splits_m := PackedFloat32Array()
 ## Instances in the built T2 chunks.
 var mid_instances := 0
 ## Instances in the near set, per tier [T0, T1].
@@ -99,9 +104,10 @@ var _last_chunk_eye := Vector3(INF, INF, INF)
 var _wanted_chunks: Array[Vector2i] = []
 ## Eye (map) at the last mid-tier chunk cut.
 var _chunk_cut_eye := Vector3(INF, INF, INF)
-## Per model: MultiMeshInstance3D or null for each (kind, sector) at
-## kind * near_sectors + sector; kinds T0, T1, T1 shadow caster, T0 shadow
-## caster, T2 shadow caster. Shadows are cast one mesh coarser (06 §A3,
+## Per model: MultiMeshInstance3D or null for each (kind, cell) at
+## kind * _cells() + cell (cell: sector * bands + band, see _cells());
+## kinds T0, T1, T1 shadow caster, T0 shadow caster, T2 shadow caster.
+## Shadows are cast one mesh coarser (06 §A3,
 ## Q-109f): the T1 instances drawn again as shadow-only T2 meshes, the T0
 ## instances as shadow-only T1 meshes; T2 trees within the shadow distance
 ## cast as shadow-only T2 meshes (Q-109g).
@@ -343,12 +349,14 @@ func near_window(k: int) -> Vector2:
 
 
 ## Near-set buffers around a map position: per model index an array of
-## [buffer, count, distances] slots at tier * near_sectors + sector (tiers
+## [buffer, count, distances] slots at tier * _cells() + cell (tiers
 ## T0, T1, T2 casters), each slot's instances ordered by their distance from `map`
 ## (ascending, in `distances`) so a prefix holds the nearer trees.
 func near_buffers(map: Vector3) -> Dictionary:
 	var out := {}
 	var sectors := maxi(1, near_sectors)
+	var bands := near_splits_m.size() + 1
+	var cells := sectors * bands
 	var windows := [near_window(T0), near_window(T1), near_window(T2)]
 	var reach := 0.0
 	for w: Vector2 in windows:
@@ -372,9 +380,10 @@ func near_buffers(map: Vector3) -> Dictionary:
 				var v: Array = options[h % options.size()]
 				if int(v[3]) < 0:
 					continue
-				var entry: Array = out.get_or_add(int(v[3]), _empty_slots(3 * sectors))
+				var entry: Array = out.get_or_add(int(v[3]), _empty_slots(3 * cells))
 				var angle := atan2(r.map.y - map.z, r.map.x - map.x) + PI
 				var sector := mini(int(angle / TAU * sectors), sectors - 1)
+				var cell := sector * bands + near_splits_m.bsearch(d, false)
 				var row := PackedFloat32Array()
 				for k in 3:
 					var w: Vector2 = windows[k]
@@ -382,7 +391,7 @@ func near_buffers(map: Vector3) -> Dictionary:
 						continue
 					if row.is_empty():
 						row = _instance_row(r, h, v)
-					var slot: Array = entry[k * sectors + sector]
+					var slot: Array = entry[k * cells + cell]
 					var buf: PackedFloat32Array = slot[0]
 					buf.append_array(row)
 					slot[0] = buf
@@ -476,13 +485,13 @@ func _assign_near_slice() -> void:
 	var t0 := Time.get_ticks_usec()
 	var buffers: Dictionary = _near_assigning[1]
 	var totals: Array = _near_assigning[3]
-	var sectors := maxi(1, near_sectors)
+	var cells := _cells()
 	var model: int = _near_assigning[2]
 	while model < _models.size() and Time.get_ticks_usec() - t0 < NEAR_SLICE_USEC:
-		var entry: Array = buffers.get(model, _empty_slots(3 * sectors))
-		for j in NEAR_KIND_TIER.size() * sectors:
-			var k := j / sectors
-			var slot: Array = entry[int(NEAR_KIND_TIER[k]) * sectors + j % sectors]
+		var entry: Array = buffers.get(model, _empty_slots(3 * cells))
+		for j in NEAR_KIND_TIER.size() * cells:
+			var k := j / cells
+			var slot: Array = entry[int(NEAR_KIND_TIER[k]) * cells + j % cells]
 			var node: MultiMeshInstance3D = (_near[model] as Array)[j]
 			if node == null:
 				if int(slot[1]) == 0:
@@ -523,7 +532,7 @@ func _cut_near(map: Vector3) -> void:
 	if Vector2(map.x - _cut_eye.x, map.z - _cut_eye.z).length() < CUT_STEP_M:
 		return
 	_cut_eye = map
-	var sectors := maxi(1, near_sectors)
+	var cells := _cells()
 	for model in _near.size():
 		var from: Vector3 = _near_from[model]
 		var offset := Vector2(map.x - from.x, map.z - from.z).length() + CUT_STEP_M
@@ -533,7 +542,7 @@ func _cut_near(map: Vector3) -> void:
 			if node == null or not node.visible:
 				continue
 			var dists: PackedFloat32Array = (_near_dists[model] as Array)[j]
-			var n := dists.bsearch(near_cut_m(NEAR_KIND_TIER[j / sectors], offset), false)
+			var n := dists.bsearch(near_cut_m(NEAR_KIND_TIER[j / cells], offset), false)
 			var mm := node.multimesh
 			if n >= mm.instance_count:
 				n = -1
@@ -543,7 +552,7 @@ func _cut_near(map: Vector3) -> void:
 
 ## k: 0 T0, 1 T1 (both draw only), 2 T1's shadow caster (T2 mesh), 3 T0's
 ## shadow caster (T1 mesh), 4 T2's shadow caster (T2 mesh, the ring of
-## t2_ring()); j: its slot (kind * near_sectors + sector).
+## t2_ring()); j: its slot (kind * _cells() + cell).
 func _near_node(model: int, k: int, j: int) -> MultiMeshInstance3D:
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
@@ -563,6 +572,11 @@ func _near_node(model: int, k: int, j: int) -> MultiMeshInstance3D:
 	add_child(node)
 	(_near[model] as Array)[j] = node
 	return node
+
+
+## Near-set cells per tier: sectors x radial bands (near_splits_m).
+func _cells() -> int:
+	return maxi(1, near_sectors) * (near_splits_m.size() + 1)
 
 
 func _band() -> float:
@@ -925,7 +939,7 @@ func _setup_models(root: String) -> void:
 	_near_from.clear()
 	for _m: Dictionary in _models:
 		var slots: Array = []
-		slots.resize(NEAR_KIND_TIER.size() * maxi(1, near_sectors))
+		slots.resize(NEAR_KIND_TIER.size() * _cells())
 		_near.append(slots)
 		var dists: Array = []
 		dists.resize(slots.size())
