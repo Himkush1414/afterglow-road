@@ -17,8 +17,11 @@ set at half size, T-22-8).
 Stumps and felled caps (22 §3), when <content>/assetgen/stumps.json exists:
 every mesh the preset asks for exists within its triangle budget and has
 exactly a bark and a cut surface.
+Player bodies (22 §4), when <content>/assetgen/character.json exists: a
+<content>/assets/models/character/<id>.glb for every body of the preset.
 Engine side (unless --no-engine): the imported models are checked headless
-by res://src/tools/check_tree_models.gd.
+by res://src/tools/check_tree_models.gd, and the bodies (T-22-5) by
+res://src/tools/check_character.gd.
 Prints each error, then RESULT PASS / FAIL; exit code 0 / 1.
 """
 import argparse
@@ -198,14 +201,37 @@ def check_model(path, stem, budgets, surfaces=SURFACES):
     return errors
 
 
+CHARACTER_DIR = os.path.join("assets", "models", "character")
+
+
+def check_character(content):
+    """Errors of the player body files ([] without a character preset)."""
+    preset_path = os.path.join(content, "assetgen", "character.json")
+    if not os.path.exists(preset_path):
+        return []
+    with open(preset_path, encoding="utf-8") as f:
+        preset = json.load(f)
+    return [
+        f"{os.path.join(CHARACTER_DIR, body)}.glb: missing"
+        for body in sorted(preset.get("bodies", {}))
+        if not os.path.exists(os.path.join(content, CHARACTER_DIR, body + ".glb"))
+    ]
+
+
 def engine_check(content):
     rel = pathlib.Path(content).resolve().relative_to(ROOT / "game").as_posix()
-    cmd = [str(ROOT / "tools" / "godot.sh"), "--headless", "-s", "res://src/tools/check_tree_models.gd", "--", f"res://{rel}"]
-    try:
-        return subprocess.run(cmd, cwd=ROOT, check=False, timeout=TIMEOUT_S).returncode
-    except subprocess.TimeoutExpired:
-        print(f"engine check did not finish in {TIMEOUT_S} s", file=sys.stderr)
-        return 1
+    scripts = ["res://src/tools/check_tree_models.gd"]
+    if os.path.exists(os.path.join(content, "assetgen", "character.json")):
+        scripts.append("res://src/tools/check_character.gd")
+    code = 0
+    for script in scripts:
+        cmd = [str(ROOT / "tools" / "godot.sh"), "--headless", "-s", script, "--", f"res://{rel}"]
+        try:
+            code = max(code, subprocess.run(cmd, cwd=ROOT, check=False, timeout=TIMEOUT_S).returncode)
+        except subprocess.TimeoutExpired:
+            print(f"engine check {script} did not finish in {TIMEOUT_S} s", file=sys.stderr)
+            code = 1
+    return code
 
 
 def check_ground_cover(content):
@@ -259,7 +285,12 @@ def main(argv=None):
     ap.add_argument("content")
     ap.add_argument("--no-engine", action="store_true")
     a = ap.parse_args(argv)
-    errors = check_trees(a.content) + check_stumps(a.content) + check_ground_cover(a.content)
+    errors = (
+        check_trees(a.content)
+        + check_stumps(a.content)
+        + check_ground_cover(a.content)
+        + check_character(a.content)
+    )
     for e in errors:
         print(f"  ERROR {e}")
     code = 0 if a.no_engine or errors else engine_check(a.content)

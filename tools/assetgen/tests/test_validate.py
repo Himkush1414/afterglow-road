@@ -220,3 +220,21 @@ class GroundCoverTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CharacterTest(unittest.TestCase):
+    def test_no_preset_no_check(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(validate.check_character(d), [])
+
+    def test_every_body_of_the_preset_needs_a_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, "assetgen"))
+            with open(os.path.join(d, "assetgen", "character.json"), "w", encoding="utf-8") as f:
+                json.dump({"bodies": {"a": {}, "b": {}}}, f)
+            models = os.path.join(d, validate.CHARACTER_DIR)
+            os.makedirs(models)
+            open(os.path.join(models, "a.glb"), "wb").close()
+            errors = validate.check_character(d)
+            self.assertEqual(len(errors), 1)
+            self.assertIn("b.glb", errors[0])
