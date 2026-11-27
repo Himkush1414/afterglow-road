@@ -98,6 +98,25 @@ static func shadow_mode(cascades: int) -> DirectionalLight3D.ShadowMode:
 	][clampi(cascades, 1, 4) - 1]
 
 
+## Distances (metres) at which the sun's shadow cascades split: each split
+## fraction in use times the shadow distance; empty for one cascade.
+func cascade_splits_m() -> PackedFloat32Array:
+	var fractions: Array[float] = []
+	match sun.directional_shadow_mode:
+		DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS:
+			fractions = [sun.directional_shadow_split_1]
+		DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS:
+			fractions = [
+				sun.directional_shadow_split_1,
+				sun.directional_shadow_split_2,
+				sun.directional_shadow_split_3,
+			]
+	var out := PackedFloat32Array()
+	for f in fractions:
+		out.append(f * sun.directional_shadow_max_distance)
+	return out
+
+
 ## The "sky" tuning group given to `setup`.
 func sky_config() -> Dictionary:
 	return _cfg

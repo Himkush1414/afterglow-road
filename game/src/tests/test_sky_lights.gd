@@ -188,3 +188,17 @@ func test_preset_shadows_reach_both_lights() -> void:
 	check_eq(SkyLights.shadow_mode(1), DirectionalLight3D.SHADOW_ORTHOGONAL, "1 cascade")
 	check_eq(SkyLights.shadow_mode(4), DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS, "4 cascades")
 	lights.free()
+
+
+func test_cascade_splits_follow_the_shadow_settings() -> void:
+	var lights := _rig(CLOCK, SKY)
+	lights.set_shadows(1, 40.0)
+	check_eq(lights.cascade_splits_m(), PackedFloat32Array(), "one cascade: no split")
+	lights.set_shadows(2, 60.0)
+	check_eq(lights.cascade_splits_m().size(), 1, "two cascades: one split")
+	lights.set_shadows(4, 200.0)
+	var s := lights.cascade_splits_m()
+	check_eq(s.size(), 3, "four cascades: three splits")
+	check_near(s[2], lights.sun.directional_shadow_split_3 * 200.0, 1e-4, "last split")
+	check(s[0] < s[1] and s[1] < s[2], "ascending")
+	lights.free()
