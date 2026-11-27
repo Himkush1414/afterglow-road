@@ -5,7 +5,9 @@ extends SceneTree
 ## forearm twist bones; all bodies have identical skeletons (bone names,
 ## parents and rest transforms); an eye_marker under the head bone stands at
 ## the eye height in <root>/assetgen/character.json ± 0.01 m; each body has
-## one skinned mesh per segment of the preset (skin_<segment>), each with a
+## one skinned mesh per segment of the preset (skin_<segment>) and per segment
+## of each base-outfit garment (<garment>_<segment>, with a material named
+## after the garment), and no other mesh; each mesh with a
 ## blend shape build_<name> per build of the preset, every build moving some
 ## vertex of the body by at least 5 mm; and the bodies' meshes differ.
 ## Usage: godot --headless -s res://src/tools/check_character.gd -- <res:// root>
@@ -98,7 +100,7 @@ func _check_one(f: String, scene: Node, preset: Variant, errors: PackedStringArr
 	if skinned == 0:
 		errors.append("%s: no skinned mesh" % f)
 	if preset is Dictionary:
-		_check_segments(f, scene, skel, (preset.get("segments", {}) as Dictionary).keys(), errors)
+		_check_segments(f, scene, skel, _expected_meshes(preset), errors)
 		_check_builds(f, scene, (preset.get("builds", {}) as Dictionary).keys(), errors)
 	for twist: String in HumanoidBones.TWIST:
 		if int(weighted.get(twist, 0)) == 0:
@@ -129,20 +131,40 @@ func _check_one(f: String, scene: Node, preset: Variant, errors: PackedStringArr
 	return skel
 
 
-## Errors unless there is one skinned mesh named after each segment.
+## Mesh name -> material name ("" for skin) the preset asks for.
+func _expected_meshes(preset: Dictionary) -> Dictionary:
+	var out := {}
+	for seg: String in preset.get("segments", {}):
+		out[SKIN_PREFIX + seg] = ""
+	var garments: Dictionary = preset.get("garments", {})
+	for g: String in garments:
+		for seg: String in (garments[g] as Dictionary).get("segments", []):
+			out["%s_%s" % [g, seg]] = g
+	return out
+
+
+## Errors unless the skinned meshes are exactly the expected ones, garments
+## carrying their garment's material.
 func _check_segments(
-	f: String, scene: Node, skel: Skeleton3D, segments: Array, errors: PackedStringArray
+	f: String, scene: Node, skel: Skeleton3D, expected: Dictionary, errors: PackedStringArray
 ) -> void:
 	var found := {}
 	for m: MeshInstance3D in scene.find_children("*", "MeshInstance3D", true, false):
-		if m.skin != null and m.get_node_or_null(m.skeleton) == skel:
-			found[String(m.name)] = int(found.get(String(m.name), 0)) + 1
-	for seg: String in segments:
-		var n := int(found.get(SKIN_PREFIX + seg, 0))
-		if n != 1:
-			errors.append("%s: %d meshes for segment %s" % [f, n, seg])
-	if not segments.is_empty() and found.size() != segments.size():
-		errors.append("%s: meshes %s, segments %s" % [f, str(found.keys()), str(segments)])
+		if m.skin == null or m.get_node_or_null(m.skeleton) != skel:
+			continue
+		var n := String(m.name)
+		if found.has(n):
+			errors.append("%s: two meshes %s" % [f, n])
+		found[n] = true
+		if not expected.has(n):
+			errors.append("%s: unexpected mesh %s" % [f, n])
+		elif expected[n] != "":
+			var mat := m.mesh.surface_get_material(0)
+			if mat == null or not String(mat.resource_name).begins_with(expected[n]):
+				errors.append("%s: %s has no %s material" % [f, n, expected[n]])
+	for n: String in expected:
+		if not found.has(n):
+			errors.append("%s: no mesh %s" % [f, n])
 
 
 ## Errors unless every mesh has a blend shape per build and each build moves

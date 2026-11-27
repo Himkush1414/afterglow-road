@@ -10,6 +10,8 @@ Needs the MPFB extension installed in the Blender user resources in use
    "twist_at": [t1, t2],            # forearm twist bones, share of the forearm
    "builds": {"slim": {<macro>: value}, "broad": {<macro>: value}},
    "segments": {"<segment>": [<bone>, ...], ...},
+   "garments": {"<garment>": {"segments": [...], "offset_m": float,
+                              "smooth": iterations}, ...},
    "bodies": {"<id>": {"macros": {<MPFB macro>: value, ...}}, ...}}
 
 For every body the MPFB "height" macro is solved so that the eyes (the mean
@@ -25,6 +27,11 @@ Helper geometry (everything outside MPFB's "body" group) is removed. The
 body is then split into one mesh object per segment (skin_<segment>): a
 face goes to the segment of the bone holding most weight over its vertices.
 Every bone with weight must belong to exactly one segment.
+
+Each garment of the base outfit is the body pushed out along its smooth
+normals by offset_m and smoothed (to drop details such as toes), with the
+build shape keys moved alike, then split the same way: its segments become
+meshes <garment>_<segment> with a material named after the garment.
 
 Writes <out>/<id>.glb per body (the rig and that body's mesh) and <out>/bodies.json with the
 solved macros and the measured eye heights. Deterministic for a preset.
@@ -234,8 +241,10 @@ def remove_helpers(body):
     mesh.free()
 
 
-def split_segments(body, rig, segments):
-    """Separates `body` into one object per segment; returns them."""
+def split_segments(body, rig, segments, prefix=None):
+    """Separates `body` into one object per segment named <prefix><segment>
+    (SKIN_PREFIX by default); returns them."""
+    prefix = SKIN_PREFIX if prefix is None else prefix
     owner = {}
     for name, bones in segments.items():
         for bone in bones:
@@ -283,13 +292,63 @@ def split_segments(body, rig, segments):
         mats = [m for m in part.data.materials if m is not None]
         if len(mats) != 1:
             raise SystemExit("segment split failed")
-        part.name = SKIN_PREFIX + mats[0].name.removeprefix("segment:")
+        part.name = prefix + mats[0].name.removeprefix("segment:")
         part.data.name = part.name
         part.data.materials.clear()
         out.append(part)
     for mat in tags:
         bpy.data.materials.remove(mat)
     return out
+
+
+def garment_parts(body, rig, preset):
+    """Mesh objects <garment>_<segment> of every garment of the base outfit."""
+    out = []
+    for name in sorted(preset.get("garments", {})):
+        spec = preset["garments"][name]
+        shell = body.copy()
+        shell.data = body.data.copy()
+        bpy.context.scene.collection.objects.link(shell)
+        inflate(shell, float(spec["offset_m"]), int(spec.get("smooth", 0)))
+        material = bpy.data.materials.get(name) or bpy.data.materials.new(name=name)
+        keep = set(spec["segments"])
+        for part in split_segments(shell, rig, preset["segments"], name + "_"):
+            if part.name.removeprefix(name + "_") in keep:
+                part.data.materials.append(material)
+                out.append(part)
+            else:
+                bpy.data.objects.remove(part, do_unlink=True)
+    return out
+
+
+def inflate(obj, offset_m, smooth):
+    """Moves every vertex out along its smooth normal by offset_m, then
+    smooths the result `smooth` times (Laplacian, volume kept); every shape key gets the same move,
+    so its offset from the basis stays."""
+    mesh = obj.data
+    base = [v.co.copy() for v in mesh.vertices]
+    target = [v.co + v.normal * offset_m for v in mesh.vertices]
+    if smooth > 0:
+        work = bmesh.new()
+        work.from_mesh(mesh)
+        work.verts.ensure_lookup_table()
+        for v, p in zip(work.verts, target):
+            v.co = p
+        inner = [v for v in work.verts if not v.is_boundary]
+        for _ in range(smooth):
+            bmesh.ops.smooth_laplacian_vert(
+                work, verts=inner, lambda_factor=1.0, lambda_border=0.0,
+                use_x=True, use_y=True, use_z=True, preserve_volume=True,
+            )
+        target = [v.co.copy() for v in work.verts]
+        work.free()
+    move = [t - b for t, b in zip(target, base)]
+    if mesh.shape_keys:
+        for key in mesh.shape_keys.key_blocks:
+            for d, m in zip(key.data, move):
+                d.co = d.co + m
+    for v, m in zip(mesh.vertices, move):
+        v.co = v.co + m
 
 
 def export(path, objects):
@@ -343,7 +402,7 @@ def main():
         split_forearm_weights(body, rig, shares)
         add_build_keys(body, solved[body_id], preset.get("builds", {}))
         remove_helpers(body)
-        parts = split_segments(body, rig, preset["segments"])
+        parts = garment_parts(body, rig, preset) + split_segments(body, rig, preset["segments"])
         marker = add_eye_marker(rig, eye)
         export(os.path.join(a.out, body_id + ".glb"), [rig, marker] + parts)
         bpy.data.objects.remove(marker, do_unlink=True)
