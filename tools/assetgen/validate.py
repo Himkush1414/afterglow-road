@@ -23,8 +23,10 @@ with a "skin" group, skin_albedo.png and skin_nra.png of its size in
 <content>/assets/textures/character/; every skin tone in
 <content>/data/customization.json a #rrggbb colour.
 Engine side (unless --no-engine): the imported models are checked headless
-by res://src/tools/check_tree_models.gd, and the bodies (T-22-5) by
-res://src/tools/check_character.gd.
+by res://src/tools/check_tree_models.gd, the bodies (T-22-5) by
+res://src/tools/check_character.gd, and the player clips (T-22-6, when
+<content>/assetgen/animations.json exists) by
+res://src/tools/check_animations.gd.
 Prints each error, then RESULT PASS / FAIL; exit code 0 / 1.
 """
 import argparse
@@ -250,6 +252,8 @@ def engine_check(content):
     scripts = ["res://src/tools/check_tree_models.gd"]
     if os.path.exists(os.path.join(content, "assetgen", "character.json")):
         scripts.append("res://src/tools/check_character.gd")
+    if os.path.exists(os.path.join(content, "assetgen", "animations.json")):
+        scripts.append("res://src/tools/check_animations.gd")
     code = 0
     for script in scripts:
         cmd = [str(ROOT / "tools" / "godot.sh"), "--headless", "-s", script, "--", f"res://{rel}"]
