@@ -410,5 +410,26 @@
 		"bolt_draw_m": 800,
 		"bolt_top_deg": 15,
 		"bolt_width_deg": 3
+	},
+	"movement": {
+		"capsule_radius_m": 0.3,
+		"stand_height_m": 1.8,
+		"crouch_height_m": 1.2,
+		"walk_ms": 2.0,
+		"jog_ms": 4.0,
+		"sprint_ms": 6.0,
+		"crouch_ms": 1.5,
+		"back_mult": 0.75,
+		"strafe_mult": 0.9,
+		"accel_ms2": 25,
+		"decel_ms2": 35,
+		"air_accel_ms2": 5,
+		"gravity_ms2": 20,
+		"step_m": 0.3,
+		"walk_slope_deg": 40,
+		"wall_slope_deg": 60,
+		"slide_ms2": 2.5,
+		"sprint_cone_deg": 40,
+		"step_return_ms": 3
 	}
 }
