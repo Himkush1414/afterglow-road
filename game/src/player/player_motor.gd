@@ -92,6 +92,9 @@ var sliding := false
 ## Height the recent steps added that the view has not caught up with yet:
 ## camera and rig subtract it; it returns to 0 at step_return_ms (10 §4.2).
 var step_offset_m := 0.0
+## step_offset_m at the start of the last tick: the view interpolates
+## between the two like the body's transform.
+var step_offset_prev_m := 0.0
 
 var _cfg := {}
 var _shape := CapsuleShape3D.new()
@@ -163,6 +166,7 @@ func _physics_process(delta: float) -> void:
 
 ## One physics tick of `delta` seconds.
 func tick(delta: float) -> void:
+	step_offset_prev_m = step_offset_m
 	if state == State.MANTLING:
 		_mantle_tick(delta)
 		return
