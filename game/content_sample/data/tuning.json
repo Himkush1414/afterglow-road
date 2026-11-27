@@ -430,6 +430,17 @@
 		"wall_slope_deg": 60,
 		"slide_ms2": 2.5,
 		"sprint_cone_deg": 40,
-		"step_return_ms": 3
+		"step_return_ms": 3,
+		"jump_ms": 6.5,
+		"coyote_s": 0.1,
+		"jump_buffer_s": 0.1,
+		"fall_safe_ms": 10,
+		"fall_hp_per_ms": 7,
+		"mantle_min_m": 0.4,
+		"mantle_max_m": 1.2,
+		"mantle_depth_m": 0.6,
+		"mantle_room_m": 0.9,
+		"mantle_reach_m": 0.5,
+		"mantle_s": 0.5
 	}
 }
