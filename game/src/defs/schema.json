@@ -1804,6 +1804,76 @@
 				}
 			}
 		},
+		"tuning_camera": {
+			"type": "object",
+			"fields": {
+				"stand_eye_m": {
+					"type": "number",
+					"min": 0.01
+				},
+				"crouch_eye_m": {
+					"type": "number",
+					"min": 0.01
+				},
+				"eye_blend_s": {
+					"type": "number",
+					"min": 0.01
+				},
+				"head_eye_up_m": {
+					"type": "number"
+				},
+				"head_eye_fwd_m": {
+					"type": "number"
+				},
+				"pitch_min_deg": {
+					"type": "number",
+					"min": -90
+				},
+				"pitch_max_deg": {
+					"type": "number"
+				},
+				"low_pitch_deg": {
+					"type": "number",
+					"min": -90
+				},
+				"low_pitch_shift_m": {
+					"type": "number",
+					"min": 0
+				},
+				"near_m": {
+					"type": "number",
+					"min": 0.001
+				},
+				"far_m": {
+					"type": "number",
+					"min": 1
+				},
+				"fov_desktop_min_deg": {
+					"type": "number",
+					"min": 1
+				},
+				"fov_desktop_max_deg": {
+					"type": "number",
+					"min": 1
+				},
+				"fov_phone_min_deg": {
+					"type": "number",
+					"min": 1
+				},
+				"fov_phone_max_deg": {
+					"type": "number",
+					"min": 1
+				},
+				"mouse_rad_per_px": {
+					"type": "number",
+					"min": 1e-05
+				},
+				"stick_deg_s": {
+					"type": "number",
+					"min": 1
+				}
+			}
+		},
 		"tuning_inventory": {
 			"type": "object",
 			"fields": {
@@ -2600,6 +2670,10 @@
 					},
 					"movement": {
 						"type": "tuning_movement",
+						"optional": true
+					},
+					"camera": {
+						"type": "tuning_camera",
 						"optional": true
 					},
 					"inventory": {

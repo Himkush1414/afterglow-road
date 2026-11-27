@@ -442,5 +442,24 @@
 		"mantle_room_m": 0.9,
 		"mantle_reach_m": 0.5,
 		"mantle_s": 0.5
+	},
+	"camera": {
+		"stand_eye_m": 1.6,
+		"crouch_eye_m": 1.0,
+		"eye_blend_s": 0.2,
+		"head_eye_up_m": 0.05,
+		"head_eye_fwd_m": 0.1,
+		"pitch_min_deg": -80,
+		"pitch_max_deg": 80,
+		"low_pitch_deg": -45,
+		"low_pitch_shift_m": 0.05,
+		"near_m": 0.05,
+		"far_m": 8000,
+		"fov_desktop_min_deg": 60,
+		"fov_desktop_max_deg": 100,
+		"fov_phone_min_deg": 55,
+		"fov_phone_max_deg": 90,
+		"mouse_rad_per_px": 0.003,
+		"stick_deg_s": 160
 	}
 }
