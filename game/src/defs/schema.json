@@ -1677,7 +1677,84 @@
 		"tuning_movement": {
 			"type": "object",
 			"fields": {
+				"capsule_radius_m": {
+					"type": "number",
+					"min": 0.01
+				},
+				"stand_height_m": {
+					"type": "number",
+					"min": 0.01
+				},
+				"crouch_height_m": {
+					"type": "number",
+					"min": 0.01
+				},
+				"walk_ms": {
+					"type": "number",
+					"min": 0.01
+				},
 				"jog_ms": {
+					"type": "number",
+					"min": 0.01
+				},
+				"sprint_ms": {
+					"type": "number",
+					"min": 0.01
+				},
+				"crouch_ms": {
+					"type": "number",
+					"min": 0.01
+				},
+				"back_mult": {
+					"type": "number",
+					"min": 0,
+					"max": 1
+				},
+				"strafe_mult": {
+					"type": "number",
+					"min": 0,
+					"max": 1
+				},
+				"accel_ms2": {
+					"type": "number",
+					"min": 0.01
+				},
+				"decel_ms2": {
+					"type": "number",
+					"min": 0.01
+				},
+				"air_accel_ms2": {
+					"type": "number",
+					"min": 0
+				},
+				"gravity_ms2": {
+					"type": "number",
+					"min": 0.01
+				},
+				"step_m": {
+					"type": "number",
+					"min": 0
+				},
+				"walk_slope_deg": {
+					"type": "number",
+					"min": 0,
+					"max": 89
+				},
+				"wall_slope_deg": {
+					"type": "number",
+					"min": 0,
+					"max": 90
+				},
+				"slide_ms2": {
+					"type": "number",
+					"min": 0
+				},
+				"sprint_cone_deg": {
+					"type": "number",
+					"min": 0,
+					"max": 180
+				},
+				"step_return_ms": {
 					"type": "number",
 					"min": 0.01
 				}
