@@ -5,7 +5,8 @@ extends SceneTree
 ## forearm twist bones; all bodies have identical skeletons (bone names,
 ## parents and rest transforms); an eye_marker under the head bone stands at
 ## the eye height in <root>/assetgen/character.json ± 0.01 m; each body has a
-## skinned mesh, and the bodies' meshes differ.
+## skinned mesh with a blend shape build_<name> per build of the preset that
+## moves some vertex by at least 5 mm, and the bodies' meshes differ.
 ## Usage: godot --headless -s res://src/tools/check_character.gd -- <res:// root>
 ## Prints each error, then RESULT PASS / FAIL; exit code 0 / 1.
 
@@ -13,6 +14,7 @@ const MODEL_DIR := "assets/models/character"
 const PRESET := "assetgen/character.json"
 const EYE_TOLERANCE_M := 0.01
 const REST_TOLERANCE := 1e-4
+const BUILD_MIN_MOVE_M := 0.005
 
 
 func _initialize() -> void:
@@ -93,6 +95,8 @@ func _check_one(f: String, scene: Node, preset: Variant, errors: PackedStringArr
 			_count_weights(m, skel, weighted)
 	if skinned == 0:
 		errors.append("%s: no skinned mesh" % f)
+	if preset is Dictionary:
+		_check_builds(f, scene, (preset.get("builds", {}) as Dictionary).keys(), errors)
 	for twist: String in HumanoidBones.TWIST:
 		if int(weighted.get(twist, 0)) == 0:
 			errors.append("%s: no vertex weighted to %s" % [f, twist])
@@ -120,6 +124,37 @@ func _check_one(f: String, scene: Node, preset: Variant, errors: PackedStringArr
 		else:
 			print("%s: eye at %.4f m" % [f, y])
 	return skel
+
+
+## Errors unless every mesh of `scene` has a moving blend shape per build.
+func _check_builds(f: String, scene: Node, builds: Array, errors: PackedStringArray) -> void:
+	for m: MeshInstance3D in scene.find_children("*", "MeshInstance3D", true, false):
+		var mesh := m.mesh as ArrayMesh
+		if mesh == null:
+			continue
+		var names := {}
+		for k in mesh.get_blend_shape_count():
+			names[String(mesh.get_blend_shape_name(k))] = k
+		var base: PackedVector3Array = mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+		var shapes := mesh.surface_get_blend_shape_arrays(0)
+		for build: String in builds:
+			var key := "build_" + build
+			if not names.has(key):
+				errors.append("%s: no blend shape %s" % [f, key])
+				continue
+			var pts: PackedVector3Array = (shapes[names[key]] as Array)[Mesh.ARRAY_VERTEX]
+			var most := 0.0
+			for i in mini(pts.size(), base.size()):
+				var d := (
+					pts[i]
+					if mesh.blend_shape_mode == Mesh.BLEND_SHAPE_MODE_RELATIVE
+					else pts[i] - base[i]
+				)
+				most = maxf(most, d.length())
+			if most < BUILD_MIN_MOVE_M:
+				errors.append("%s: %s moves at most %.4f m" % [f, key, most])
+			else:
+				print("%s: %s moves up to %.3f m" % [f, key, most])
 
 
 ## Adds to `out` (bone name -> count) the vertices of `m` with a non-zero

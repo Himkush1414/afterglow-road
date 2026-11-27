@@ -8,6 +8,7 @@ Needs the MPFB extension installed in the Blender user resources in use
 
   {"eye_height_m": float,
    "twist_at": [t1, t2],            # forearm twist bones, share of the forearm
+   "builds": {"slim": {<macro>: value}, "broad": {<macro>: value}},
    "bodies": {"<id>": {"macros": {<MPFB macro>: value, ...}}, ...}}
 
 For every body the MPFB "height" macro is solved so that the eyes (the mean
@@ -17,10 +18,11 @@ by all of them, so every body has the same skeleton (22 §4). Each forearm
 gets two twist bones (lowerarm_twist_01/02_<side>, children of the lower
 arm) at the preset's shares, and the lower arm's weights are split between
 it and them along the forearm. An empty "eye_marker" child of the head bone
-marks the eye midpoint of each body.
+marks the eye midpoint of each body. Each build of the preset becomes a
+shape key build_<name>: the body with the build's macros over its own.
+Helper geometry (everything outside MPFB's "body" group) is removed.
 
-Writes <out>/<id>.glb per body (the rig and that body's mesh; helper
-geometry removed by MPFB's mask on export) and <out>/bodies.json with the
+Writes <out>/<id>.glb per body (the rig and that body's mesh) and <out>/bodies.json with the
 solved macros and the measured eye heights. Deterministic for a preset.
 """
 import argparse
@@ -28,6 +30,7 @@ import json
 import os
 import sys
 
+import bmesh
 import bpy
 from mathutils import Matrix
 
@@ -195,6 +198,36 @@ def add_eye_marker(rig, point):
     return marker
 
 
+def add_build_keys(body, macros, builds):
+    """Shape keys build_<name> from the body's positions with each build's
+    macros over `macros`; the body is left baked at `macros`."""
+    shapes = {}
+    for name in sorted(builds):
+        set_macros(body, dict(macros, **builds[name]))
+        shapes[name] = [body.matrix_world.inverted() @ p for p in positions(body)]
+    set_macros(body, macros)
+    TargetService.bake_targets(body)
+    body.shape_key_add(name="Basis", from_mix=False)
+    for name, pts in shapes.items():
+        key = body.shape_key_add(name="build_" + name, from_mix=False)
+        for v, p in zip(key.data, pts):
+            v.co = p
+
+
+def remove_helpers(body):
+    """Deletes every vertex outside the "body" group and MPFB's mask."""
+    for m in [m for m in body.modifiers if m.type == "MASK"]:
+        body.modifiers.remove(m)
+    keep = body.vertex_groups["body"].index
+    mesh = bmesh.new()
+    mesh.from_mesh(body.data)
+    layer = mesh.verts.layers.deform.verify()
+    doomed = [v for v in mesh.verts if keep not in v[layer]]
+    bmesh.ops.delete(mesh, geom=doomed, context="VERTS")
+    mesh.to_mesh(body.data)
+    mesh.free()
+
+
 def export(path, objects):
     bpy.ops.object.select_all(action="DESELECT")
     for obj in objects:
@@ -244,7 +277,8 @@ def main():
         set_macros(body, solved[body_id])
         eye = eye_point(body)
         split_forearm_weights(body, rig, shares)
-        TargetService.bake_targets(body)
+        add_build_keys(body, solved[body_id], preset.get("builds", {}))
+        remove_helpers(body)
         marker = add_eye_marker(rig, eye)
         export(os.path.join(a.out, body_id + ".glb"), [rig, body, marker])
         bpy.data.objects.remove(marker, do_unlink=True)
