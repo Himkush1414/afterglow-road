@@ -9,6 +9,7 @@ Needs the MPFB extension installed in the Blender user resources in use
   {"eye_height_m": float,
    "twist_at": [t1, t2],            # forearm twist bones, share of the forearm
    "builds": {"slim": {<macro>: value}, "broad": {<macro>: value}},
+   "segments": {"<segment>": [<bone>, ...], ...},
    "bodies": {"<id>": {"macros": {<MPFB macro>: value, ...}}, ...}}
 
 For every body the MPFB "height" macro is solved so that the eyes (the mean
@@ -20,7 +21,10 @@ arm) at the preset's shares, and the lower arm's weights are split between
 it and them along the forearm. An empty "eye_marker" child of the head bone
 marks the eye midpoint of each body. Each build of the preset becomes a
 shape key build_<name>: the body with the build's macros over its own.
-Helper geometry (everything outside MPFB's "body" group) is removed.
+Helper geometry (everything outside MPFB's "body" group) is removed. The
+body is then split into one mesh object per segment (skin_<segment>): a
+face goes to the segment of the bone holding most weight over its vertices.
+Every bone with weight must belong to exactly one segment.
 
 Writes <out>/<id>.glb per body (the rig and that body's mesh) and <out>/bodies.json with the
 solved macros and the measured eye heights. Deterministic for a preset.
@@ -46,6 +50,8 @@ RACES = ("asian", "caucasian", "african")
 EYE_TOLERANCE_M = 0.001
 SOLVE_STEPS = 30
 SIDES = ("l", "r")
+## Mesh objects of the bare body: skin_<segment> (not the bone names).
+SKIN_PREFIX = "skin_"
 
 
 def args():
@@ -228,6 +234,64 @@ def remove_helpers(body):
     mesh.free()
 
 
+def split_segments(body, rig, segments):
+    """Separates `body` into one object per segment; returns them."""
+    owner = {}
+    for name, bones in segments.items():
+        for bone in bones:
+            if bone in owner:
+                raise SystemExit("bone %s in two segments" % bone)
+            owner[bone] = name
+    orphans = sorted(b.name for b in rig.data.bones if b.use_deform and b.name not in owner)
+    if orphans:
+        raise SystemExit("bones in no segment: %s" % ", ".join(orphans))
+    names = {g.index: g.name for g in body.vertex_groups}
+    order = sorted(segments)
+    mesh = bmesh.new()
+    mesh.from_mesh(body.data)
+    layer = mesh.verts.layers.deform.verify()
+    tag = {}
+    for face in mesh.faces:
+        totals = {}
+        for v in face.verts:
+            for g, w in v[layer].items():
+                bone = names.get(g)
+                if bone in owner:
+                    totals[owner[bone]] = totals.get(owner[bone], 0.0) + w
+        if not totals:
+            raise SystemExit("face %d has no segment" % face.index)
+        tag[face.index] = order.index(max(totals, key=totals.get))
+    mesh.free()
+    # Keep the whole body's smooth normals on every part: no shading seams.
+    body.data.normals_split_custom_set_from_vertices([v.normal.copy() for v in body.data.vertices])
+    body.data.materials.clear()
+    tags = [bpy.data.materials.new(name="segment:" + name) for name in order]
+    for mat in tags:
+        body.data.materials.append(mat)
+    for poly in body.data.polygons:
+        poly.material_index = tag[poly.index]
+    bpy.ops.object.select_all(action="DESELECT")
+    body.select_set(True)
+    bpy.context.view_layer.objects.active = body
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
+    bpy.ops.mesh.separate(type="MATERIAL")
+    bpy.ops.object.mode_set(mode="OBJECT")
+    parts = [o for o in bpy.context.selected_objects if o.type == "MESH"]
+    out = []
+    for part in parts:
+        mats = [m for m in part.data.materials if m is not None]
+        if len(mats) != 1:
+            raise SystemExit("segment split failed")
+        part.name = SKIN_PREFIX + mats[0].name.removeprefix("segment:")
+        part.data.name = part.name
+        part.data.materials.clear()
+        out.append(part)
+    for mat in tags:
+        bpy.data.materials.remove(mat)
+    return out
+
+
 def export(path, objects):
     bpy.ops.object.select_all(action="DESELECT")
     for obj in objects:
@@ -279,11 +343,17 @@ def main():
         split_forearm_weights(body, rig, shares)
         add_build_keys(body, solved[body_id], preset.get("builds", {}))
         remove_helpers(body)
+        parts = split_segments(body, rig, preset["segments"])
         marker = add_eye_marker(rig, eye)
-        export(os.path.join(a.out, body_id + ".glb"), [rig, body, marker])
+        export(os.path.join(a.out, body_id + ".glb"), [rig, marker] + parts)
         bpy.data.objects.remove(marker, do_unlink=True)
-        report["bodies"][body_id] = {"macros": solved[body_id], "eye_m": [eye.x, eye.y, eye.z]}
-        bpy.data.objects.remove(body, do_unlink=True)
+        report["bodies"][body_id] = {
+            "macros": solved[body_id],
+            "eye_m": [eye.x, eye.y, eye.z],
+            "segments": {p.name: len(p.data.polygons) for p in parts},
+        }
+        for part in parts:
+            bpy.data.objects.remove(part, do_unlink=True)
 
     with open(os.path.join(a.out, "bodies.json"), "w", encoding="utf-8") as f:
         json.dump(report, f, indent=1, sort_keys=True)
