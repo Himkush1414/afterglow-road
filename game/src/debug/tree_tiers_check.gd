@@ -245,12 +245,7 @@ func _frame(start: Vector3, heading: float, path: String) -> void:
 	sun.shadow_enabled = true
 	# The preset's sun shadows (23 §3).
 	sun.directional_shadow_max_distance = float(_preset.get("shadow_distance_m", 100.0))
-	sun.directional_shadow_mode = ([
-		DirectionalLight3D.SHADOW_ORTHOGONAL,
-		DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS,
-		DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS,
-		DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS,
-	][clampi(int(_preset.get("shadow_cascades", 4)), 1, 4) - 1])
+	sun.directional_shadow_mode = SkyLights.shadow_mode(int(_preset.get("shadow_cascades", 4)))
 	add_child(sun)
 	var env := WorldEnvironment.new()
 	env.environment = Environment.new()
