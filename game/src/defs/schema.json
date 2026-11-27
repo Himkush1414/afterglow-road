@@ -1757,6 +1757,50 @@
 				"step_return_ms": {
 					"type": "number",
 					"min": 0.01
+				},
+				"jump_ms": {
+					"type": "number",
+					"min": 0.01
+				},
+				"coyote_s": {
+					"type": "number",
+					"min": 0
+				},
+				"jump_buffer_s": {
+					"type": "number",
+					"min": 0
+				},
+				"fall_safe_ms": {
+					"type": "number",
+					"min": 0
+				},
+				"fall_hp_per_ms": {
+					"type": "number",
+					"min": 0
+				},
+				"mantle_min_m": {
+					"type": "number",
+					"min": 0
+				},
+				"mantle_max_m": {
+					"type": "number",
+					"min": 0.01
+				},
+				"mantle_depth_m": {
+					"type": "number",
+					"min": 0.01
+				},
+				"mantle_room_m": {
+					"type": "number",
+					"min": 0.01
+				},
+				"mantle_reach_m": {
+					"type": "number",
+					"min": 0.01
+				},
+				"mantle_s": {
+					"type": "number",
+					"min": 0.01
 				}
 			}
 		},

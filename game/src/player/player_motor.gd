@@ -4,7 +4,9 @@ extends CharacterBody3D
 ## by `move_and_slide` from intents its owner sets before each physics tick
 ## (it never reads Input). Ground movement with gaits and direction factors,
 ## acceleration, slopes (walkable, sliding, wall), step-up by `test_move`
-## (10 §4.2) and crouching. Numbers come from the "movement" tuning group.
+## (10 §4.2), crouching, jumping with coyote time and an input buffer, the
+## fall-damage hook and mantling. Numbers come from the "movement" tuning
+## group.
 ##
 ## A capsule meets a stair edge with its rounded bottom, so the step-up
 ## measures the tread with a ray beyond the capsule's front, lifts the body
@@ -14,6 +16,15 @@ extends CharacterBody3D
 
 ## Raised when a step-up moved the body up by `rise_m`.
 signal stepped(rise_m: float)
+## Raised when the body leaves the ground by a jump.
+signal jumped
+## Raised on touching the floor after being airborne: the downward speed and
+## the fall damage it causes (10 §4.1; Vitals applies it).
+signal landed(impact_ms: float, damage_hp: float)
+## Raised when a mantle starts, with the height climbed.
+signal mantle_started(rise_m: float)
+
+enum State { GROUNDED, AIRBORNE, MANTLING }
 
 ## Shortest horizontal probe of the step-up test, metres (10 §4.2).
 const STEP_PROBE_MIN_M := 0.05
@@ -45,7 +56,20 @@ const KEYS: Array[String] = [
 	"slide_ms2",
 	"sprint_cone_deg",
 	"step_return_ms",
+	"jump_ms",
+	"coyote_s",
+	"jump_buffer_s",
+	"fall_safe_ms",
+	"fall_hp_per_ms",
+	"mantle_min_m",
+	"mantle_max_m",
+	"mantle_depth_m",
+	"mantle_room_m",
+	"mantle_reach_m",
+	"mantle_s",
 ]
+## Share of a mantle's time spent rising; the rest moves onto the top.
+const MANTLE_RISE_SHARE := 0.6
 
 var errors: PackedStringArray = []
 ## Intents for the next tick, set by the owner: move as from
@@ -56,6 +80,12 @@ var yaw := 0.0
 var sprint := false
 var walk := false
 var crouch := false
+## Jump held (press_jump() marks the press): holding it while airborne
+## mantles onto an obstacle in reach (10 §4.2).
+var jump_held := false
+## Cleared by stamina and encumbrance rules (P6-10) to refuse jumps.
+var jump_allowed := true
+var state := State.GROUNDED
 ## State, read by camera, body and tests.
 var crouched := false
 var sliding := false
@@ -70,6 +100,15 @@ var _slope_normal := Vector3.ZERO
 ## Horizontal distance still to carry the body level after a step-up.
 var _carry_m := 0.0
 var _carry_dir := Vector3.ZERO
+var _jump_buffer_s := 0.0
+## True from a jump until the body stops rising: ground below does not count.
+var _rising := false
+## Highest feet height since the body last stood on the floor: the impact
+## speed of a landing is the free-fall speed from there.
+var _air_top_y := 0.0
+var _coyote_s := 0.0
+## The mantle under way: [elapsed s, start, raised, landing].
+var _mantle: Array = []
 
 
 func _init() -> void:
@@ -99,6 +138,12 @@ func setup(cfg: Dictionary) -> bool:
 	return true
 
 
+## Asks for a jump: done within jump_buffer_s once the body may jump; a
+## mantle in reach is taken instead.
+func press_jump() -> void:
+	_jump_buffer_s = float(_cfg.get("jump_buffer_s", 0.0))
+
+
 ## Grounded in the sense of the movement states (10 §4.3): on the floor,
 ## being carried onto a step, or with a walkable surface within the step
 ## height under the body's axis.
@@ -118,40 +163,113 @@ func _physics_process(delta: float) -> void:
 
 ## One physics tick of `delta` seconds.
 func tick(delta: float) -> void:
+	if state == State.MANTLING:
+		_mantle_tick(delta)
+		return
 	_update_stance()
+	_jump_buffer_s = maxf(0.0, _jump_buffer_s - delta)
+	var grounded := is_grounded()
+	_coyote_s = float(_cfg.coyote_s) if grounded else maxf(0.0, _coyote_s - delta)
+	if (_jump_buffer_s > 0.0 or (jump_held and not grounded)) and _start_mantle():
+		return
+	var jump := (
+		_jump_buffer_s > 0.0 and (grounded or _coyote_s > 0.0) and not crouched and jump_allowed
+	)
+	if jump:
+		_jump_buffer_s = 0.0
+		_coyote_s = 0.0
+		_carry_m = 0.0
+		_rising = true
 	var target := target_velocity()
 	var h := Vector3(velocity.x, 0.0, velocity.z)
 	var on_floor := is_on_floor()
 	var rate := float(_cfg.air_accel_ms2)
-	if is_grounded():
+	if grounded and not jump:
 		rate = float(_cfg.accel_ms2 if target != Vector3.ZERO else _cfg.decel_ms2)
 	h = h.move_toward(target, rate * delta)
-	sliding = not on_floor and _carry_m <= 0.0 and _slope_normal != Vector3.ZERO
+	sliding = not on_floor and not jump and _carry_m <= 0.0 and _slope_normal != Vector3.ZERO
+	# Gravity in two half steps around the move: the parabola is exact.
+	var falls := (not on_floor or jump) and not sliding and _carry_m <= 0.0
 	if sliding:
 		velocity = _slide_velocity(target, delta)
 	else:
-		velocity = Vector3(h.x, velocity.y, h.z)
-		if not on_floor and _carry_m <= 0.0:
-			velocity.y -= float(_cfg.gravity_ms2) * delta
-	if on_floor or _carry_m > 0.0:
+		velocity = Vector3(h.x, float(_cfg.jump_ms) if jump else velocity.y, h.z)
+		if falls:
+			velocity.y -= float(_cfg.gravity_ms2) * delta * 0.5
+	if (on_floor or _carry_m > 0.0) and not jump:
 		_step(h * delta)
+	_air_top_y = global_position.y if on_floor else maxf(_air_top_y, global_position.y)
 	if _carry_m > 0.0:
 		_carry_level(delta)
 	else:
-		var before := velocity
-		var at := global_position
-		move_and_slide()
-		# A riser met during the slide: step from there with the speed it had
-		# and carry on for the rest of the tick's motion.
-		var flat := Vector3(before.x, 0.0, before.z)
-		if is_on_floor() and is_on_wall() and _step(flat * delta):
-			velocity = flat
-			var moved := Vector2(global_position.x - at.x, global_position.z - at.z).length()
-			var left := flat.length() * delta - moved
-			if left > 0.0:
-				_carry_level(left / flat.length())
+		_slide(delta)
+	if falls and not is_on_floor():
+		velocity.y -= float(_cfg.gravity_ms2) * delta * 0.5
+	if is_on_floor() and not on_floor:
+		var drop := maxf(0.0, _air_top_y - global_position.y)
+		var impact := sqrt(2.0 * float(_cfg.gravity_ms2) * drop)
+		var safe := float(_cfg.fall_safe_ms)
+		landed.emit(impact, maxf(0.0, impact - safe) * float(_cfg.fall_hp_per_ms))
 	_slope_normal = _sliding_normal()
 	step_offset_m = move_toward(step_offset_m, 0.0, float(_cfg.step_return_ms) * delta)
+	_rising = _rising and velocity.y > 0.0 and not is_on_floor()
+	state = State.GROUNDED if is_grounded() else State.AIRBORNE
+	if jump:
+		jumped.emit()
+
+
+## move_and_slide; a riser met during the slide is stepped from there with
+## the speed it had, carrying on for the rest of the tick's motion.
+func _slide(delta: float) -> void:
+	var before := velocity
+	var at := global_position
+	move_and_slide()
+	var flat := Vector3(before.x, 0.0, before.z)
+	if is_grounded() and is_on_wall() and _step(flat * delta):
+		velocity = flat
+		var moved := Vector2(global_position.x - at.x, global_position.z - at.z).length()
+		var left := flat.length() * delta - moved
+		if left > 0.0:
+			_carry_level(left / flat.length())
+
+
+## Starts a mantle when MantleProbe finds one ahead; true when it did.
+func _start_mantle() -> bool:
+	var forward := Vector3.FORWARD.rotated(Vector3.UP, yaw)
+	var found := MantleProbe.find(self, _cfg, _shape.radius, forward)
+	if found.is_empty():
+		return false
+	_jump_buffer_s = 0.0
+	_carry_m = 0.0
+	if bool(found.crouch) and not crouched:
+		crouched = true
+		_set_height(float(_cfg.crouch_height_m))
+	_mantle = [0.0, global_position, found.raised, found.landing]
+	velocity = Vector3.ZERO
+	state = State.MANTLING
+	mantle_started.emit(float(found.rise))
+	return true
+
+
+## Moves the body along the mantle path (up, then onto the top) over
+## mantle_s; no input, no gravity.
+func _mantle_tick(delta: float) -> void:
+	var total := float(_cfg.mantle_s)
+	_mantle[0] = float(_mantle[0]) + delta
+	var u := clampf(float(_mantle[0]) / total, 0.0, 1.0)
+	var a: Vector3 = _mantle[1]
+	var b: Vector3 = _mantle[2]
+	var c: Vector3 = _mantle[3]
+	if u < MANTLE_RISE_SHARE:
+		global_position = a.lerp(b, u / MANTLE_RISE_SHARE)
+	else:
+		global_position = b.lerp(c, (u - MANTLE_RISE_SHARE) / (1.0 - MANTLE_RISE_SHARE))
+	velocity = Vector3.ZERO
+	if u >= 1.0:
+		_mantle = []
+		_air_top_y = global_position.y
+		state = State.GROUNDED
+		apply_floor_snap()
 
 
 ## Horizontal velocity the intents ask for (world space): gait speed, the
@@ -252,6 +370,8 @@ func _carry_level(delta: float) -> void:
 	move_and_slide()
 	floor_snap_length = snap
 	_carry_m = maxf(0.0, _carry_m - along * delta)
+	if _carry_m <= 0.0:
+		apply_floor_snap()
 
 
 ## The hit of a ray from `from` straight down over `length` metres (not this
@@ -266,7 +386,7 @@ func _ray_down(from: Vector3, length: float) -> Dictionary:
 ## step height under the capsule's footprint (its axis and four rim
 ## points), or -1.
 func _ground_below() -> float:
-	if _cfg.is_empty() or not is_inside_tree():
+	if _cfg.is_empty() or not is_inside_tree() or _rising:
 		return -1.0
 	var best := -1.0
 	var rim := _shape.radius * 0.9

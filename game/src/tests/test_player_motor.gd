@@ -254,3 +254,135 @@ func test_crouch_needs_room_to_stand() -> void:
 	_run(0.2)
 	check(not _motor.crouched, "stands up in the open")
 	check_near(_motor.height_m(), float(_cfg.stand_height_m), 1e-4, "stand height")
+
+
+func test_jump_apex_follows_speed_and_gravity() -> void:
+	# T-10-2, first part.
+	if not _ready_motor():
+		return
+	_floor()
+	await _place(Vector3(0.0, 0.05, 0.0))
+	var base := _motor.global_position.y
+	var jumps := [0]
+	_motor.jumped.connect(func() -> void: jumps[0] += 1)
+	_motor.press_jump()
+	var top := base
+	for i in roundi(1.5 / DT):
+		_motor.tick(DT)
+		top = maxf(top, _motor.global_position.y)
+	var v := float(_cfg.jump_ms)
+	var want := v * v / (2.0 * float(_cfg.gravity_ms2))
+	check_eq(jumps[0], 1, "one jump")
+	check_near(top - base, want, 0.03, "apex")
+	check(_motor.is_on_floor(), "back on the floor")
+
+
+## Fall damage from a drop of `height_m` onto the floor.
+func _fall(height_m: float) -> float:
+	_floor()
+	await _place(Vector3(0.0, 0.05, 0.0))
+	_motor.global_position = Vector3(0.0, height_m, 0.0)
+	_motor.velocity = Vector3.ZERO
+	var got := [-1.0]
+	_motor.landed.connect(func(_v: float, hp: float) -> void: got[0] = hp)
+	_run(3.0)
+	return float(got[0])
+
+
+func _fall_damage(height_m: float) -> float:
+	var v := sqrt(2.0 * float(_cfg.gravity_ms2) * height_m)
+	return maxf(0.0, v - float(_cfg.fall_safe_ms)) * float(_cfg.fall_hp_per_ms)
+
+
+func test_fall_damage_from_six_and_three_metres() -> void:
+	# T-10-2, second part: damage = (impact - safe speed) x hp per m/s.
+	if not _ready_motor():
+		return
+	for h: float in [6.0, 3.0]:
+		var hp: float = await _fall(h)
+		check_near(hp, _fall_damage(h), 2.0, "%.0f m: %.1f HP" % [h, hp])
+		for c in _level.get_children():
+			if c is StaticBody3D:
+				c.free()
+
+
+func test_coyote_time_and_jump_buffer() -> void:
+	if not _ready_motor():
+		return
+	# A 2 m high platform ending at z = 0; the body runs off it toward -Z... and +Z.
+	_floor()
+	_box(Vector3(10.0, 2.0, 10.0), Vector3(0.0, 1.0, 5.0))
+	for late: float in [0.5, 1.5]:
+		await _place(Vector3(0.0, 2.05, 0.5))
+		_motor.move = Vector2(0.0, -1.0)
+		var off := 0.0
+		var jumped := [false]
+		var record := func() -> void: jumped[0] = true
+		_motor.jumped.connect(record)
+		var pressed := false
+		for i in roundi(1.0 / DT):
+			_motor.tick(DT)
+			if not _motor.is_grounded():
+				off += DT
+			if not pressed and off >= late * float(_cfg.coyote_s):
+				_motor.press_jump()
+				pressed = true
+		_motor.jumped.disconnect(record)
+		check_eq(
+			jumped[0], late < 1.0, "pressed at %.2f s off the edge" % (late * float(_cfg.coyote_s))
+		)
+	# Buffer: pressed shortly before landing, the jump happens on landing.
+	await _place(Vector3(0.0, 0.05, -5.0))
+	_motor.global_position = Vector3(0.0, 1.5, -5.0)
+	var jumps := [0]
+	_motor.jumped.connect(func() -> void: jumps[0] += 1)
+	var t := 0.0
+	while (
+		(
+			_motor.global_position.y
+			> 0.05 + 0.5 * float(_cfg.gravity_ms2) * pow(0.5 * float(_cfg.jump_buffer_s), 2.0) * 4.0
+		)
+		and t < 2.0
+	):
+		_motor.tick(DT)
+		t += DT
+	_motor.press_jump()
+	_run(0.5)
+	check_eq(jumps[0], 1, "buffered jump on landing")
+
+
+## A ledge of `height_m` whose face is at z = 0 (top toward -Z); the body
+## stands 0.2 m in front of it facing it and presses jump once.
+func _mantle(height_m: float) -> Array:
+	_floor()
+	_box(Vector3(6.0, height_m, 6.0), Vector3(0.0, height_m * 0.5, -3.0))
+	var r := float(_cfg.capsule_radius_m)
+	await _place(Vector3(0.0, 0.05, r + 0.2))
+	var starts := [0]
+	_motor.mantle_started.connect(func(_rise: float) -> void: starts[0] += 1)
+	_motor.press_jump()
+	_run(float(_cfg.mantle_s) + 0.5)
+	return [starts[0], _motor.global_position]
+
+
+func test_mantle_onto_a_ledge_under_the_limit() -> void:
+	# T-10-4, first part.
+	if not _ready_motor():
+		return
+	var h := float(_cfg.mantle_max_m) - 0.1
+	var r := await _mantle(h)
+	var at: Vector3 = r[1]
+	check_eq(r[0], 1, "mantle started")
+	check_near(at.y, h, 0.03, "on the top")
+	check(at.z < 0.0, "over the edge: z %.2f" % at.z)
+	check(_motor.state == PlayerMotor.State.GROUNDED, "grounded after the mantle")
+
+
+func test_no_mantle_onto_a_ledge_over_the_limit() -> void:
+	# T-10-4, second part: a press jumps instead and the body falls back.
+	if not _ready_motor():
+		return
+	var r := await _mantle(float(_cfg.mantle_max_m) + 0.1)
+	var at: Vector3 = r[1]
+	check_eq(r[0], 0, "no mantle")
+	check(at.y < 0.05 and at.z > 0.0, "back on the floor in front: %s" % at)
