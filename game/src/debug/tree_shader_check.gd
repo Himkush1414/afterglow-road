@@ -176,7 +176,7 @@ func _material(tier: int, height: float, flex: float) -> ShaderMaterial:
 ## A tree tier at `distance` m straight ahead of the camera.
 func _tree(mesh: Mesh, tier: int, height: float, flex: float, distance: float) -> Node3D:
 	var mi := MeshInstance3D.new()
-	mi.mesh = TreeField.merged_surfaces(mesh)
+	mi.mesh = TreeModels.merged_surfaces(mesh)
 	mi.set_surface_override_material(0, _material(tier, height, flex))
 	mi.position = Vector3(0.0, 0.0, -distance)
 	return mi
