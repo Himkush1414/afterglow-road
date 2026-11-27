@@ -175,3 +175,16 @@ func test_one_shadow_light_on_the_content() -> void:
 	var lights := _rig(ContentDB.tuning("clock"), sky)
 	_one_shadow_over_a_day(lights, "content")
 	lights.free()
+
+
+func test_preset_shadows_reach_both_lights() -> void:
+	var lights := _rig(CLOCK, SKY)
+	lights.set_shadows(2, 60.0)
+	for light: DirectionalLight3D in [lights.sun, lights.moon]:
+		check_eq(
+			light.directional_shadow_mode, DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS, "2 cascades"
+		)
+		check_eq(light.directional_shadow_max_distance, 60.0, "distance")
+	check_eq(SkyLights.shadow_mode(1), DirectionalLight3D.SHADOW_ORTHOGONAL, "1 cascade")
+	check_eq(SkyLights.shadow_mode(4), DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS, "4 cascades")
+	lights.free()

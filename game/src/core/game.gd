@@ -71,6 +71,10 @@ func _exit_tree() -> void:
 
 
 func _ready() -> void:
+	var cascades: Variant = Quality.value("shadow_cascades")
+	var shadow_dist: Variant = Quality.value("shadow_distance_m")
+	if cascades != null and shadow_dist != null:
+		sky_lights.set_shadows(int(cascades), float(shadow_dist))
 	if not sky_lights.setup(clock, ContentDB.tuning("sky")):
 		Log.error("sky", "; ".join(sky_lights.errors))
 	else:

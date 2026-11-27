@@ -80,6 +80,24 @@ func apply(gmin: float) -> void:
 	moon.shadow_enabled = not sun_shadows
 
 
+## Gives both lights the preset's sun shadow cascades (1, 2 or 4; 3 counts
+## as 2) and shadow distance in metres (23 §3).
+func set_shadows(cascades: int, distance_m: float) -> void:
+	for light: DirectionalLight3D in [sun, moon]:
+		light.directional_shadow_mode = shadow_mode(cascades)
+		light.directional_shadow_max_distance = distance_m
+
+
+## The directional shadow mode for a cascade count (clamped to 1..4).
+static func shadow_mode(cascades: int) -> DirectionalLight3D.ShadowMode:
+	return [
+		DirectionalLight3D.SHADOW_ORTHOGONAL,
+		DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS,
+		DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS,
+		DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS,
+	][clampi(cascades, 1, 4) - 1]
+
+
 ## The "sky" tuning group given to `setup`.
 func sky_config() -> Dictionary:
 	return _cfg
