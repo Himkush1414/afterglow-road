@@ -10,6 +10,7 @@ Needs the MPFB extension installed in the Blender user resources in use
    "twist_at": [t1, t2],            # forearm twist bones, share of the forearm
    "builds": {"slim": {<macro>: value}, "broad": {<macro>: value}},
    "segments": {"<segment>": [<bone>, ...], ...},
+   "conform_bones": [<bone>, ...],  # small joints taken from the mean body
    "garments": {"<garment>": {"segments": [...], "offset_m": float,
                               "smooth": iterations}, ...},
    "bodies": {"<id>": {"macros": {<MPFB macro>: value, ...}}, ...}}
@@ -27,6 +28,11 @@ Helper geometry (everything outside MPFB's "body" group) is removed. The
 body is then split into one mesh object per segment (skin_<segment>): a
 face goes to the segment of the bone holding most weight over its vertices.
 Every bone with weight must belong to exactly one segment.
+
+Vertices weighted to the preset's conform bones (hands and fingers: joints
+too small for one rig to fit two different bodies) are blended toward the
+mean body by that weight, in the basis and every build key alike, so they
+match the shared rig.
 
 Each garment of the base outfit is the body pushed out along its smooth
 normals by offset_m and smoothed (to drop details such as toes), with the
@@ -211,20 +217,39 @@ def add_eye_marker(rig, point):
     return marker
 
 
-def add_build_keys(body, macros, builds):
+def add_build_keys(body, macros, builds, correction=None):
     """Shape keys build_<name> from the body's positions with each build's
-    macros over `macros`; the body is left baked at `macros`."""
+    macros over `macros`; the body is left baked at `macros`. `correction`
+    (one vector per vertex) is added to the basis and every key."""
     shapes = {}
     for name in sorted(builds):
         set_macros(body, dict(macros, **builds[name]))
         shapes[name] = [body.matrix_world.inverted() @ p for p in positions(body)]
     set_macros(body, macros)
     TargetService.bake_targets(body)
+    if correction:
+        for v, d in zip(body.data.vertices, correction):
+            v.co = v.co + d
+        for pts in shapes.values():
+            for i, d in enumerate(correction):
+                pts[i] = pts[i] + d
     body.shape_key_add(name="Basis", from_mix=False)
     for name, pts in shapes.items():
         key = body.shape_key_add(name="build_" + name, from_mix=False)
         for v, p in zip(key.data, pts):
             v.co = p
+
+
+def conform_correction(body, mean_positions, bones):
+    """Per vertex: (mean position - body position) x the vertex's total
+    weight on `bones` (0..1)."""
+    idx = {body.vertex_groups[b].index for b in bones if b in body.vertex_groups}
+    pts = positions(body)
+    out = []
+    for v, p, m in zip(body.data.vertices, pts, mean_positions):
+        w = min(1.0, sum(g.weight for g in v.groups if g.group in idx))
+        out.append((m - p) * w)
+    return out
 
 
 def remove_helpers(body):
@@ -386,6 +411,7 @@ def main():
 
     neutral = HumanService.create_human()
     set_macros(neutral, mean_macros([solved[i] for i in ids]))
+    mean_positions = positions(neutral)
     rig = HumanService.add_builtin_rig(neutral, RIG)
     if rig is None:
         raise SystemExit("rig not created")
@@ -400,7 +426,8 @@ def main():
         set_macros(body, solved[body_id])
         eye = eye_point(body)
         split_forearm_weights(body, rig, shares)
-        add_build_keys(body, solved[body_id], preset.get("builds", {}))
+        correction = conform_correction(body, mean_positions, preset.get("conform_bones", []))
+        add_build_keys(body, solved[body_id], preset.get("builds", {}), correction)
         remove_helpers(body)
         parts = garment_parts(body, rig, preset) + split_segments(body, rig, preset["segments"])
         marker = add_eye_marker(rig, eye)
