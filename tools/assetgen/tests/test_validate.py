@@ -238,3 +238,17 @@ class CharacterTest(unittest.TestCase):
             errors = validate.check_character(d)
             self.assertEqual(len(errors), 1)
             self.assertIn("b.glb", errors[0])
+
+    def test_skin_textures_and_tones_are_checked(self):
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, "assetgen"))
+            with open(os.path.join(d, "assetgen", "character.json"), "w", encoding="utf-8") as f:
+                json.dump({"bodies": {}, "skin": {"size": 8}}, f)
+            os.makedirs(os.path.join(d, "data"))
+            with open(os.path.join(d, "data", "customization.json"), "w", encoding="utf-8") as f:
+                json.dump({"skin_tones": ["#112233", "#12"]}, f)
+            tex = os.path.join(d, validate.SKIN_DIR)
+            os.makedirs(tex)
+            Image.new("RGB", (4, 4)).save(os.path.join(tex, "skin_albedo.png"))
+            errors = validate.check_character(d)
+            self.assertEqual(len(errors), 3, errors)  # wrong size, missing nra, bad tone

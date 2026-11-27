@@ -18,7 +18,10 @@ Stumps and felled caps (22 §3), when <content>/assetgen/stumps.json exists:
 every mesh the preset asks for exists within its triangle budget and has
 exactly a bark and a cut surface.
 Player bodies (22 §4), when <content>/assetgen/character.json exists: a
-<content>/assets/models/character/<id>.glb for every body of the preset.
+<content>/assets/models/character/<id>.glb for every body of the preset;
+with a "skin" group, skin_albedo.png and skin_nra.png of its size in
+<content>/assets/textures/character/; every skin tone in
+<content>/data/customization.json a #rrggbb colour.
 Engine side (unless --no-engine): the imported models are checked headless
 by res://src/tools/check_tree_models.gd, and the bodies (T-22-5) by
 res://src/tools/check_character.gd.
@@ -202,6 +205,7 @@ def check_model(path, stem, budgets, surfaces=SURFACES):
 
 
 CHARACTER_DIR = os.path.join("assets", "models", "character")
+SKIN_DIR = os.path.join("assets", "textures", "character")
 
 
 def check_character(content):
@@ -211,11 +215,34 @@ def check_character(content):
         return []
     with open(preset_path, encoding="utf-8") as f:
         preset = json.load(f)
-    return [
+    errors = [
         f"{os.path.join(CHARACTER_DIR, body)}.glb: missing"
         for body in sorted(preset.get("bodies", {}))
         if not os.path.exists(os.path.join(content, CHARACTER_DIR, body + ".glb"))
     ]
+    if "skin" in preset:
+        from PIL import Image
+
+        size = int(preset["skin"]["size"])
+        for name in ("skin_albedo.png", "skin_nra.png"):
+            path = os.path.join(content, SKIN_DIR, name)
+            if not os.path.exists(path):
+                errors.append(f"{os.path.join(SKIN_DIR, name)}: missing")
+                continue
+            with Image.open(path) as img:
+                if img.size != (size, size):
+                    errors.append(f"{os.path.join(SKIN_DIR, name)}: {img.size}, want {size} px")
+    custom = os.path.join(content, "data", "customization.json")
+    if os.path.exists(custom):
+        from tools.assetgen.skin import hex_rgb
+
+        with open(custom, encoding="utf-8") as f:
+            for tone in json.load(f).get("skin_tones", []):
+                try:
+                    hex_rgb(tone)
+                except ValueError as e:
+                    errors.append(f"customization.json: {e}")
+    return errors
 
 
 def engine_check(content):
