@@ -165,12 +165,10 @@ func _check_tiers(map: Vector3, step: int) -> int:
 						2:
 							held = chunks.has(chunk)
 							if held:
-								var cut: Array = _field.chunk_cut_now(chunk)
-								var from: Vector3 = cut[0]
-								var df := Vector2(r.map.x - from.x, r.map.y - from.z).length()
-								held = df <= float(cut[1])
+								held = _within_cut(TreeField.T2, chunk, r.map)
 						3:
-							held = tiles.has(Vector2i(cx / per, cz / per))
+							var tile := Vector2i(cx / per, cz / per)
+							held = tiles.has(tile) and _within_cut(TreeField.T3, tile, r.map)
 					not_held += int(not held)
 				var ok: bool = (
 					shown.size() == 1
@@ -202,6 +200,14 @@ func _check_tiers(map: Vector3, step: int) -> int:
 		)
 	)
 	return int(not ok_step)
+
+
+## Whether a tree at map position `at` lies within the cut in use of the
+## built T2 chunk or T3 tile `cell` (TreeField.far_cut_now).
+func _within_cut(k: int, cell: Vector2i, at: Vector2) -> bool:
+	var cut: Array = _field.far_cut_now(k, cell)
+	var from: Vector3 = cut[0]
+	return int(cut[1]) * Vector2(at.x - from.x, at.y - from.z).length() <= float(cut[2])
 
 
 ## The next tier after k with a non-empty range (empty tiers are skipped
