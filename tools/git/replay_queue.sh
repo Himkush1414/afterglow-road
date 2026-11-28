@@ -60,11 +60,14 @@ fi
 mkdir -p "${QUEUE_DIR}/done"
 processed=0
 for entry in "${QUEUE_DIR}"/[0-9][0-9][0-9][0-9]-*; do
-	[[ -e "${entry}" ]] || break
+	# Entries moved earlier in this loop (review files) and an empty queue.
+	[[ -e "${entry}" ]] || continue
 	if ((limit > 0 && processed >= limit)); then
 		break
 	fi
 	base="$(basename "${entry}")"
+	# Review files and their posted markers travel with their entry.
+	[[ "${base}" == *.review || "${base}" == *.posted ]] && continue
 	number="${base%%-*}"
 	rest="${base#*-}"
 
@@ -82,6 +85,7 @@ for entry in "${QUEUE_DIR}"/[0-9][0-9][0-9][0-9]-*; do
 	branch="${rest%.md}"
 	branch="${branch//__//}"
 	git show-ref --verify --quiet "refs/heads/${branch}" || die "[${number}] local branch ${branch} is missing"
+	review_file="${entry%.md}.review"
 	title="$(sed -n '1p' "${entry}")"
 	body_file="$(mktemp)"
 	sed '1,2d' "${entry}" >"${body_file}"
@@ -90,10 +94,16 @@ for entry in "${QUEUE_DIR}"/[0-9][0-9][0-9][0-9]-*; do
 		note "[${number}] ${branch} is already in origin/main; skipping"
 	else
 		note "[${number}] ${branch}: ${title}"
+		[[ -s "${review_file}" ]] || die "[${number}] ${branch} has no self-review (${review_file}); not merging"
 		((dry_run)) || require_owner_authorship origin/main "${branch}"
 		run git push --quiet -u origin "${branch}"
 		if ((dry_run)) || [[ -z "$(gh pr list --head "${branch}" --state open --json number --jq '.[].number')" ]]; then
 			run gh_retry gh pr create --base main --head "${branch}" --title "${title}" --body-file "${body_file}"
+		fi
+		# Post the review once, even when an interrupted replay runs again.
+		if [[ ! -e "${entry%.md}.posted" ]]; then
+			run gh_retry gh pr review "${branch}" --comment --body-file "${review_file}"
+			((dry_run)) || : >"${entry%.md}.posted"
 		fi
 		run gh_retry gh pr merge "${branch}" --merge --delete-branch
 		run git fetch --quiet origin main
@@ -102,6 +112,9 @@ for entry in "${QUEUE_DIR}"/[0-9][0-9][0-9][0-9]-*; do
 	if ((!dry_run)); then
 		git show-ref --verify --quiet "refs/heads/${branch}" && git branch --quiet -D "${branch}"
 		mv "${entry}" "${QUEUE_DIR}/done/"
+		for extra in "${review_file}" "${entry%.md}.posted"; do
+			if [[ -e "${extra}" ]]; then mv "${extra}" "${QUEUE_DIR}/done/"; fi
+		done
 	fi
 	processed=$((processed + 1))
 done

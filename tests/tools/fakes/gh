@@ -8,6 +8,8 @@
 #   FAKE_GH_REMOTE     path of the bare repository that plays github.com
 #   FAKE_GH_VISIBILITY "private" or "public"
 #   FAKE_GH_AUTH       "ok" or "bad"
+#   FAKE_GH_MERGE      "ok" or "fail" (merging fails without changing anything)
+#   FAKE_GH_ISSUES     "ok" or "denied" (issue creation answers with a permission error)
 set -euo pipefail
 
 state="${FAKE_GH_STATE:?}"
@@ -63,12 +65,35 @@ case "${1:-} ${2:-}" in
 		printf '%s\n' "${title}" >"${state}/title-${number}"
 		printf 'https://example.invalid/pull/%d\n' "${number}"
 		;;
+	"issue create")
+		[[ "${FAKE_GH_ISSUES:-ok}" == "ok" ]] ||
+			fail "GraphQL: Resource not accessible by personal access token (createIssue) (HTTP 403)"
+		title="$(arg_after --title "$@")"
+		body_file="$(arg_after --body-file "$@")"
+		[[ -s "${body_file}" ]] || fail "issue create failed: empty body"
+		number=$(($(cat "${state}/counter" 2>/dev/null || printf '0') + 1))
+		printf '%d\n' "${number}" >"${state}/counter"
+		printf '%s\n' "${title}" >"${state}/issue-${number}"
+		printf 'https://example.invalid/issues/%d\n' "${number}"
+		;;
+	"pr review")
+		head="$3"
+		[[ " $* " == *" --comment "* ]] || fail "fake gh: only comment reviews are expected"
+		marker="${state}/open/${head//\//__}"
+		[[ -f "${marker}" ]] || fail "no open pull request for ${head}"
+		body_file="$(arg_after --body-file "$@")"
+		[[ -s "${body_file}" ]] || fail "review failed: empty body"
+		cat "${body_file}" >>"${state}/review-$(cat "${marker}")"
+		printf 'review\n' >>"${state}/reviews.log"
+		;;
 	"pr merge")
 		head="$3"
 		[[ " $* " == *" --merge "* ]] || fail "only merge commits are allowed in this project"
+		[[ "${FAKE_GH_MERGE:-ok}" == "ok" ]] || fail "fake gh: merge refused"
 		marker="${state}/open/${head//\//__}"
 		[[ -f "${marker}" ]] || fail "no open pull request for ${head}"
 		number="$(cat "${marker}")"
+		[[ -s "${state}/review-${number}" ]] || fail "fake gh: pull request ${number} merged without a review"
 		scratch="$(mktemp -d)"
 		git clone --quiet "${remote}" "${scratch}/clone"
 		git -C "${scratch}/clone" -c user.name=merger -c user.email=merger@example.invalid \

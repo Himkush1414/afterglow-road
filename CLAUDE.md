@@ -16,18 +16,26 @@ Rules for anyone, human or AI assistant, who changes this repository.
 - No file over 95 MB.
 
 ## Git flow
-Every change goes through a branch and a pull request.
+Every change goes through an issue, a branch and a pull request.
+0. `tools/git/unit.sh issue <file|->` opens the issue for the task (line 1
+   title, line 2 blank, then a short description and acceptance criteria).
+   Known problems and open gaps get an issue too. Issues are public: generic
+   technical wording only.
 1. `tools/git/unit.sh start <type>/<short-slug>` branches from an up-to-date
    `main`. Types: `feat fix perf refactor docs test build chore art audio`.
 2. Make one logical change and run the checks below.
 3. Commit with Conventional Commits: imperative subject of 72 characters or
    fewer, and a body that says what and why when the change is not trivial.
    Every commit leaves the project importable.
-4. `tools/git/unit.sh finish <file|->` pushes the branch, opens the pull
-   request (line 1 title, line 2 blank, then a body with a `CHECKED`
-   section) and merges it with a merge commit.
+4. Review the whole diff against `main` and fix the real problems found.
+5. `tools/git/unit.sh finish <file|-> --review <file>` pushes the branch,
+   opens the pull request (line 1 title, line 2 blank, then a body with a
+   `CHECKED` section and `Closes #n`), posts the review file as a review
+   comment (what was checked, problems found and how they were fixed) and
+   then merges it with a merge commit.
 
 - Merge commits only. Never squash, force-push or rewrite pushed history.
+- No empty, duplicate or filler issues, reviews, commits or pull requests.
 - Never commit to `main` directly.
 - Leave at least 5 s between pull-request API calls and back off on rate
   limits; the scripts in `tools/git/` do both.

@@ -50,10 +50,13 @@ git commit --quiet -m "chore: bootstrap"
 git remote add origin "${FAKE_GH_REMOTE}"
 
 unit() { tools/git/unit.sh "$@" 2>&1; }
-queue_count() { find .git/pr-queue -maxdepth 1 -name '[0-9][0-9][0-9][0-9]-*' 2>/dev/null | wc -l; }
+queue_count() { find .git/pr-queue -maxdepth 1 -name '[0-9][0-9][0-9][0-9]-*' ! -name '*.review' ! -name '*.posted' 2>/dev/null | wc -l; }
 remote_has() { git -C "${FAKE_GH_REMOTE}" show-ref --verify --quiet "refs/heads/$1"; }
 remote_main() { git -C "${FAKE_GH_REMOTE}" rev-parse main; }
 merges_on_remote() { git -C "${FAKE_GH_REMOTE}" rev-list --merges --count main; }
+
+review_file="${sandbox}/review.md"
+printf 'Checked: fixture diff.\nProblems: none.\n' >"${review_file}"
 
 # Make a task with the given number of commits and finish it.
 task() {
@@ -64,7 +67,7 @@ task() {
 		git add -A
 		git commit --quiet -m "docs: ${branch} step ${index}"
 	done
-	unit finish - <<BODY
+	unit finish - --review "${review_file}" <<BODY
 docs: ${branch}
 
 ## What
@@ -108,6 +111,8 @@ check "no task branches left locally" equals "$(git branch --list | grep -vc '^\
 check "only main is left on the remote" equals "$(git -C "${FAKE_GH_REMOTE}" for-each-ref --format='%(refname)' refs/heads | tr '\n' ' ')" "refs/heads/main "
 check "pull requests were merged in queue order" equals "$(tr '\n' ' ' <"${FAKE_GH_STATE}/merged")" "1 2 3 4 "
 check "first PR title came from the queue entry" equals "$(cat "${FAKE_GH_STATE}/title-1")" "docs: docs/alpha"
+check "each merged PR got exactly one review" equals "$(wc -l <"${FAKE_GH_STATE}/reviews.log")" "4"
+check "review text came from the queue" grep -q "Problems: none." "${FAKE_GH_STATE}/review-1"
 
 printf 'private remote, empty queue: the normal online flow\n'
 task docs/epsilon 2 >/dev/null
@@ -123,7 +128,7 @@ printf 'eta\n' >notes-eta.txt
 git add -A
 git -c user.name="someone else" -c user.email="else@example.invalid" commit --quiet -m "docs: eta by the wrong author"
 finish_output="$(
-	unit finish - <<'BODY' || true
+	unit finish - --review "${review_file}" <<'BODY' || true
 docs: eta
 
 ## What
@@ -142,6 +147,54 @@ git branch --quiet --force docs/eta main
 tools/git/replay_queue.sh >/dev/null 2>&1
 check "published once the author is corrected" equals "$(merges_on_remote)" "6"
 check "local main equals remote main" equals "$(git rev-parse main)" "$(remote_main)"
+
+printf 'finish refuses a task without a review\n'
+unit start docs/theta >/dev/null
+printf 'theta\n' >notes-theta.txt
+git add -A
+git commit --quiet -m "docs: theta"
+no_review_output="$(printf 'docs: theta\n\n## CHECKED\n- fixture\n' | unit finish - || true)"
+check "finish names the missing review" grep -q "finish needs --review" <<<"${no_review_output}"
+check "nothing was queued" equals "$(queue_count)" "0"
+check "still on the task branch" equals "$(git branch --show-current)" "docs/theta"
+printf 'docs: theta\n\n## CHECKED\n- fixture\n' | unit finish - --review "${review_file}" >/dev/null
+check "merged once the review is given" equals "$(merges_on_remote)" "7"
+
+printf 'a replay without its review file does not merge\n'
+unit start docs/iota >/dev/null
+printf 'iota\n' >notes-iota.txt
+git add -A
+git commit --quiet -m "docs: iota"
+FAKE_GH_VISIBILITY=public unit finish - --review "${review_file}" >/dev/null <<'BODY'
+docs: iota
+
+## CHECKED
+- fixture
+BODY
+rm .git/pr-queue/*-docs__iota.review
+check "replay refuses" bash -c "! tools/git/replay_queue.sh"
+check "nothing new was merged" equals "$(merges_on_remote)" "7"
+printf 'Checked: fixture.\n' >"$(ls .git/pr-queue/*-docs__iota.md | sed 's/\.md$/.review/')"
+tools/git/replay_queue.sh >/dev/null 2>&1
+check "merged once the review is back" equals "$(merges_on_remote)" "8"
+check "queue is empty again" equals "$(queue_count)" "0"
+
+printf 'an interrupted replay posts its review only once\n'
+reviews_before="$(wc -l <"${FAKE_GH_STATE}/reviews.log")"
+FAKE_GH_MERGE=fail task docs/kappa 1 >/dev/null || true
+check "the failed merge leaves the task queued" equals "$(queue_count)" "1"
+tools/git/replay_queue.sh >/dev/null 2>&1
+check "merged on the second replay" equals "$(merges_on_remote)" "9"
+check "one review for the two attempts" equals "$(wc -l <"${FAKE_GH_STATE}/reviews.log")" "$((reviews_before + 1))"
+
+printf 'issues\n'
+issue_output="$(printf 'Fixture issue\n\nSomething to do.\n' | unit issue -)"
+check "issue create prints the issue URL" grep -q "example.invalid/issues/" <<<"${issue_output}"
+check "issue title came from line 1" grep -qx "Fixture issue" "${FAKE_GH_STATE}"/issue-*
+check "an issue without a body is refused" bash -c "! printf 'Only a title\n' | tools/git/unit.sh issue -"
+denied_start="$(date +%s)"
+check "a permission error fails" bash -c "! printf 'Denied\n\nBody.\n' | FAKE_GH_ISSUES=denied tools/git/unit.sh issue -"
+check "a permission error fails without waiting" bash -c "(( $(date +%s) - ${denied_start} < 30 ))"
 
 printf 'milestone tag entries\n'
 printf 'M0 bootstrap\n' >".git/pr-queue/$(printf '%04d' 99)-TAG-v0.0.0.tag"
