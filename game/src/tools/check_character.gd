@@ -9,7 +9,11 @@ extends SceneTree
 ## of each base-outfit garment (<garment>_<segment>, with a material named
 ## after the garment), and no other mesh; each mesh with a
 ## blend shape build_<name> per build of the preset, every build moving some
-## vertex of the body by at least 5 mm; and the bodies' meshes differ.
+## vertex of the body by at least 5 mm; with "eyes" in the preset, one more
+## skinned mesh "eyes" with a material "eyes"; with "faces", the face segment's
+## mesh skin_<face_segment> has a blend shape face_<n> per face, each moving
+## some vertex by at least 1 mm (an empty face is the base face and has
+## none); and the bodies' meshes differ.
 ## Usage: godot --headless -s res://src/tools/check_character.gd -- <res:// root>
 ## Prints each error, then RESULT PASS / FAIL; exit code 0 / 1.
 
@@ -19,6 +23,8 @@ const EYE_TOLERANCE_M := 0.01
 const REST_TOLERANCE := 1e-4
 const BUILD_MIN_MOVE_M := 0.005
 const SKIN_PREFIX := "skin_"
+const EYES := "eyes"
+const FACE_MIN_MOVE_M := 0.001
 
 
 func _initialize() -> void:
@@ -102,6 +108,7 @@ func _check_one(f: String, scene: Node, preset: Variant, errors: PackedStringArr
 	if preset is Dictionary:
 		_check_segments(f, scene, skel, _expected_meshes(preset), errors)
 		_check_builds(f, scene, (preset.get("builds", {}) as Dictionary).keys(), errors)
+		_check_faces(f, scene, preset, errors)
 	for twist: String in HumanoidBones.TWIST:
 		if int(weighted.get(twist, 0)) == 0:
 			errors.append("%s: no vertex weighted to %s" % [f, twist])
@@ -140,6 +147,8 @@ func _expected_meshes(preset: Dictionary) -> Dictionary:
 	for g: String in garments:
 		for seg: String in (garments[g] as Dictionary).get("segments", []):
 			out["%s_%s" % [g, seg]] = g
+	if bool(preset.get("eyes", false)):
+		out[EYES] = EYES
 	return out
 
 
@@ -165,6 +174,40 @@ func _check_segments(
 	for n: String in expected:
 		if not found.has(n):
 			errors.append("%s: no mesh %s" % [f, n])
+
+
+## Errors unless the face segment's mesh has a blend shape face_<n> for each
+## face of the preset, each moving some vertex by FACE_MIN_MOVE_M.
+func _check_faces(f: String, scene: Node, preset: Dictionary, errors: PackedStringArray) -> void:
+	var faces: Array = preset.get("faces", [])
+	if faces.is_empty():
+		return
+	var head := scene.find_child(SKIN_PREFIX + String(preset.get("face_segment", "")), true, false)
+	var mesh := (head as MeshInstance3D).mesh as ArrayMesh if head is MeshInstance3D else null
+	if mesh == null:
+		errors.append("%s: no face segment mesh" % f)
+		return
+	var names := {}
+	for k in mesh.get_blend_shape_count():
+		names[String(mesh.get_blend_shape_name(k))] = k
+	var base: PackedVector3Array = mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+	var shapes := mesh.surface_get_blend_shape_arrays(0)
+	var relative := mesh.blend_shape_mode == Mesh.BLEND_SHAPE_MODE_RELATIVE
+	for n in range(1, faces.size() + 1):
+		var key := "face_%d" % n
+		if (faces[n - 1] as Dictionary).is_empty():
+			continue  # the base face: no shape key
+		if not names.has(key):
+			errors.append("%s: %s has no blend shape %s" % [f, head.name, key])
+			continue
+		var pts: PackedVector3Array = (shapes[names[key]] as Array)[Mesh.ARRAY_VERTEX]
+		var most := 0.0
+		for i in mini(pts.size(), base.size()):
+			most = maxf(most, (pts[i] if relative else pts[i] - base[i]).length())
+		if most < FACE_MIN_MOVE_M:
+			errors.append("%s: %s moves at most %.4f m" % [f, key, most])
+		else:
+			print("%s: %s moves up to %.3f m" % [f, key, most])
 
 
 ## Errors unless every mesh has a blend shape per build and each build moves
