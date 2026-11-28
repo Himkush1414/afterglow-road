@@ -4,7 +4,8 @@ extends AnimationTree
 ## of stand and crouch blend spaces (sideways speed x, forward speed y, in
 ## m/s, with the clips placed at the motor's own gait speeds from the
 ## "movement" tuning group), the jump one-shots (start, air, land) and the
-## mantle one-shot, stretched to the motor's mantle time. Each frame it
+## mantle one-shot, stretched to the motor's mantle time, and a swim blend
+## by horizontal speed (swim idle at 0, swim forward at the swim speed). Each frame it
 ## reads the motor's velocity in the view's frame, its stance and its state;
 ## the motor's jumped, landed and mantle_started signals start the one-shots.
 ## Clip names: the player clip library's (idle, walk_f, walk_b, walk_l, ...).
@@ -15,6 +16,7 @@ const JUMP_START := &"jump_start"
 const AIR := &"air"
 const JUMP_LAND := &"jump_land"
 const MANTLE := &"mantle"
+const SWIM := &"swim"
 const KEYS: Array[String] = [
 	"walk_ms",
 	"jog_ms",
@@ -24,6 +26,7 @@ const KEYS: Array[String] = [
 	"strafe_mult",
 	"anim_blend_s",
 	"mantle_s",
+	"swim_ms",
 ]
 
 var errors: PackedStringArray = []
@@ -92,9 +95,16 @@ func update_state() -> void:
 	var blend := Vector2(v.x, -v.z)  # x: right of the view, y: forward
 	set("parameters/%s/blend_position" % STAND, blend)
 	set("parameters/%s/blend_position" % CROUCH, blend)
+	set("parameters/%s/blend_position" % SWIM, blend.length())
 	var ground := CROUCH if motor.crouched else STAND
 	var current := _playback.get_current_node()
-	if _mantling:
+	if motor.state == PlayerMotor.State.SWIMMING:
+		_jumping = false
+		_landing = false
+		_mantling = false
+		if current != SWIM:
+			_playback.travel(SWIM)
+	elif _mantling:
 		_mantling = false
 		_jumping = false
 		_landing = false
@@ -123,7 +133,15 @@ func current_state() -> StringName:
 ## Every clip the animator plays.
 static func clip_names() -> Array[String]:
 	var out: Array[String] = [
-		"idle", "sprint", "crouch_idle", "jump_start", "jump_air", "jump_land", "mantle"
+		"idle",
+		"sprint",
+		"crouch_idle",
+		"jump_start",
+		"jump_air",
+		"jump_land",
+		"mantle",
+		"swim_idle",
+		"swim_forward",
 	]
 	for d: String in ["f", "b", "l", "r"]:
 		out.append_array(["walk_" + d, "jog_" + d, "crouch_walk_" + d])
@@ -170,6 +188,12 @@ func _build(cfg: Dictionary) -> AnimationNodeStateMachine:
 	mantle.timeline_length = float(cfg.mantle_s)
 	mantle.stretch_time_scale = true
 	sm.add_node(MANTLE, mantle)
+	var swim := AnimationNodeBlendSpace1D.new()
+	swim.min_space = 0.0
+	swim.max_space = float(cfg.swim_ms)
+	swim.add_blend_point(_clip("swim_idle"), 0.0, -1, &"swim_idle")
+	swim.add_blend_point(_clip("swim_forward"), float(cfg.swim_ms), -1, &"swim_forward")
+	sm.add_node(SWIM, swim)
 	var blend := float(cfg.anim_blend_s)
 	for pair: Array in [
 		[STAND, CROUCH],
@@ -185,6 +209,14 @@ func _build(cfg: Dictionary) -> AnimationNodeStateMachine:
 		[CROUCH, MANTLE],
 		[JUMP_START, MANTLE],
 		[AIR, MANTLE],
+		[STAND, SWIM],
+		[CROUCH, SWIM],
+		[JUMP_START, SWIM],
+		[AIR, SWIM],
+		[JUMP_LAND, SWIM],
+		[MANTLE, SWIM],
+		[SWIM, STAND],
+		[SWIM, CROUCH],
 	]:
 		sm.add_transition(pair[0], pair[1], _transition(blend, false))
 	sm.add_transition(JUMP_START, AIR, _transition(blend, true))
