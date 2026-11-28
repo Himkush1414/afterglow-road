@@ -103,3 +103,23 @@ func test_value_texts_use_translation_keys() -> void:
 			t != "" and not t.begins_with("mirror."),
 			"%s shows text, not a key: '%s'" % [category, t]
 		)
+
+
+func test_turn_and_lean_controls() -> void:
+	if not check(not _cust.is_empty(), "content has customization data"):
+		return
+	_screen.open(_cust, Appearance.default_of(_cust), MirrorScreen.Mode.NEW_GAME, _apply)
+	_screen.turn_by(5.0)
+	check_near(_screen.turn_angle(), MirrorScreen.MAX_TURN, 1e-6, "turn stops at 70 degrees")
+	_screen.turn_by(-10.0)
+	check_near(_screen.turn_angle(), -MirrorScreen.MAX_TURN, 1e-6, "and at -70 degrees")
+	var w := InputEventKey.new()
+	w.keycode = KEY_W
+	w.pressed = true
+	_screen._unhandled_key_input(w)
+	check(_screen.leaning, "W leans in")
+	var s := InputEventKey.new()
+	s.keycode = KEY_S
+	s.pressed = true
+	_screen._unhandled_key_input(s)
+	check(not _screen.leaning, "S leans out")

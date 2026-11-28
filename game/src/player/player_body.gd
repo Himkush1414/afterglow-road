@@ -37,6 +37,9 @@ var animator: PlayerAnimator
 var spine: SpinePitch
 ## 0 (nothing within the wall cast) .. 1 (touching): how far the arms pull in.
 var arm_retract := 0.0
+## Extra rig yaw in radians (the mirror screen's body turn); the head is
+## turned back by the same angle so it keeps facing the view.
+var turn_offset := 0.0
 
 var _head_bone := -1
 var _chest_bone := -1
@@ -282,6 +285,7 @@ func update_retract() -> void:
 func update_body() -> void:
 	global_transform = Transform3D(_turn(), motor.get_global_transform_interpolated().origin)
 	spine.pitch = view.pitch
+	spine.head_turn = -turn_offset
 	var cam_inv := Transform3D(view.global_basis, view.eye_offset).affine_inverse()
 	var body := Transform3D(_turn(), Vector3.ZERO)
 	for i in _meshes.size():
@@ -311,7 +315,7 @@ func local_transform(node: Node3D) -> Transform3D:
 
 ## Rig yaw: the view's yaw (the bodies face +Z, yaw 0 faces -Z).
 func _turn() -> Basis:
-	return Basis(Vector3.UP, view.yaw + PI)
+	return Basis(Vector3.UP, view.yaw + PI + turn_offset)
 
 
 func _set_layers() -> void:
