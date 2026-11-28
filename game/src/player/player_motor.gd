@@ -78,6 +78,9 @@ const KEYS: Array[String] = [
 	"swim_ms",
 	"swim_feet_below_m",
 	"swim_rise_ms",
+	"load_slope",
+	"load_no_jump_ratio",
+	"load_max_ratio",
 ]
 ## Share of a mantle's time spent rising; the rest moves onto the top.
 const MANTLE_RISE_SHARE := 0.6
@@ -94,8 +97,15 @@ var crouch := false
 ## Jump held (press_jump() marks the press): holding it while airborne
 ## mantles onto an obstacle in reach (10 §4.2).
 var jump_held := false
-## Cleared by stamina and encumbrance rules (P6-10) to refuse jumps.
+## Cleared by the stamina rules (exhausted) to refuse jumps and sprint.
 var jump_allowed := true
+var sprint_allowed := true
+## Load ratio r = carried kg / capacity (12 §2), set by the inventory:
+## above 1 the speed falls by load_slope per unit and sprint is refused,
+## above load_no_jump_ratio jumping too (10 §4.1).
+var load_ratio := 0.0
+## True when the last tick moved at sprint speed.
+var sprinting := false
 ## Water query: an object with depth_at(pos) and surface_y(pos) (Water), or
 ## null for dry land.
 var water: Object = null
@@ -208,7 +218,7 @@ func tick(delta: float) -> void:
 	if (_jump_buffer_s > 0.0 or (jump_held and not grounded)) and _start_mantle():
 		return
 	var jump := (
-		_jump_buffer_s > 0.0 and (grounded or _coyote_s > 0.0) and not crouched and jump_allowed
+		_jump_buffer_s > 0.0 and (grounded or _coyote_s > 0.0) and not crouched and can_jump()
 	)
 	if jump:
 		_jump_buffer_s = 0.0
@@ -339,23 +349,49 @@ func _mantle_tick(delta: float) -> void:
 ## Horizontal velocity the intents ask for (world space): gait speed, the
 ## backward and strafe factors, turned by yaw.
 func target_velocity() -> Vector3:
+	sprinting = false
 	var m := move.limit_length(1.0)
 	if m == Vector2.ZERO:
 		return Vector3.ZERO
 	var speed := float(_cfg.jog_ms)
 	if crouched:
 		speed = float(_cfg.crouch_ms)
-	elif sprint and _sprint_allowed(m):
+	elif sprint and _sprint_allowed(m) and can_sprint():
 		speed = float(_cfg.sprint_ms)
+		sprinting = true
 	elif walk:
 		speed = float(_cfg.walk_ms)
 	if is_wading():
 		if speed > float(_cfg.jog_ms):
 			speed = float(_cfg.jog_ms)  # no sprint in water
+			sprinting = false
 		speed *= float(_cfg.wade_mult)
+	speed *= load_speed_factor()
 	var back := float(_cfg.back_mult) if m.y > 0.0 else 1.0
 	var local := Vector3(m.x * float(_cfg.strafe_mult), 0.0, m.y * back) * speed
 	return local.rotated(Vector3.UP, yaw)
+
+
+## Speed factor of the load ratio: 1 up to r = 1, then 1 − slope·(r − 1),
+## held at its value for the top ratio beyond it.
+func load_speed_factor() -> float:
+	var r := clampf(load_ratio, 1.0, float(_cfg.load_max_ratio))
+	return 1.0 - float(_cfg.load_slope) * (r - 1.0)
+
+
+## Sprinting allowed by stamina and load (r <= 1).
+func can_sprint() -> bool:
+	return sprint_allowed and load_ratio <= 1.0
+
+
+## Jumping allowed by stamina and load.
+func can_jump() -> bool:
+	return jump_allowed and load_ratio <= float(_cfg.load_no_jump_ratio)
+
+
+## Whether more can be picked up: below the top load ratio.
+func can_pick_up() -> bool:
+	return load_ratio < float(_cfg.load_max_ratio)
 
 
 ## Whether the capsule has room to stand up from crouching.

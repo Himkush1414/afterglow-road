@@ -1834,6 +1834,18 @@
 					"type": "number",
 					"min": 0.01,
 					"max": 1
+				},
+				"load_slope": {
+					"type": "number",
+					"min": 0
+				},
+				"load_no_jump_ratio": {
+					"type": "number",
+					"min": 0
+				},
+				"load_max_ratio": {
+					"type": "number",
+					"min": 0
 				}
 			}
 		},
@@ -2746,6 +2758,50 @@
 					"min": 0
 				},
 				"drown_hp_ps": {
+					"type": "number",
+					"min": 0
+				},
+				"sprint_ps": {
+					"type": "number",
+					"min": 0
+				},
+				"jump_cost": {
+					"type": "number",
+					"min": 0
+				},
+				"mantle_cost": {
+					"type": "number",
+					"min": 0
+				},
+				"recover_at": {
+					"type": "number",
+					"min": 0
+				},
+				"low_hunger": {
+					"type": "number",
+					"min": 0
+				},
+				"low_thirst": {
+					"type": "number",
+					"min": 0
+				},
+				"low_warmth": {
+					"type": "number",
+					"min": 0
+				},
+				"low_rest": {
+					"type": "number",
+					"min": 0
+				},
+				"low_mult": {
+					"type": "number",
+					"min": 0
+				},
+				"min_mult": {
+					"type": "number",
+					"min": 0
+				},
+				"tired_max": {
 					"type": "number",
 					"min": 0
 				}
