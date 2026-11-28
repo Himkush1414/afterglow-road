@@ -449,7 +449,10 @@
 		"swim_exit_depth_m": 1.0,
 		"swim_ms": 1.6,
 		"swim_feet_below_m": 1.45,
-		"swim_rise_ms": 2.0
+		"swim_rise_ms": 2.0,
+		"load_slope": 1.6,
+		"load_no_jump_ratio": 1.2,
+		"load_max_ratio": 1.5
 	},
 	"camera": {
 		"stand_eye_m": 1.6,
@@ -552,6 +555,17 @@
 		"swim_still_ps": 1,
 		"regen_ps": 12,
 		"regen_delay_s": 1.0,
-		"drown_hp_ps": 10
+		"drown_hp_ps": 10,
+		"sprint_ps": 8,
+		"jump_cost": 6,
+		"mantle_cost": 8,
+		"recover_at": 20,
+		"low_hunger": 20,
+		"low_thirst": 20,
+		"low_warmth": 25,
+		"low_rest": 20,
+		"low_mult": 0.5,
+		"min_mult": 0.125,
+		"tired_max": 70
 	}
 }
