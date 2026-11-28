@@ -25,6 +25,12 @@ func test_entries_follow_the_saves_and_start_the_game() -> void:
 	title.new_game_button.pressed.emit()
 	await App.scene_shown
 	await tree.process_frame
+	if DressingRoom.can_open():
+		# 11 §5.1: the dressing room comes first; Confirm enters the game.
+		check_eq(App.current_path, App.DRESSING_ROOM_SCENE, "New game opens the dressing room")
+		(tree.current_scene as DressingRoom).screen.confirm()
+		await App.scene_shown
+		await tree.process_frame
 	check_eq(App.current_path, Game.SCENE, "New game enters the game")
 	check(SaveGame.has_save("slot_1"), "new game saved in the first slot")
 	await App.show_title()

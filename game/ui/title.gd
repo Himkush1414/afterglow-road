@@ -11,7 +11,7 @@ func _ready() -> void:
 	continue_button.disabled = Game.newest_slot() == ""
 	new_game_button.disabled = Game.free_slot() == ""
 	continue_button.pressed.connect(func() -> void: App.start_game(Game.newest_slot(), false))
-	new_game_button.pressed.connect(func() -> void: App.start_game(Game.free_slot(), true))
+	new_game_button.pressed.connect(func() -> void: App.start_character(Game.free_slot()))
 	quit_button.pressed.connect(App.quit)
 	var first := new_game_button if continue_button.disabled else continue_button
 	if not first.disabled:

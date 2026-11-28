@@ -5,8 +5,11 @@ signal scene_shown(path: String)
 
 const TITLE_SCENE := "res://ui/title.tscn"
 const LOADING_SCENE := "res://ui/loading_screen.tscn"
+const DRESSING_ROOM_SCENE := "res://scenes/dressing_room.tscn"
 
 var current_path := ""
+## The slot a new game will use while the dressing room is shown.
+var pending_slot := ""
 ## Instanced once and kept (03 §15.6).
 var loading: LoadingScreen
 
@@ -58,15 +61,26 @@ func quit() -> void:
 	get_tree().quit()
 
 
-## Shows the game scene and starts a new game in `slot` (or continues it).
-func start_game(slot: String, is_new: bool) -> Error:
+## New game in `slot`: the dressing room first (11 §5.1) when the content
+## has the player body scenes, else straight into the game with the default
+## appearance.
+func start_character(slot: String) -> Error:
+	pending_slot = slot
+	if not DressingRoom.can_open():
+		return await start_game(slot, true)
+	return await show_scene(DRESSING_ROOM_SCENE)
+
+
+## Shows the game scene and starts a new game in `slot` (or continues it);
+## `look`: the appearance chosen for a new game (empty: the default).
+func start_game(slot: String, is_new: bool, look: Dictionary = {}) -> Error:
 	loading.begin(PackedStringArray([Game.SCENE]))
 	if not loading.loader.is_done():
 		await loading.scenes_ready
 	var err: Error = await show_scene(Game.SCENE)
 	if err != OK:
 		return err
-	err = Game.current.start_new(slot) if is_new else Game.current.start_continue(slot)
+	err = Game.current.start_new(slot, look) if is_new else Game.current.start_continue(slot)
 	if err != OK:
 		Log.error("app", "cannot start %s (%s)" % [slot, error_string(err)])
 		await show_title()
