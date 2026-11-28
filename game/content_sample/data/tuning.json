@@ -441,7 +441,8 @@
 		"mantle_depth_m": 0.6,
 		"mantle_room_m": 0.9,
 		"mantle_reach_m": 0.5,
-		"mantle_s": 0.5
+		"mantle_s": 0.5,
+		"anim_blend_s": 0.15
 	},
 	"camera": {
 		"stand_eye_m": 1.6,

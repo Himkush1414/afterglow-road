@@ -1801,6 +1801,10 @@
 				"mantle_s": {
 					"type": "number",
 					"min": 0.01
+				},
+				"anim_blend_s": {
+					"type": "number",
+					"min": 0
 				}
 			}
 		},
