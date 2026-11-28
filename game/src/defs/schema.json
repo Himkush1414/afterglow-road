@@ -2666,6 +2666,28 @@
 					}
 				}
 			}
+		},
+		"tuning_mirror": {
+			"type": "object",
+			"fields": {
+				"far_desktop_m": {
+					"type": "number",
+					"min": 0.1
+				},
+				"far_phone_m": {
+					"type": "number",
+					"min": 0.1
+				},
+				"crack_impact_j": {
+					"type": "number",
+					"min": 0
+				},
+				"tint": {
+					"type": "number",
+					"min": 0,
+					"max": 1
+				}
+			}
 		}
 	},
 	"files": {
@@ -2778,6 +2800,10 @@
 					},
 					"hands": {
 						"type": "tuning_hands",
+						"optional": true
+					},
+					"mirror": {
+						"type": "tuning_mirror",
 						"optional": true
 					}
 				}
