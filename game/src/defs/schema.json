@@ -2641,6 +2641,31 @@
 					"min": 0.01
 				}
 			}
+		},
+		"tuning_hands": {
+			"type": "object",
+			"fields": {
+				"reach_s": {
+					"type": "number",
+					"min": 0.01
+				},
+				"held_offsets": {
+					"type": "map",
+					"values": {
+						"type": "list",
+						"of": {
+							"type": "number"
+						},
+						"min_len": 6
+					}
+				},
+				"two_handed_poses": {
+					"type": "list",
+					"of": {
+						"type": "string"
+					}
+				}
+			}
 		}
 	},
 	"files": {
@@ -2749,6 +2774,10 @@
 					},
 					"body": {
 						"type": "tuning_body",
+						"optional": true
+					},
+					"hands": {
+						"type": "tuning_hands",
 						"optional": true
 					}
 				}

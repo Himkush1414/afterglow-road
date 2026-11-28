@@ -467,5 +467,69 @@
 		"chest_pitch_share": 0.35,
 		"wall_cast_m": 0.6,
 		"wall_cast_radius_m": 0.1
+	},
+	"hands": {
+		"reach_s": 0.25,
+		"held_offsets": {
+			"small_1h": [
+				0,
+				0,
+				0,
+				0,
+				0,
+				0
+			],
+			"tool_1h": [
+				0,
+				0,
+				0,
+				0,
+				0,
+				0
+			],
+			"tool_2h": [
+				0,
+				0,
+				0,
+				0,
+				0,
+				0
+			],
+			"carry_shoulder": [
+				0,
+				0,
+				0,
+				0,
+				0,
+				0
+			],
+			"carry_front": [
+				0,
+				0,
+				0,
+				0,
+				0,
+				0
+			],
+			"torch": [
+				0,
+				0,
+				0,
+				0,
+				0,
+				0
+			],
+			"container": [
+				0,
+				0,
+				0,
+				0,
+				0,
+				0
+			]
+		},
+		"two_handed_poses": [
+			"tool_2h"
+		]
 	}
 }
