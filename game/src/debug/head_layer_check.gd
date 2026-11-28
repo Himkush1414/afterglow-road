@@ -30,59 +30,16 @@ func _run() -> void:
 		printerr("head layer check: needs a display (run without --headless)")
 		get_tree().quit(3)
 		return
-	var args := _args()
+	var args := PlayerCheckRig.args()
 	_frames_dir = String(args.get("frames", ""))
-	var body_scene := load(String(args.get("body", ""))) as PackedScene
-	var clips := load(String(args.get("clips", ""))) as AnimationLibrary
-	var cust: Variant = ContentDB.file_data("customization.json")
-	if body_scene == null or clips == null or not cust is Dictionary:
-		printerr("usage: -- --body <scene> --clips <library> (and customization.json)")
+	var rig := PlayerCheckRig.new()
+	add_child(rig)
+	if not rig.build(args):
+		print("setup failed: %s" % ", ".join(rig.errors))
 		get_tree().quit(2)
 		return
-	var sun := DirectionalLight3D.new()
-	sun.shadow_enabled = true
-	sun.rotation_degrees = Vector3(-35.0, 0.0, 0.0)  # light travels toward -Z
-	add_child(sun)
-	var env := WorldEnvironment.new()
-	env.environment = Environment.new()
-	env.environment.background_mode = Environment.BG_COLOR
-	env.environment.background_color = Color(0.3, 0.35, 0.4)
-	env.environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.environment.ambient_light_color = Color(0.25, 0.25, 0.25)
-	add_child(env)
-	var ground := MeshInstance3D.new()
-	var plane := PlaneMesh.new()
-	plane.size = Vector2(60.0, 60.0)
-	ground.mesh = plane
-	add_child(ground)
-	var motor := PlayerMotor.new()
-	add_child(motor)
-	motor.process_mode = Node.PROCESS_MODE_DISABLED  # stands still on the plane
-	var cam := PlayerCamera.new()
-	cam.reads_input = false
-	add_child(cam)
-	var body := PlayerBody.new()
-	add_child(body)
-	var movement := ContentDB.tuning("movement")
-	var ok := motor.setup(movement) and cam.setup(motor, ContentDB.tuning("camera"))
-	ok = (
-		ok
-		and body.setup(
-			motor,
-			cam,
-			body_scene,
-			clips,
-			movement,
-			ContentDB.tuning("body"),
-			(cust as Dictionary).get("head_segments", [])
-		)
-	)
-	if not ok:
-		print("setup failed: %s" % ", ".join(body.errors + cam.errors + motor.errors))
-		get_tree().quit(1)
-		return
-	cam.current = true
-	var heads := _head_meshes(body)
+	var cam := rig.cam
+	var heads := _head_meshes(rig.body)
 	var magenta := StandardMaterial3D.new()
 	magenta.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	magenta.albedo_color = Color(1, 0, 1)
@@ -93,31 +50,31 @@ func _run() -> void:
 	var pose := 0
 	for yaw in YAWS_DEG:
 		for pitch in PITCHES_DEG:
-			motor.crouched = pose % 2 == 1
+			rig.motor.crouched = pose % 2 == 1
 			cam.yaw = deg_to_rad(yaw)
 			cam.pitch = deg_to_rad(pitch)
-			var n := _magenta(await _shot("pose_%02d" % pose))
+			var n := _magenta(await rig.shot("pose_%02d" % pose, _frames_dir))
 			print(
 				(
 					"pose %02d yaw %3d pitch %3d %s: %d magenta"
-					% [pose, yaw, pitch, "crouch" if motor.crouched else "stand", n]
+					% [pose, yaw, pitch, "crouch" if rig.motor.crouched else "stand", n]
 				)
 			)
 			failed = failed or n > 0
 			pose += 1
-	motor.crouched = false
+	rig.motor.crouched = false
 	cam.pitch = deg_to_rad(-80.0)
 	cam.cull_mask |= PlayerBody.head_layer_mask()
-	var control := _magenta(await _shot("control"))
+	var control := _magenta(await rig.shot("control", _frames_dir))
 	print("control (camera draws the head layer): %d magenta" % control)
 	failed = failed or control == 0
 	cam.cull_mask &= ~PlayerBody.head_layer_mask()
 	cam.yaw = 0.0
 	cam.pitch = deg_to_rad(-25.0)
-	var with_head := await _shot("shadow_head")
+	var with_head := await rig.shot("shadow_head", _frames_dir)
 	for m in heads:
 		m.visible = false
-	var without := await _shot("shadow_no_head")
+	var without := await rig.shot("shadow_no_head", _frames_dir)
 	var changed := _changed(with_head, without)
 	print(
 		"ground pixels changed by hiding the head: %d (need >= %d)" % [changed, MIN_SHADOW_PIXELS]
@@ -125,15 +82,6 @@ func _run() -> void:
 	failed = failed or changed < MIN_SHADOW_PIXELS
 	print("RESULT %s" % ("FAIL" if failed else "PASS"))
 	get_tree().quit(1 if failed else 0)
-
-
-func _args() -> Dictionary:
-	var out := {}
-	var a := OS.get_cmdline_user_args()
-	for i in range(0, a.size() - 1):
-		if a[i].begins_with("--"):
-			out[a[i].substr(2)] = a[i + 1]
-	return out
 
 
 func _head_meshes(body: PlayerBody) -> Array[MeshInstance3D]:
@@ -144,24 +92,10 @@ func _head_meshes(body: PlayerBody) -> Array[MeshInstance3D]:
 	return out
 
 
-func _shot(name: String) -> Image:
-	for i in SETTLE_FRAMES:
-		await get_tree().process_frame
-	await RenderingServer.frame_post_draw
-	var img := get_viewport().get_texture().get_image()
-	if _frames_dir != "":
-		img.save_png(_frames_dir.path_join(name + ".png"))
-	return img
-
-
 static func _magenta(img: Image) -> int:
-	var n := 0
-	for y in img.get_height():
-		for x in img.get_width():
-			var c := img.get_pixel(x, y)
-			if c.r > 0.8 and c.g < 0.25 and c.b > 0.8:
-				n += 1
-	return n
+	return PlayerCheckRig.count(
+		img, func(c: Color) -> bool: return c.r > 0.8 and c.g < 0.25 and c.b > 0.8
+	)
 
 
 static func _changed(a: Image, b: Image) -> int:
