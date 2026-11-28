@@ -113,3 +113,66 @@ class PaintTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SourceTest(unittest.TestCase):
+    """A CC0 photo texture as pattern source."""
+
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        n = 64
+        x = np.arange(n)
+        # tileable test images: 4 colour stripes down the image, height bumps
+        stripes = (0.5 + 0.5 * np.sin(2 * np.pi * 4 * x / n))[:, None].repeat(n, axis=1)
+        rgb = np.floor(np.dstack([stripes] * 3) * 255 + 0.5).astype(np.uint8)
+        paint.Image.fromarray(rgb).save(os.path.join(self.dir.name, "c.png"))
+        bumps = 0.5 + 0.5 * np.cos(2 * np.pi * 2 * x / n)[None, :] * np.cos(2 * np.pi * 2 * x / n)[:, None]
+        h16 = np.floor(bumps * 65535 + 0.5).astype(np.uint16)
+        paint.Image.fromarray(h16).save(os.path.join(self.dir.name, "h.png"))
+        self.material = copy.deepcopy(MATERIAL)
+        self.material["source"] = {"colour": "c.png", "height": "h.png", "weight": 0.8}
+
+    def tearDown(self):
+        self.dir.cleanup()
+
+    def test_source_shapes_the_albedo(self):
+        ah, _ = paint.paint(self.material, 64, self.dir.name)
+        rows = ah[..., :3].astype(float).mean(axis=(1, 2))
+        stripes = np.sin(2 * np.pi * 4 * np.arange(64) / 64)
+        self.assertGreater(np.corrcoef(rows, stripes)[0, 1], 0.8)
+        plain, _ = paint.paint(MATERIAL, 64)
+        self.assertFalse(np.array_equal(ah, plain))
+
+    def test_source_height_drives_the_height_channel(self):
+        ah, _ = paint.paint(self.material, 64, self.dir.name)
+        with paint.Image.open(os.path.join(self.dir.name, "h.png")) as im:
+            src = np.asarray(im).astype(float)
+        self.assertGreater(np.corrcoef(ah[..., 3].astype(float).ravel(), src.ravel())[0, 1], 0.7)
+
+    def test_source_output_tiles_and_is_deterministic(self):
+        ah, nra = paint.paint(self.material, 64, self.dir.name)
+        again = paint.paint(self.material, 64, self.dir.name)
+        self.assertTrue(np.array_equal(ah, again[0]) and np.array_equal(nra, again[1]))
+        for img in (ah, nra):
+            a = img.astype(float)
+            self.assertLessEqual(np.abs(a[:, 0] - a[:, -1]).max(), np.abs(np.diff(a, axis=1)).max())
+            self.assertLessEqual(np.abs(a[0] - a[-1]).max(), np.abs(np.diff(a, axis=0)).max())
+
+    def test_missing_source_and_bad_weight_are_refused(self):
+        m = copy.deepcopy(self.material)
+        m["source"]["colour"] = "nope.png"
+        with self.assertRaisesRegex(ValueError, "source file missing"):
+            paint.paint(m, 64, self.dir.name)
+        m = copy.deepcopy(self.material)
+        m["source"]["weight"] = 1.5
+        with self.assertRaisesRegex(ValueError, "weight"):
+            paint.paint(m, 64, self.dir.name)
+
+    def test_preset_paths_are_relative_to_the_preset(self):
+        preset = {"category": "sample", "size": 64, "materials": [self.material]}
+        path = os.path.join(self.dir.name, "preset.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(preset, f)
+        with tempfile.TemporaryDirectory() as out:
+            self.assertEqual(paint.main(["--preset", path, "--out", out]), 0)
+            self.assertTrue(os.path.isfile(os.path.join(out, "hi", "sample_sample_ah.png")))
