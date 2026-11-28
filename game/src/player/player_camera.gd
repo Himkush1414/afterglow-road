@@ -45,6 +45,9 @@ var head_offset := Callable()
 ## The eye this frame as an offset from the motor's interpolated position:
 ## no world-sized number, so camera-space drawing can use it (10 §2 rule 5).
 var eye_offset := Vector3.ZERO
+## Extra forward move of the eye along the view's heading, metres (the
+## mirror screen's lean in).
+var lean_m := 0.0
 ## Read the look intents from InputRouter in _process (off in tests).
 var reads_input := true
 
@@ -119,7 +122,7 @@ func update_view(delta: float) -> void:
 			head + flat * Vector3(0.0, float(_cfg.head_eye_up_m), -float(_cfg.head_eye_fwd_m))
 		)
 		eye = stable.lerp(head_eye, _head_bob)
-	eye_offset = eye + flat * Vector3(0.0, 0.0, -low_pitch_shift_m())
+	eye_offset = eye + flat * Vector3(0.0, 0.0, -low_pitch_shift_m() - lean_m)
 	global_transform = Transform3D(flat * Basis(Vector3.RIGHT, pitch), base + eye_offset)
 	motor.yaw = yaw
 

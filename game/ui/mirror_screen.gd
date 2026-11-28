@@ -6,13 +6,19 @@ extends Control
 ## once. New game: all tabs; Cancel asks before leaving. In the world: only
 ## hair style and facial hair; Cancel restores the look it opened with.
 ## Keys: Q/E tabs, Up/Down rows, Left/Right values, R randomise, Backspace
-## reset, Enter confirm, Esc cancel. Text: translation keys only.
+## reset, Enter confirm, Esc cancel; A/D (held) turn the body (`turn`, -1..1
+## of MAX_TURN), W/S or the mouse wheel lean in or out (`leaning`); the
+## owner applies both. Text: translation keys only.
 
 signal confirmed(look: Dictionary)
 signal cancelled
 
 enum State { CLOSED, OPEN, CONFIRMED, CANCELLED }
 enum Mode { NEW_GAME, IN_WORLD }
+
+## Largest body turn (11 §5.1), radians, and how fast A/D turn (share/s).
+const MAX_TURN := deg_to_rad(70.0)
+const TURN_PER_S := 1.5
 
 ## Tab -> rows [label key, category]; "outfit:<n>" is the n-th garment.
 const TABS := {
@@ -38,6 +44,9 @@ var look := {}
 var tabs: Array[String] = []
 var tab := 0
 var row := 0
+## Body turn as a share of MAX_TURN (-1..1) and whether the eye leans in.
+var turn := 0.0
+var leaning := false
 
 var _cust := {}
 var _apply := Callable()
@@ -65,6 +74,8 @@ func open(cust: Dictionary, start: Dictionary, open_mode: Mode, apply: Callable)
 	tabs = FULL_TABS.duplicate() if mode == Mode.NEW_GAME else world_tabs
 	tab = 0
 	row = 0
+	turn = 0.0
+	leaning = false
 	state = State.OPEN
 	_rng.randomize()
 	show()
@@ -155,6 +166,32 @@ func _close_cancelled() -> void:
 	cancelled.emit()
 
 
+## Body turn in radians for the owner.
+func turn_angle() -> float:
+	return turn * MAX_TURN
+
+
+func _process(delta: float) -> void:
+	if state != State.OPEN:
+		return
+	var dir := float(Input.is_key_pressed(KEY_D)) - float(Input.is_key_pressed(KEY_A))
+	turn_by(dir * TURN_PER_S * delta)
+
+
+## Turns the body by `share` of MAX_TURN, within -1..1.
+func turn_by(share: float) -> void:
+	turn = clampf(turn + share, -1.0, 1.0)
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if state != State.OPEN or not event is InputEventMouseButton or not event.is_pressed():
+		return
+	var b := (event as InputEventMouseButton).button_index
+	if b == MOUSE_BUTTON_WHEEL_UP or b == MOUSE_BUTTON_WHEEL_DOWN:
+		leaning = b == MOUSE_BUTTON_WHEEL_UP
+		get_viewport().set_input_as_handled()
+
+
 func _unhandled_key_input(event: InputEvent) -> void:
 	if state != State.OPEN or not event.is_pressed() or event.is_echo():
 		return
@@ -181,6 +218,10 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			confirm()
 		KEY_ESCAPE:
 			cancel()
+		KEY_W:
+			leaning = true
+		KEY_S:
+			leaning = false
 		_:
 			handled = false
 	if handled:

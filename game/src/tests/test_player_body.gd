@@ -228,3 +228,36 @@ func test_wall_cast_sets_the_arm_retract() -> void:
 	_cam.yaw = PI  # turn away: the wall is behind
 	_body.update_retract()
 	check_near(_body.arm_retract, 0.0, 1e-6, "nothing ahead after turning")
+
+
+func test_body_turn_keeps_the_head_facing_ahead() -> void:
+	if not check(_setup(), ", ".join(_body.errors)):
+		return
+	var skel := _body.skeleton
+	var head := skel.find_bone("Head")
+	var faces: Array[Vector3] = []
+	_body.spine.modification_processed.connect(
+		func() -> void:
+			var b := skel.global_basis * skel.get_bone_global_pose(head).basis
+			faces.append(b * Vector3.BACK)  # bodies face +Z
+	)
+	_body.turn_offset = deg_to_rad(60.0)
+	for i in 3:
+		await tree.process_frame
+	if not check(faces.size() >= 1, "modifier ran"):
+		return
+	var rig_fwd := _body.global_basis * Vector3.BACK
+	var view_fwd := Basis(Vector3.UP, _cam.yaw) * Vector3.FORWARD
+	check_near(rad_to_deg(rig_fwd.angle_to(view_fwd)), 60.0, 0.5, "body turned 60 degrees")
+	check_near(rad_to_deg(faces[-1].angle_to(view_fwd)), 0.0, 0.5, "head still faces the view")
+
+
+func test_lean_moves_the_eye_forward() -> void:
+	if not check(_setup(), ", ".join(_body.errors)):
+		return
+	_cam.update_view(DT)
+	var before := _cam.global_position
+	_cam.lean_m = 0.3
+	_cam.update_view(DT)
+	var fwd := Basis(Vector3.UP, _cam.yaw) * Vector3.FORWARD
+	check_near((_cam.global_position - before).dot(fwd), 0.3, 1e-4, "eye 0.3 m further ahead")
