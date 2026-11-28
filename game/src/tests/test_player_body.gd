@@ -1,8 +1,10 @@
 extends TestCase
 ## PlayerBody on a synthetic rig (Hips, Chest, Head bones; a skin head, a
 ## skin chest and a garment chest mesh): head meshes only on the head layer
-## and hidden from the camera, double-sided garments, placement at the motor
-## with the view's yaw, chest pitch after the animation, head eye input.
+## and hidden from the camera, body shader materials (double-sided
+## garments), camera-relative matrices free of world positions, placement at
+## the motor with the view's yaw, chest pitch after the animation, head eye
+## input.
 
 const DT := 1.0 / 60.0
 const HEAD_SEGMENTS: Array = ["head"]
@@ -108,13 +110,39 @@ func test_head_layer_hidden_from_the_camera() -> void:
 	check(_cam.cull_mask & 1 != 0, "camera still draws the default layer")
 
 
-func test_garments_draw_both_faces() -> void:
+func test_body_shader_materials() -> void:
 	if not check(_setup(), ", ".join(_body.errors)):
 		return
-	var shirt := _mesh("shirt_chest").get_active_material(0) as BaseMaterial3D
-	var skin := _mesh("skin_chest").get_active_material(0) as BaseMaterial3D
-	check_eq(shirt.cull_mode, BaseMaterial3D.CULL_DISABLED, "garment double-sided")
-	check_eq(skin.cull_mode, BaseMaterial3D.CULL_BACK, "skin unchanged")
+	var shirt := _mesh("shirt_chest").get_active_material(0) as ShaderMaterial
+	var skin := _mesh("skin_chest").get_active_material(0) as ShaderMaterial
+	if not check(shirt != null and skin != null, "body shader on every surface"):
+		return
+	check_eq(shirt.shader, PlayerBody.BODY_DOUBLE_SHADER, "garment draws both faces")
+	check_eq(skin.shader, PlayerBody.BODY_SHADER, "skin culls back faces")
+	check_eq(skin.get_shader_parameter("albedo"), Color.WHITE, "colour copied")
+
+
+func test_view_local_is_camera_relative_and_origin_free() -> void:
+	if not check(_setup(), ", ".join(_body.errors)):
+		return
+	_cam.yaw = 0.4
+	_cam.pitch = -0.3
+	_motor.global_position = Vector3(1, 0.5, -2)
+	_cam.update_view(DT)
+	_body.update_body()
+	var mesh := _mesh("skin_chest")
+	var mat := mesh.get_active_material(0) as ShaderMaterial
+	var near: Projection = mat.get_shader_parameter("view_local")
+	var want := Projection(_cam.global_transform.affine_inverse() * mesh.global_transform)
+	var err := 0.0
+	for c in 4:
+		err = maxf(err, (near[c] - want[c]).length())
+	check(err < 1e-5, "equals camera-inverse x mesh near the origin (error %s)" % err)
+	_motor.global_position = Vector3(4090, 300, 4090)  # the map corner
+	_cam.update_view(DT)
+	_body.update_body()
+	var far: Projection = mat.get_shader_parameter("view_local")
+	check(far == near, "bit-identical at the map corner")
 
 
 func test_follows_the_motor_with_the_view_yaw() -> void:
@@ -159,10 +187,10 @@ func test_chest_pitch_follows_the_view() -> void:
 	check_near(leans[-1], 0.0, 0.1, "upright at level view")
 
 
-func test_head_origin_uses_this_frame() -> void:
+func test_head_offset_uses_this_frame() -> void:
 	if not check(_setup(), ", ".join(_body.errors)):
 		return
-	check(_cam.head_origin.is_valid(), "camera reads the head")
+	check(_cam.head_offset.is_valid(), "camera reads the head")
 	_motor.global_position = Vector3(10, 2, 5)  # moved; body not placed yet
-	var head: Vector3 = _cam.head_origin.call()
-	check_near(head.distance_to(Vector3(10, 3.6, 5)), 0.0, 1e-4, "head above the motor: %s" % head)
+	var head: Vector3 = _cam.head_offset.call()
+	check_near(head.distance_to(Vector3(0, 1.6, 0)), 0.0, 1e-4, "head above the motor: %s" % head)

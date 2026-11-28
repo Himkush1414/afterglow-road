@@ -7,7 +7,9 @@ extends Node3D
 ## its chest pitched by a share of the view pitch (SpinePitch, after the
 ## animation). Meshes of the head segments are only on the head render
 ## layer, which the first-person camera does not draw; mirrors and lights
-## still do. Garment materials draw both faces (open ends, Q-124).
+## still do. Every surface gets the body shader (10 §2 rule 5): camera-space
+## drawing for the main camera through a per-mesh view_local matrix built
+## from local transforms only; garments draw both faces (open ends, Q-124).
 ## Numbers: the "body" tuning group; head segments: customization.json.
 
 ## After PlayerCamera (-30), before the mirror camera (10 §2 rule 11).
@@ -16,6 +18,8 @@ const PROCESS_PRIORITY := -20
 const HEAD_LAYER := 2
 const KEYS: Array[String] = ["chest_pitch_share"]
 const SKIN_PREFIX := "skin_"
+const BODY_SHADER := preload("res://shaders/body.gdshader")
+const BODY_DOUBLE_SHADER := preload("res://shaders/body_double.gdshader")
 
 var errors: PackedStringArray = []
 var motor: PlayerMotor
@@ -26,6 +30,9 @@ var animator: PlayerAnimator
 var spine: SpinePitch
 
 var _head_bone := -1
+## Body meshes and their body-shader materials (one per surface).
+var _meshes: Array[MeshInstance3D] = []
+var _materials: Array[Array] = []
 
 
 ## Builds the rig from `rig_scene` (a body scene holding %GeneralSkeleton)
@@ -64,7 +71,7 @@ func setup(
 		return false
 	_set_layers(head_segments)
 	view.cull_mask &= ~head_layer_mask()
-	view.head_origin = head_origin
+	view.head_offset = head_offset
 	spine = SpinePitch.new()
 	skeleton.add_child(spine)
 	if not spine.setup(float(cfg.chest_pitch_share)):
@@ -89,24 +96,41 @@ func _process(_delta: float) -> void:
 		update_body()
 
 
-## Places the rig for this rendered frame and passes on the view pitch.
+## Places the rig for this rendered frame, passes on the view pitch and
+## sets every mesh's camera-relative matrix.
 func update_body() -> void:
-	global_transform = _frame()
+	global_transform = Transform3D(_turn(), motor.get_global_transform_interpolated().origin)
 	spine.pitch = view.pitch
+	var cam_inv := Transform3D(view.global_basis, view.eye_offset).affine_inverse()
+	var body := Transform3D(_turn(), Vector3.ZERO)
+	for i in _meshes.size():
+		var vl := Projection(cam_inv * body * local_transform(_meshes[i]))
+		for mat: ShaderMaterial in _materials[i]:
+			mat.set_shader_parameter("view_local", vl)
 
 
-## The head bone's origin (global) for this frame's body placement, so the
-## camera, which runs first, does not read last frame's position.
-func head_origin() -> Vector3:
-	var rig_local := global_transform.affine_inverse() * skeleton.global_transform
-	return _frame() * (rig_local * skeleton.get_bone_global_pose(_head_bone).origin)
+## The head bone's origin as an offset from the motor's interpolated
+## position, for this frame's yaw (the camera runs first and must not read
+## last frame's placement), from local transforms only.
+func head_offset() -> Vector3:
+	var head := skeleton.get_bone_global_pose(_head_bone).origin
+	return _turn() * (local_transform(skeleton) * head)
 
 
-## Rig placement: the motor's interpolated position, the view's yaw (the
-## bodies face +Z, yaw 0 faces -Z).
-func _frame() -> Transform3D:
-	var base := motor.get_global_transform_interpolated().origin
-	return Transform3D(Basis(Vector3.UP, view.yaw + PI), base)
+## `node`'s transform relative to this body root, multiplied from local
+## transforms (no global position enters it).
+func local_transform(node: Node3D) -> Transform3D:
+	var t := Transform3D.IDENTITY
+	var n: Node = node
+	while n != self and n is Node3D:
+		t = (n as Node3D).transform * t
+		n = n.get_parent()
+	return t
+
+
+## Rig yaw: the view's yaw (the bodies face +Z, yaw 0 faces -Z).
+func _turn() -> Basis:
+	return Basis(Vector3.UP, view.yaw + PI)
 
 
 func _set_layers(head_segments: Array) -> void:
@@ -116,17 +140,27 @@ func _set_layers(head_segments: Array) -> void:
 		for seg: String in head_segments:
 			head = head or String(mesh.name).ends_with("_" + seg)
 		mesh.layers = head_layer_mask() if head else 1
-		if not String(mesh.name).begins_with(SKIN_PREFIX):
-			_double_sided(mesh)
+		if mesh.mesh != null:
+			_meshes.append(mesh)
+			_materials.append(_body_materials(mesh))
 
 
-func _double_sided(mesh: MeshInstance3D) -> void:
-	if mesh.mesh == null:
-		return
+## Swaps each surface's material for the body shader with the same colour,
+## texture and roughness; garments and imported double-sided materials draw
+## both faces.
+func _body_materials(mesh: MeshInstance3D) -> Array[ShaderMaterial]:
+	var out: Array[ShaderMaterial] = []
+	var garment := not String(mesh.name).begins_with(SKIN_PREFIX)
 	for s in mesh.mesh.get_surface_count():
-		var mat := mesh.get_active_material(s) as BaseMaterial3D
-		if mat == null:
-			continue
-		var copy := mat.duplicate() as BaseMaterial3D
-		copy.cull_mode = BaseMaterial3D.CULL_DISABLED
-		mesh.set_surface_override_material(s, copy)
+		var src := mesh.get_active_material(s) as BaseMaterial3D
+		var both := garment or (src != null and src.cull_mode == BaseMaterial3D.CULL_DISABLED)
+		var mat := ShaderMaterial.new()
+		mat.shader = BODY_DOUBLE_SHADER if both else BODY_SHADER
+		if src != null:
+			mat.set_shader_parameter("albedo", src.albedo_color)
+			mat.set_shader_parameter("roughness", src.roughness)
+			if src.albedo_texture != null:
+				mat.set_shader_parameter("albedo_texture", src.albedo_texture)
+		mesh.set_surface_override_material(s, mat)
+		out.append(mat)
+	return out
