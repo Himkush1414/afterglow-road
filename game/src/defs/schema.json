@@ -2731,6 +2731,10 @@
 				"live_range_m": {
 					"type": "number",
 					"min": 0.1
+				},
+				"lean_eye_m": {
+					"type": "number",
+					"min": 0.05
 				}
 			}
 		},
@@ -2973,6 +2977,10 @@
 							"type": "string"
 						},
 						"min_len": 0,
+						"optional": true
+					},
+					"clip_library": {
+						"type": "string",
 						"optional": true
 					}
 				}

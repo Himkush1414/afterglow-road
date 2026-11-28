@@ -13,6 +13,8 @@ static var current: Game
 
 var slot := ""
 var play_seconds := 0.0
+## The player's appearance (11 §9, 04 §3.2 players[].appearance).
+var player_look := {}
 
 ## Ground cover; configured only when the content has "grass" tuning.
 var grass_field: GrassField
@@ -62,7 +64,7 @@ func _enter_tree() -> void:
 
 func _exit_tree() -> void:
 	SaveGame.active_slot = ""
-	for name: String in ["clock", "ids", "weather"]:
+	for name: String in ["clock", "ids", "weather", "players"]:
 		SaveGame.unregister_section(name)
 	SaveGame.meta_source = func() -> Dictionary: return {}
 	SaveGame.region_source = func() -> Dictionary: return {}
@@ -157,6 +159,32 @@ func _process(delta: float) -> void:
 	play_seconds += delta
 
 
+func _save_players() -> Variant:
+	return [{"appearance": player_look.duplicate(true)}]
+
+
+## Accepts the saved players section (SaveGame loaders return true).
+func _load_players(data: Variant) -> bool:
+	var first: Variant = data[0] if data is Array and not (data as Array).is_empty() else {}
+	var look: Dictionary = (
+		(first as Dictionary).get("appearance", {}) if first is Dictionary else {}
+	)
+	player_look = _checked_look(look)
+	return true
+
+
+## `look` checked against the customization data (unknown values become
+## the defaults, with a warning); empty when the content has no data.
+func _checked_look(look: Dictionary) -> Dictionary:
+	var cust: Variant = ContentDB.file_data("customization.json")
+	if not cust is Dictionary:
+		return look.duplicate(true)
+	var r: Array = Appearance.validated(look, cust)
+	for w: String in r[1]:
+		Log.warn("appearance", w)
+	return r[0]
+
+
 static func clock_of() -> GameClock:
 	return current.clock if current else null
 
@@ -165,9 +193,11 @@ static func world_of() -> WorldData:
 	return current.world if current else null
 
 
-## Prepares the systems for a new game in `slot` and saves it at once.
-func start_new(new_slot: String) -> Error:
+## Prepares the systems for a new game in `slot` with the appearance `look`
+## (empty: the default) and saves it at once.
+func start_new(new_slot: String, look: Dictionary = {}) -> Error:
 	_begin(new_slot)
+	player_look = _checked_look(look)
 	var rng := RandomNumberGenerator.new()
 	rng.randomize()
 	Rng.save_seed = rng.randi()
@@ -191,6 +221,7 @@ func _begin(new_slot: String) -> void:
 	slot = new_slot
 	clock.configure(ContentDB.tuning("clock"))
 	SaveGame.register_section("clock", clock.save_data, clock.load_data)
+	SaveGame.register_section("players", _save_players, _load_players)
 	if not weather.configure(ContentDB.tuning("weather"), clock):
 		Log.error("weather", "; ".join(weather.errors))
 	if not wind.configure(ContentDB.tuning("wind")):
