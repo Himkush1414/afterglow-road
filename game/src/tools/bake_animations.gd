@@ -14,8 +14,11 @@ extends SceneTree
 ##   {"keys": [{"t": share, "bones": {"<profile bone>": [x, y, z] degrees},
 ##              "hips": [x, y, z] metres}, ...]}
 ## rotations about the body's axes (x toward the left hand, y up, z forward:
-## the bodies face +Z) at each bone,
-## splined (Catmull-Rom, looping) over the clip and applied on top of it;
+## the bodies face +Z) at each bone, taken in the bone's orientation in the
+## base clip at that frame (so an arm hanging in the idle pose swings forward
+## about x, as a leg does), and carried down the chain to the children,
+## splined (Catmull-Rom; looping for loops, clamped at both ends with the
+## last frame on the last key otherwise) over the clip and applied on top of it;
 ## "mirror": true swaps Left/Right bones and mirrors across the body's
 ## middle plane. Writes an AnimationLibrary. Usage:
 ##   godot --headless -s res://src/tools/bake_animations.gd -- <res:// root>
@@ -86,7 +89,8 @@ func _run() -> void:
 	quit(0 if ok else 1)
 
 
-## Global rest rotation of every bone of the skeleton a source animates.
+## Bones of the skeleton a source animates: name -> {"parent": name or "",
+## "rest": local rest rotation}.
 func _rests(player: AnimationPlayer) -> Dictionary:
 	var out := {}
 	var skel := player.get_node(player.root_node).find_children("*", "Skeleton3D", true, false)
@@ -94,7 +98,11 @@ func _rests(player: AnimationPlayer) -> Dictionary:
 		return out
 	var s: Skeleton3D = skel[0]
 	for b in s.get_bone_count():
-		out[s.get_bone_name(b)] = s.get_bone_global_rest(b).basis.get_rotation_quaternion()
+		var parent := s.get_bone_parent(b)
+		out[s.get_bone_name(b)] = {
+			"parent": s.get_bone_name(parent) if parent >= 0 else "",
+			"rest": s.get_bone_rest(b).basis.get_rotation_quaternion(),
+		}
 	return out
 
 
@@ -161,7 +169,7 @@ static func reversed(anim: Animation) -> Animation:
 
 
 ## Adds a pose set's key poses on top of `anim` (see the file comment).
-## `rests`: global rest rotation per bone of the source skeleton.
+## `rests`: the source skeleton's bones (see _rests).
 static func add_pose_keys(
 	anim: Animation, pose_set: Dictionary, mirror: bool, rests: Dictionary
 ) -> void:
@@ -172,21 +180,31 @@ static func add_pose_keys(
 			bones[_side(b, mirror)] = true
 	var fps := 30.0
 	var frames := roundi(anim.length * fps)
+	var loop := anim.loop_mode != Animation.LOOP_NONE
+	# Orientation of each keyed bone in the base clip, per frame, read before
+	# any key is changed.
+	var base_globals := {}
+	for bone: String in bones:
+		var per_frame: Array[Quaternion] = []
+		for k in frames:
+			per_frame.append(base_global(anim, rests, bone, k / fps))
+		base_globals[bone] = per_frame
 	for bone: String in bones:
 		var path := NodePath("%GeneralSkeleton:" + bone)
 		var t := anim.find_track(path, Animation.TYPE_ROTATION_3D)
 		if t < 0:
 			continue  # a bone the base clip does not move keeps its rest
-		var g: Quaternion = rests.get(bone, Quaternion.IDENTITY)
 		var src := _side(bone, mirror)  # the key poses are written for the unmirrored side
 		for k in frames:
 			var time := k / fps
+			var g: Quaternion = base_globals[bone][k]
 			var e := _spline(
 				keys,
-				float(k) / frames,
+				_share(k, frames, loop),
 				func(key: Dictionary) -> Vector3:
 					var v: Array = (key.get("bones", {}) as Dictionary).get(src, [0, 0, 0])
-					return Vector3(v[0], v[1], v[2])
+					return Vector3(v[0], v[1], v[2]),
+				loop
 			)
 			if mirror:
 				e = Vector3(e.x, -e.y, -e.z)
@@ -200,16 +218,35 @@ static func add_pose_keys(
 			var time := k / fps
 			var d := _spline(
 				keys,
-				float(k) / frames,
+				_share(k, frames, loop),
 				func(key: Dictionary) -> Vector3:
 					var v: Array = key.get("hips", [0, 0, 0])
-					return Vector3(v[0], v[1], v[2])
+					return Vector3(v[0], v[1], v[2]),
+				loop
 			)
 			if mirror:
 				d.x = -d.x
 			anim.position_track_insert_key(
 				hips, time, anim.position_track_interpolate(hips, time) + d
 			)
+
+
+## Orientation of `bone` in skeleton space at `time` of `anim`: its parents'
+## local rotations (the clip's keys, or the rest where the clip has none)
+## multiplied down from the root.
+static func base_global(
+	anim: Animation, rests: Dictionary, bone: String, time: float
+) -> Quaternion:
+	var q := Quaternion.IDENTITY
+	var b := bone
+	while b != "" and rests.has(b):
+		var t := anim.find_track(NodePath("%GeneralSkeleton:" + b), Animation.TYPE_ROTATION_3D)
+		var local: Quaternion = (
+			anim.rotation_track_interpolate(t, time) if t >= 0 else rests[b].rest
+		)
+		q = local * q
+		b = rests[b].parent
+	return q
 
 
 ## The other side's bone name when mirroring (Left <-> Right), else `bone`.
@@ -223,11 +260,24 @@ static func _side(bone: String, mirror: bool) -> String:
 	return bone
 
 
-## Catmull-Rom over the keys' values (key "t" in 0..1, looping) at share u.
-static func _spline(keys: Array, u: float, value: Callable) -> Vector3:
+## Share of the clip at frame `k` of `frames`: a loop's last frame stops one
+## frame short of the first, a one-shot's last frame is the end (like resample).
+static func _share(k: int, frames: int, loop: bool) -> float:
+	return float(k) / frames if loop else float(k) / maxf(1.0, frames - 1)
+
+
+## Catmull-Rom over the keys' values (key "t" in 0..1) at share u; `loop`:
+## the keys wrap around, else the ends are clamped (no wrap, the value
+## holds the first key before it and the last key after it).
+static func _spline(keys: Array, u: float, value: Callable, loop := true) -> Vector3:
 	var n := keys.size()
 	if n == 0:
 		return Vector3.ZERO
+	if not loop:
+		if u <= float(keys[0].t):
+			return value.call(keys[0])
+		if u >= float(keys[n - 1].t):
+			return value.call(keys[n - 1])
 	var i := n - 1
 	for j in n:
 		if float(keys[j].t) > u:
@@ -238,10 +288,12 @@ static func _spline(keys: Array, u: float, value: Callable) -> Vector3:
 	var t1 := float(keys[(i + 1) % n].t) + (1.0 if i + 1 >= n else 0.0)
 	var uu := u + (1.0 if u < t0 else 0.0)
 	var f := clampf((uu - t0) / maxf(1e-6, t1 - t0), 0.0, 1.0)
-	var p0: Vector3 = value.call(keys[posmod(i - 1, n)])
+	var i0 := posmod(i - 1, n) if loop else maxi(i - 1, 0)
+	var i3 := (i + 2) % n if loop else mini(i + 2, n - 1)
+	var p0: Vector3 = value.call(keys[i0])
 	var p1: Vector3 = value.call(keys[i])
 	var p2: Vector3 = value.call(keys[(i + 1) % n])
-	var p3: Vector3 = value.call(keys[(i + 2) % n])
+	var p3: Vector3 = value.call(keys[i3])
 	return (
 		0.5
 		* (
