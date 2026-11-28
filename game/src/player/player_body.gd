@@ -15,12 +15,16 @@ extends Node3D
 ## pose so hands and tools stay out of walls.
 ## Numbers: the "body" tuning group; head segments: customization.json.
 
+## The body model was replaced (swap_rig): users of the skeleton re-attach.
+signal rig_changed
+
 ## After PlayerCamera (-30), before the mirror camera (10 §2 rule 11).
 const PROCESS_PRIORITY := -20
 ## Render layer (1-based) of the head meshes (10 §2 rule 4).
 const HEAD_LAYER := 2
 const KEYS: Array[String] = ["chest_pitch_share", "wall_cast_m", "wall_cast_radius_m"]
 const SKIN_PREFIX := "skin_"
+const EYES_MESH := "eyes"
 const BODY_SHADER := preload("res://shaders/body.gdshader")
 const BODY_DOUBLE_SHADER := preload("res://shaders/body_double.gdshader")
 
@@ -41,12 +45,19 @@ var _cast_m := 0.0
 ## Body meshes and their body-shader materials (one per surface).
 var _meshes: Array[MeshInstance3D] = []
 var _materials: Array[Array] = []
+var _library: AnimationLibrary
+var _movement := {}
+var _cfg := {}
+var _head_segments: Array = []
+var _head_meshes: Array = []
+var _rig_path := ""
 
 
 ## Builds the rig from `rig_scene` (a body scene holding %GeneralSkeleton)
 ## following `body` and `camera`; `movement`, `cfg`: the "movement" and
 ## "body" tuning groups; `head_segments`: segment names whose meshes are
-## head meshes. False with `errors`.
+## head meshes; `head_meshes`: mesh names or name prefixes (ending in "_")
+## that are head meshes too (eyes, hair). False with `errors`.
 func setup(
 	body: PlayerMotor,
 	camera: PlayerCamera,
@@ -54,7 +65,8 @@ func setup(
 	library: AnimationLibrary,
 	movement: Dictionary,
 	cfg: Dictionary,
-	head_segments: Array
+	head_segments: Array,
+	head_meshes: Array = []
 ) -> bool:
 	errors.clear()
 	for key in KEYS:
@@ -66,19 +78,14 @@ func setup(
 		return false
 	motor = body
 	view = camera
+	_library = library
+	_movement = movement
+	_cfg = cfg
+	_head_segments = head_segments
+	_head_meshes = head_meshes
 	top_level = true
 	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	process_priority = PROCESS_PRIORITY
-	rig = rig_scene.instantiate() as Node3D
-	add_child(rig)
-	var found := rig.find_children("*", "Skeleton3D", true, false)
-	skeleton = found[0] as Skeleton3D if not found.is_empty() else null
-	_head_bone = skeleton.find_bone("Head") if skeleton else -1
-	if skeleton == null or _head_bone < 0:
-		errors.append("body: rig has no skeleton with a Head bone")
-		return false
-	_chest_bone = skeleton.find_bone("Chest")
-	_set_layers(head_segments)
 	_cast_m = float(cfg.wall_cast_m)
 	var sphere := SphereShape3D.new()
 	sphere.radius = float(cfg.wall_cast_radius_m)
@@ -87,18 +94,151 @@ func setup(
 	_cast_query.exclude = [motor.get_rid()]
 	view.cull_mask &= ~head_layer_mask()
 	view.head_offset = head_offset
+	if not _build_rig(rig_scene):
+		return false
+	update_body()
+	return true
+
+
+## Replaces the body model (another body type) keeping everything else;
+## emits rig_changed (hands and other users of the skeleton re-attach).
+func swap_rig(rig_scene: PackedScene) -> bool:
+	errors.clear()
+	if rig_scene == null:
+		errors.append("body: no rig scene")
+		return false
+	if rig != null:
+		remove_child(rig)
+		rig.queue_free()
+	if animator != null:
+		remove_child(animator)
+		animator.queue_free()
+	if not _build_rig(rig_scene):
+		return false
+	update_body()
+	rig_changed.emit()
+	return true
+
+
+func _build_rig(rig_scene: PackedScene) -> bool:
+	rig = rig_scene.instantiate() as Node3D
+	_rig_path = rig_scene.resource_path
+	add_child(rig)
+	var found := rig.find_children("*", "Skeleton3D", true, false)
+	skeleton = found[0] as Skeleton3D if not found.is_empty() else null
+	_head_bone = skeleton.find_bone("Head") if skeleton else -1
+	if skeleton == null or _head_bone < 0:
+		errors.append("body: rig has no skeleton with a Head bone")
+		return false
+	_chest_bone = skeleton.find_bone("Chest")
+	_meshes.clear()
+	_materials.clear()
+	_set_layers()
 	spine = SpinePitch.new()
 	skeleton.add_child(spine)
-	if not spine.setup(float(cfg.chest_pitch_share)):
+	if not spine.setup(float(_cfg.chest_pitch_share)):
 		errors.append("body: rig has no Chest bone")
 		return false
 	animator = PlayerAnimator.new()
 	add_child(animator)
-	if not animator.setup(motor, library, rig, movement):
+	if not animator.setup(motor, _library, rig, _movement):
 		errors.append_array(animator.errors)
 		return false
-	update_body()
 	return true
+
+
+## Applies `look` (an Appearance dictionary, already validated) with the
+## customization data `cust` (11 §3-§4): body type (rig swap), build and
+## face shape keys, skin, eye, hair and outfit tints, the chosen hair and
+## facial hair only, skin hidden under garments. Returns the missing
+## resources (empty when everything was found).
+func apply_appearance(look: Dictionary, cust: Dictionary) -> PackedStringArray:
+	var missing: PackedStringArray = []
+	var path := String((cust.get("body_scenes", {}) as Dictionary).get(look.body, ""))
+	if path != _rig_path:
+		var scene := load(path) as PackedScene if ResourceLoader.exists(path) else null
+		if scene == null:
+			missing.append("body scene for %s" % look.body)
+		elif not swap_rig(scene):
+			missing.append_array(errors)
+	var build_key := String((cust.builds as Dictionary).get(look.build, ""))
+	var face_key := "face_%d" % (int(look.face) + 1)
+	var hair_mesh := "hair_" + String(look.hair)
+	var beard_mesh := "facial_hair_" + String(look.facial_hair)
+	var hair_tint := Color.from_string(
+		String(cust.hair_colours[int(look.hair_colour)]), Color.WHITE
+	)
+	var skin_tint := Color.from_string(String(cust.skin_tones[int(look.skin)]), Color.WHITE)
+	var eye_tint := Color.from_string(String(cust.eye_colours[int(look.eye_colour)]), Color.WHITE)
+	var garments := {}
+	var outfit: Array = cust.outfit
+	for i in outfit.size():
+		var g: Dictionary = outfit[i]
+		var idx := (
+			int((look.outfit_colours as PackedInt32Array)[i])
+			if i < look.outfit_colours.size()
+			else 0
+		)
+		garments[String(g.garment)] = Color.from_string(String(g.colours[idx]), Color.WHITE)
+	var found := {"build": build_key == "", "face": int(look.face) == 0}
+	var names := {}
+	for i in _meshes.size():
+		var m := _meshes[i]
+		var n := String(m.name)
+		names[n] = true
+		for k: int in m.mesh.get_blend_shape_count():
+			var key := String(m.mesh.get_blend_shape_name(k))
+			if key.begins_with("build_"):
+				m.set_blend_shape_value(k, 1.0 if key == build_key else 0.0)
+				found.build = found.build or key == build_key
+			elif key.begins_with("face_"):
+				m.set_blend_shape_value(k, 1.0 if key == face_key else 0.0)
+				found.face = found.face or key == face_key
+		var tint := Color.WHITE
+		var has_tint := true
+		if n.begins_with(SKIN_PREFIX):
+			tint = skin_tint
+		elif n == EYES_MESH:
+			tint = eye_tint
+		elif n.begins_with("facial_hair_"):
+			m.visible = n == beard_mesh
+			tint = hair_tint
+		elif n.begins_with("hair_"):
+			m.visible = n == hair_mesh
+			tint = hair_tint
+		else:
+			has_tint = false
+			for g: String in garments:
+				if n.begins_with(g + "_"):
+					tint = garments[g]
+					has_tint = true
+		if has_tint:
+			for mat: ShaderMaterial in _materials[i]:
+				mat.set_shader_parameter("albedo", tint)
+	if not found.build:
+		missing.append("shape key %s" % build_key)
+	if not found.face:
+		missing.append("shape key %s" % face_key)
+	if String(look.hair) != Appearance.NONE and not names.has(hair_mesh):
+		missing.append("mesh %s" % hair_mesh)
+	if String(look.facial_hair) != Appearance.NONE and not names.has(beard_mesh):
+		missing.append("mesh %s" % beard_mesh)
+	_hide_covered_skin(garments.keys())
+	return missing
+
+
+## Skin segments under a visible garment mesh <garment>_<segment> are hidden
+## (11 §4: nothing clips).
+func _hide_covered_skin(garments: Array) -> void:
+	var visible_parts := {}
+	for m in _meshes:
+		for g: String in garments:
+			if m.visible and String(m.name).begins_with(g + "_"):
+				visible_parts[String(m.name).substr(g.length() + 1)] = true
+	for m in _meshes:
+		var n := String(m.name)
+		if n.begins_with(SKIN_PREFIX):
+			m.visible = not visible_parts.has(n.substr(SKIN_PREFIX.length()))
 
 
 ## Bit mask of the head render layer.
@@ -174,12 +314,18 @@ func _turn() -> Basis:
 	return Basis(Vector3.UP, view.yaw + PI)
 
 
-func _set_layers(head_segments: Array) -> void:
+func _set_layers() -> void:
 	for node in rig.find_children("*", "MeshInstance3D", true, false):
 		var mesh := node as MeshInstance3D
+		var n := String(mesh.name)
 		var head := false
-		for seg: String in head_segments:
-			head = head or String(mesh.name).ends_with("_" + seg)
+		for seg: String in _head_segments:
+			head = head or n.ends_with("_" + seg)
+		for name_or_prefix: String in _head_meshes:
+			if name_or_prefix.ends_with("_"):
+				head = head or n.begins_with(name_or_prefix)
+			else:
+				head = head or n == name_or_prefix
 		mesh.layers = head_layer_mask() if head else 1
 		if mesh.mesh != null:
 			_meshes.append(mesh)

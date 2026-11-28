@@ -55,7 +55,8 @@ func build(args: Dictionary) -> bool:
 			clips,
 			movement,
 			ContentDB.tuning("body"),
-			(cust as Dictionary).get("head_segments", [])
+			(cust as Dictionary).get("head_segments", []),
+			(cust as Dictionary).get("head_meshes", [])
 		)
 	)
 	if not ok:

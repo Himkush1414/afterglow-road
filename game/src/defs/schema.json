@@ -2806,6 +2806,68 @@
 					"min": 0
 				}
 			}
+		},
+		"appearance_garment": {
+			"type": "object",
+			"fields": {
+				"garment": {
+					"type": "string"
+				},
+				"colours": {
+					"type": "list",
+					"of": {
+						"type": "string"
+					},
+					"min_len": 1
+				}
+			}
+		},
+		"appearance_defaults": {
+			"type": "object",
+			"fields": {
+				"body": {
+					"type": "string"
+				},
+				"build": {
+					"type": "string"
+				},
+				"skin": {
+					"type": "int",
+					"min": 0
+				},
+				"face": {
+					"type": "int",
+					"min": 0
+				},
+				"hair": {
+					"type": "string"
+				},
+				"hair_colour": {
+					"type": "int",
+					"min": 0
+				},
+				"eye_colour": {
+					"type": "int",
+					"min": 0
+				},
+				"facial_hair": {
+					"type": "string"
+				},
+				"outfit_colours": {
+					"type": "list",
+					"of": {
+						"type": "int",
+						"min": 0
+					},
+					"min_len": 0
+				},
+				"voice": {
+					"type": "string"
+				},
+				"voice_pitch": {
+					"type": "int"
+				}
+			}
 		}
 	},
 	"files": {
@@ -2821,6 +2883,19 @@
 						},
 						"min_len": 2
 					},
+					"body_scenes": {
+						"type": "map",
+						"values": {
+							"type": "string"
+						},
+						"optional": true
+					},
+					"builds": {
+						"type": "map",
+						"values": {
+							"type": "string"
+						}
+					},
 					"skin_tones": {
 						"type": "list",
 						"of": {
@@ -2828,11 +2903,76 @@
 						},
 						"min_len": 1
 					},
+					"faces": {
+						"type": "int",
+						"min": 1
+					},
+					"eye_colours": {
+						"type": "list",
+						"of": {
+							"type": "string"
+						},
+						"min_len": 1
+					},
+					"hair_styles": {
+						"type": "list",
+						"of": {
+							"type": "string"
+						},
+						"min_len": 1
+					},
+					"hair_colours": {
+						"type": "list",
+						"of": {
+							"type": "string"
+						},
+						"min_len": 1
+					},
+					"facial_hair": {
+						"type": "list",
+						"of": {
+							"type": "string"
+						},
+						"min_len": 1
+					},
+					"outfit": {
+						"type": "list",
+						"of": {
+							"type": "appearance_garment"
+						},
+						"min_len": 0
+					},
+					"voices": {
+						"type": "list",
+						"of": {
+							"type": "string"
+						},
+						"min_len": 1
+					},
+					"voice_pitch": {
+						"type": "list",
+						"of": {
+							"type": "int"
+						},
+						"min_len": 2
+					},
+					"defaults": {
+						"type": "appearance_defaults"
+					},
 					"head_segments": {
 						"type": "list",
 						"of": {
 							"type": "string"
 						},
+						"min_len": 0,
+						"optional": true
+					},
+					"head_meshes": {
+						"type": "list",
+						"of": {
+							"type": "string"
+						},
+						"min_len": 0,
 						"optional": true
 					}
 				}
