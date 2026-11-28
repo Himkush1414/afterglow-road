@@ -23,8 +23,12 @@ signal jumped
 signal landed(impact_ms: float, damage_hp: float)
 ## Raised when a mantle starts, with the height climbed.
 signal mantle_started(rise_m: float)
+## Raised when the body starts / stops swimming (10 §4.2: tools are stowed,
+## carried objects dropped, a lit torch goes out).
+signal swim_started
+signal swim_ended
 
-enum State { GROUNDED, AIRBORNE, MANTLING }
+enum State { GROUNDED, AIRBORNE, MANTLING, SWIMMING }
 
 ## Shortest horizontal probe of the step-up test, metres (10 §4.2).
 const STEP_PROBE_MIN_M := 0.05
@@ -67,6 +71,13 @@ const KEYS: Array[String] = [
 	"mantle_room_m",
 	"mantle_reach_m",
 	"mantle_s",
+	"wade_depth_m",
+	"wade_mult",
+	"swim_depth_m",
+	"swim_exit_depth_m",
+	"swim_ms",
+	"swim_feet_below_m",
+	"swim_rise_ms",
 ]
 ## Share of a mantle's time spent rising; the rest moves onto the top.
 const MANTLE_RISE_SHARE := 0.6
@@ -85,6 +96,11 @@ var crouch := false
 var jump_held := false
 ## Cleared by stamina and encumbrance rules (P6-10) to refuse jumps.
 var jump_allowed := true
+## Water query: an object with depth_at(pos) and surface_y(pos) (Water), or
+## null for dry land.
+var water: Object = null
+## Water depth above the ground at the body, metres (0 on dry land).
+var depth_m := 0.0
 var state := State.GROUNDED
 ## State, read by camera, body and tests.
 var crouched := false
@@ -170,6 +186,21 @@ func tick(delta: float) -> void:
 	if state == State.MANTLING:
 		_mantle_tick(delta)
 		return
+	depth_m = float(water.depth_at(global_position)) if water != null else 0.0
+	if state == State.SWIMMING and depth_m < float(_cfg.swim_exit_depth_m):
+		state = State.GROUNDED
+		swim_ended.emit()
+	elif state != State.SWIMMING and depth_m > float(_cfg.swim_depth_m):
+		state = State.SWIMMING
+		_carry_m = 0.0
+		_rising = false
+		if crouched and can_stand():
+			crouched = false
+			_set_height(float(_cfg.stand_height_m))
+		swim_started.emit()
+	if state == State.SWIMMING:
+		_swim_tick(delta)
+		return
 	_update_stance()
 	_jump_buffer_s = maxf(0.0, _jump_buffer_s - delta)
 	var grounded := is_grounded()
@@ -220,6 +251,35 @@ func tick(delta: float) -> void:
 	state = State.GROUNDED if is_grounded() else State.AIRBORNE
 	if jump:
 		jumped.emit()
+
+
+## Is the body swimming?
+func is_swimming() -> bool:
+	return state == State.SWIMMING
+
+
+## Wading: water between the wade and the swim depth.
+func is_wading() -> bool:
+	return state != State.SWIMMING and depth_m >= float(_cfg.wade_depth_m)
+
+
+## Swimming at the surface (10 §4.1): swim speed along the intents, no
+## sprint, no gravity, feet held swim_feet_below_m under the surface (eyes
+## just above it), no diving.
+func _swim_tick(delta: float) -> void:
+	var m := move.limit_length(1.0)
+	var target := Vector3(m.x, 0.0, m.y).rotated(Vector3.UP, yaw) * float(_cfg.swim_ms)
+	var h := Vector3(velocity.x, 0.0, velocity.z)
+	var rate := float(_cfg.accel_ms2 if target != Vector3.ZERO else _cfg.decel_ms2)
+	h = h.move_toward(target, rate * delta)
+	var goal := float(water.surface_y(global_position)) - float(_cfg.swim_feet_below_m)
+	var rise := float(_cfg.swim_rise_ms)
+	var vy := clampf((goal - global_position.y) / delta, -rise, rise)
+	velocity = Vector3(h.x, vy, h.z)
+	move_and_slide()
+	_air_top_y = global_position.y
+	_jump_buffer_s = 0.0
+	step_offset_m = move_toward(step_offset_m, 0.0, float(_cfg.step_return_ms) * delta)
 
 
 ## move_and_slide; a riser met during the slide is stepped from there with
@@ -289,6 +349,10 @@ func target_velocity() -> Vector3:
 		speed = float(_cfg.sprint_ms)
 	elif walk:
 		speed = float(_cfg.walk_ms)
+	if is_wading():
+		if speed > float(_cfg.jog_ms):
+			speed = float(_cfg.jog_ms)  # no sprint in water
+		speed *= float(_cfg.wade_mult)
 	var back := float(_cfg.back_mult) if m.y > 0.0 else 1.0
 	var local := Vector3(m.x * float(_cfg.strafe_mult), 0.0, m.y * back) * speed
 	return local.rotated(Vector3.UP, yaw)

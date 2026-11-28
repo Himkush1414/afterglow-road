@@ -442,7 +442,14 @@
 		"mantle_room_m": 0.9,
 		"mantle_reach_m": 0.5,
 		"mantle_s": 0.5,
-		"anim_blend_s": 0.15
+		"anim_blend_s": 0.15,
+		"wade_depth_m": 0.5,
+		"wade_mult": 0.5,
+		"swim_depth_m": 1.2,
+		"swim_exit_depth_m": 1.0,
+		"swim_ms": 1.6,
+		"swim_feet_below_m": 1.45,
+		"swim_rise_ms": 2.0
 	},
 	"camera": {
 		"stand_eye_m": 1.6,
@@ -538,5 +545,13 @@
 		"crack_impact_j": 25,
 		"tint": 0.92,
 		"live_range_m": 6
+	},
+	"stamina": {
+		"max": 100,
+		"swim_move_ps": 3,
+		"swim_still_ps": 1,
+		"regen_ps": 12,
+		"regen_delay_s": 1.0,
+		"drown_hp_ps": 10
 	}
 }

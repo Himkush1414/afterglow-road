@@ -1805,6 +1805,35 @@
 				"anim_blend_s": {
 					"type": "number",
 					"min": 0
+				},
+				"wade_depth_m": {
+					"type": "number",
+					"min": 0.01
+				},
+				"swim_depth_m": {
+					"type": "number",
+					"min": 0.01
+				},
+				"swim_exit_depth_m": {
+					"type": "number",
+					"min": 0.01
+				},
+				"swim_ms": {
+					"type": "number",
+					"min": 0.01
+				},
+				"swim_feet_below_m": {
+					"type": "number",
+					"min": 0.01
+				},
+				"swim_rise_ms": {
+					"type": "number",
+					"min": 0.01
+				},
+				"wade_mult": {
+					"type": "number",
+					"min": 0.01,
+					"max": 1
 				}
 			}
 		},
@@ -2692,6 +2721,35 @@
 					"min": 0.1
 				}
 			}
+		},
+		"tuning_stamina": {
+			"type": "object",
+			"fields": {
+				"max": {
+					"type": "number",
+					"min": 0
+				},
+				"swim_move_ps": {
+					"type": "number",
+					"min": 0
+				},
+				"swim_still_ps": {
+					"type": "number",
+					"min": 0
+				},
+				"regen_ps": {
+					"type": "number",
+					"min": 0
+				},
+				"regen_delay_s": {
+					"type": "number",
+					"min": 0
+				},
+				"drown_hp_ps": {
+					"type": "number",
+					"min": 0
+				}
+			}
 		}
 	},
 	"files": {
@@ -2808,6 +2866,10 @@
 					},
 					"mirror": {
 						"type": "tuning_mirror",
+						"optional": true
+					},
+					"stamina": {
+						"type": "tuning_stamina",
 						"optional": true
 					}
 				}
