@@ -152,6 +152,12 @@ func tuning(group: String) -> Dictionary:
 
 
 ## Entry `id` of `collection` (read-only), or an empty Dictionary.
+## The whole (read-only) content of one data file, e.g. "customization.json";
+## null when the file is not loaded.
+func file_data(file: String) -> Variant:
+	return _files.get(file, null)
+
+
 func entry(collection: String, id: String) -> Dictionary:
 	return (_collections.get(collection, {}) as Dictionary).get(id, {})
 
