@@ -38,9 +38,13 @@ var motor: PlayerMotor
 ## pitch positive looks up.
 var yaw := 0.0
 var pitch := 0.0
-## Returns the head bone origin (global) once the body rig exists; until
+## Returns the head bone origin as an offset from the motor's interpolated
+## position (built from local transforms) once the body rig exists; until
 ## then the head eye is the stable eye.
-var head_origin := Callable()
+var head_offset := Callable()
+## The eye this frame as an offset from the motor's interpolated position:
+## no world-sized number, so camera-space drawing can use it (10 §2 rule 5).
+var eye_offset := Vector3.ZERO
 ## Read the look intents from InputRouter in _process (off in tests).
 var reads_input := true
 
@@ -107,16 +111,16 @@ func update_view(delta: float) -> void:
 	var f := Engine.get_physics_interpolation_fraction()
 	var step := lerpf(motor.step_offset_prev_m, motor.step_offset_m, f)
 	var flat := Basis(Vector3.UP, yaw)
-	var stable := base + Vector3.UP * (_eye_m - step)
+	var stable := Vector3.UP * (_eye_m - step)
 	var eye := stable
-	if head_origin.is_valid():
-		var head: Vector3 = head_origin.call()
+	if head_offset.is_valid():
+		var head: Vector3 = head_offset.call()
 		var head_eye := (
 			head + flat * Vector3(0.0, float(_cfg.head_eye_up_m), -float(_cfg.head_eye_fwd_m))
 		)
 		eye = stable.lerp(head_eye, _head_bob)
-	eye += flat * Vector3(0.0, 0.0, -low_pitch_shift_m())
-	global_transform = Transform3D(flat * Basis(Vector3.RIGHT, pitch), eye)
+	eye_offset = eye + flat * Vector3(0.0, 0.0, -low_pitch_shift_m())
+	global_transform = Transform3D(flat * Basis(Vector3.RIGHT, pitch), base + eye_offset)
 	motor.yaw = yaw
 
 
