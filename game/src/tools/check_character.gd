@@ -8,12 +8,15 @@ extends SceneTree
 ## one skinned mesh per segment of the preset (skin_<segment>) and per segment
 ## of each base-outfit garment (<garment>_<segment>, with a material named
 ## after the garment), and no other mesh; each mesh with a
-## blend shape build_<name> per build of the preset, every build moving some
+## blend shape build_<name> per build of the preset (hair excepted), every build moving some
 ## vertex of the body by at least 5 mm; with "eyes" in the preset, one more
 ## skinned mesh "eyes" with a material "eyes"; with "faces", the face segment's
 ## mesh skin_<face_segment> has a blend shape face_<n> per face, each moving
 ## some vertex by at least 1 mm (an empty face is the base face and has
-## none); and the bodies' meshes differ.
+## none); with "hair", one mesh hair_<style> per hair style and
+## facial_hair_<style> per facial hair style (material named after the hair
+## material) within max_tris / facial_max_tris triangles; and the bodies'
+## meshes differ.
 ## Usage: godot --headless -s res://src/tools/check_character.gd -- <res:// root>
 ## Prints each error, then RESULT PASS / FAIL; exit code 0 / 1.
 
@@ -109,6 +112,7 @@ func _check_one(f: String, scene: Node, preset: Variant, errors: PackedStringArr
 		_check_segments(f, scene, skel, _expected_meshes(preset), errors)
 		_check_builds(f, scene, (preset.get("builds", {}) as Dictionary).keys(), errors)
 		_check_faces(f, scene, preset, errors)
+		_check_hair_budget(f, scene, preset, errors)
 	for twist: String in HumanoidBones.TWIST:
 		if int(weighted.get(twist, 0)) == 0:
 			errors.append("%s: no vertex weighted to %s" % [f, twist])
@@ -149,6 +153,11 @@ func _expected_meshes(preset: Dictionary) -> Dictionary:
 			out["%s_%s" % [g, seg]] = g
 	if bool(preset.get("eyes", false)):
 		out[EYES] = EYES
+	var hair: Dictionary = preset.get("hair", {})
+	for style: String in hair.get("styles", {}):
+		out["hair_" + style] = String(hair.get("material", ""))
+	for style: String in hair.get("facial", {}):
+		out["facial_hair_" + style] = String(hair.get("material", ""))
 	return out
 
 
@@ -174,6 +183,36 @@ func _check_segments(
 	for n: String in expected:
 		if not found.has(n):
 			errors.append("%s: no mesh %s" % [f, n])
+
+
+static func _is_hair(n: String) -> bool:
+	return n.begins_with("hair_") or n.begins_with("facial_hair_")
+
+
+## Errors unless every hair mesh stays within its triangle budget.
+func _check_hair_budget(
+	f: String, scene: Node, preset: Dictionary, errors: PackedStringArray
+) -> void:
+	var hair: Dictionary = preset.get("hair", {})
+	if hair.is_empty():
+		return
+	for m: MeshInstance3D in scene.find_children("*", "MeshInstance3D", true, false):
+		var n := String(m.name)
+		var limit := 0
+		if n.begins_with("facial_hair_"):
+			limit = int(hair.get("facial_max_tris", 0))
+		elif n.begins_with("hair_"):
+			limit = int(hair.get("max_tris", 0))
+		else:
+			continue
+		var tris := 0
+		for s in m.mesh.get_surface_count():
+			var idx: PackedInt32Array = m.mesh.surface_get_arrays(s)[Mesh.ARRAY_INDEX]
+			tris += idx.size() / 3
+		if tris > limit:
+			errors.append("%s: %s has %d triangles (budget %d)" % [f, n, tris, limit])
+		else:
+			print("%s: %s %d triangles" % [f, n, tris])
 
 
 ## Errors unless the face segment's mesh has a blend shape face_<n> for each
@@ -210,14 +249,14 @@ func _check_faces(f: String, scene: Node, preset: Dictionary, errors: PackedStri
 			print("%s: %s moves up to %.3f m" % [f, key, most])
 
 
-## Errors unless every mesh has a blend shape per build and each build moves
+## Errors unless every mesh but hair has a blend shape per build and each build moves
 ## some vertex of the body by BUILD_MIN_MOVE_M.
 func _check_builds(f: String, scene: Node, builds: Array, errors: PackedStringArray) -> void:
 	var most := {}
 	for m: MeshInstance3D in scene.find_children("*", "MeshInstance3D", true, false):
 		var mesh := m.mesh as ArrayMesh
-		if mesh == null:
-			continue
+		if mesh == null or _is_hair(String(m.name)):
+			continue  # hair sits on the head, which the builds barely change
 		var names := {}
 		for k in mesh.get_blend_shape_count():
 			names[String(mesh.get_blend_shape_name(k))] = k

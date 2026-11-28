@@ -16,7 +16,8 @@ Needs the MPFB extension installed in the Blender user resources in use
    "bodies": {"<id>": {"macros": {<MPFB macro>: value, ...}}, ...},
    "faces": [{<MPFB target>: weight, ...}, ...],   # optional
    "face_segment": "<segment>",                    # where the face keys live
-   "eyes": true}                                   # optional: keep the eyeballs
+   "eyes": true,                                   # optional: keep the eyeballs
+   "hair": {...}}                                  # optional: see character_hair.py
 
 For every body the MPFB "height" macro is solved so that the eyes (the mean
 of the left and right eye joints) stand at eye_height_m with the feet at 0.
@@ -60,6 +61,9 @@ import bpy
 from mathutils import Matrix
 
 bpy.ops.preferences.addon_enable(module="bl_ext.blender_org.mpfb")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+import character_hair  # noqa: E402
 
 from bl_ext.blender_org.mpfb.entities.objectproperties import HumanObjectProperties  # noqa: E402
 from bl_ext.blender_org.mpfb.services.humanservice import HumanService  # noqa: E402
@@ -503,8 +507,9 @@ def main():
         keep_eyes = bool(preset.get("eyes", False))
         remove_helpers(body, EYEBALL_GROUPS if keep_eyes else ())
         eyes = [split_eyes(body)] if keep_eyes else []
+        hair = character_hair.parts(body, eye, preset)
         parts = garment_parts(body, rig, preset) + split_segments(body, rig, preset["segments"])
-        parts += eyes
+        parts += eyes + hair
         for part in parts:
             prune_keys(part)
         marker = add_eye_marker(rig, eye)
