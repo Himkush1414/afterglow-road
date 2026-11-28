@@ -201,7 +201,7 @@ func _space(points: Dictionary) -> AnimationNodeBlendSpace2D:
 	space.min_space = Vector2(-reach, -reach)
 	space.max_space = Vector2(reach, reach)
 	for clip: String in points:
-		space.add_blend_point(_clip(clip), points[clip])
+		space.add_blend_point(_clip(clip), points[clip], -1, StringName(clip))
 	return space
 
 
