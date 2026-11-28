@@ -8,6 +8,15 @@ edge-preserving Kuwahara smoothing removes grain; broad brush variation at
 2-3 scales; the normal map comes from a blurred height so only form-level
 relief remains. Every step wraps around the edges, so textures tile.
 
+A material may take its large shapes from a CC0 photo texture (22 §2):
+"source": {"colour": <image>, "height": <image, optional>, "weight": 0..1}
+(paths relative to the preset file). The source's grey value (and its height
+image, else the grey value) is blended by `weight` into the detail and height
+noise before the palette reduction, so the colours stay the preset palette
+and the smoothing still removes photographic grain. Sources should be
+tileable and preset-size square (they are resized otherwise, which can leave
+a faint seam). Without a source the output is unchanged.
+
 Writes <out>/hi/<category>_<name>_ah.png (albedo sRGB + height in alpha) and
 <out>/hi/<category>_<name>_nra.png (normal x, normal y (OpenGL, Y+),
 roughness, ambient occlusion), the same at half size under <out>/lo/, and
@@ -118,15 +127,46 @@ def check_material(m):
         raise ValueError(f"{m['name']}: palette has {n} colours, needs {PALETTE_MIN}-{PALETTE_MAX}")
     if not 2 <= len(m["brush"]["cells"]) <= 3:
         raise ValueError(f"{m['name']}: brush variation needs 2-3 scales")
+    src = m.get("source")
+    if src is not None and not 0.0 <= float(src.get("weight", -1)) <= 1.0:
+        raise ValueError(f"{m['name']}: source weight must be in 0..1")
 
 
-def paint(m, size):
-    """(albedo_height RGBA uint8, normal_rough_ao RGBA uint8) for one material."""
+def load_grey(path, size):
+    """Grey value in [0, 1] of an image file (8-bit colour or 16-bit grey),
+    resized to size x size when it is not already."""
+    if not os.path.isfile(path):
+        raise ValueError(f"source file missing: {path}")
+    with Image.open(path) as im:
+        if im.size != (size, size):
+            im = im.resize((size, size), Image.LANCZOS)
+        a = np.asarray(im)
+    if a.dtype == np.uint8:
+        a = a.astype(np.float64) / 255.0
+    else:
+        a = a.astype(np.float64) / 65535.0
+    if a.ndim == 3:
+        a = a[..., :3] @ np.array([0.299, 0.587, 0.114])
+    return a
+
+
+def paint(m, size, base_dir="."):
+    """(albedo_height RGBA uint8, normal_rough_ao RGBA uint8) for one material;
+    `base_dir`: where a source's relative paths start."""
     check_material(m)
     rng = np.random.default_rng(m["seed"])
     pat = m["pattern"]
     height = fbm(rng, size, pat["cells"], pat["weights"])
     detail = fbm(rng, size, pat["detail_cells"], pat["detail_weights"])
+    src = m.get("source")
+    if src is not None:
+        w = float(src["weight"])
+        grey = normalise(load_grey(os.path.join(base_dir, src["colour"]), size))
+        relief = grey
+        if "height" in src:
+            relief = normalise(load_grey(os.path.join(base_dir, src["height"]), size))
+        height = normalise((1.0 - w) * height + w * relief)
+        detail = normalise((1.0 - w) * detail + w * grey)
     # palette reduction: dark to light by the blend of height and detail
     palette = np.asarray(m["palette"], dtype=np.float64) / 255.0
     palette = palette[np.argsort(palette @ np.array([0.299, 0.587, 0.114]))]
@@ -166,13 +206,13 @@ def mean_albedo(ah):
     return [int(v) for v in np.floor(linear_to_srgb(lin) * 255.0 + 0.5)]
 
 
-def write(preset, out):
+def write(preset, out, base_dir="."):
     category, size = preset["category"], preset["size"]
     manifest = {"category": category, "size": size, "materials": []}
     for d in ("hi", "lo"):
         os.makedirs(os.path.join(out, d), exist_ok=True)
     for m in preset["materials"]:
-        ah, nra = paint(m, size)
+        ah, nra = paint(m, size, base_dir)
         for name, img in (("ah", ah), ("nra", nra)):
             base = f"{category}_{m['name']}_{name}.png"
             Image.fromarray(img, "RGBA").save(os.path.join(out, "hi", base), optimize=False)
@@ -190,7 +230,8 @@ def main(argv=None):
     args = ap.parse_args(argv)
     with open(args.preset, encoding="utf-8") as f:
         preset = json.load(f)
-    for m in write(preset, args.out)["materials"]:
+    base_dir = os.path.dirname(os.path.abspath(args.preset))
+    for m in write(preset, args.out, base_dir)["materials"]:
         print(f"{m['name']}: mean albedo {m['mean_albedo']}")
     return 0
 
