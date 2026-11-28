@@ -3,9 +3,10 @@ extends AnimationTree
 ## Whole-body locomotion of the player rig (10 §5, layer 1): a state machine
 ## of stand and crouch blend spaces (sideways speed x, forward speed y, in
 ## m/s, with the clips placed at the motor's own gait speeds from the
-## "movement" tuning group) and the jump one-shots (start, air, land). Each
-## frame it reads the motor's velocity in the view's frame, its stance and
-## its state; the motor's jumped and landed signals start the jump clips.
+## "movement" tuning group), the jump one-shots (start, air, land) and the
+## mantle one-shot, stretched to the motor's mantle time. Each frame it
+## reads the motor's velocity in the view's frame, its stance and its state;
+## the motor's jumped, landed and mantle_started signals start the one-shots.
 ## Clip names: the player clip library's (idle, walk_f, walk_b, walk_l, ...).
 
 const STAND := &"stand"
@@ -13,8 +14,16 @@ const CROUCH := &"crouch"
 const JUMP_START := &"jump_start"
 const AIR := &"air"
 const JUMP_LAND := &"jump_land"
+const MANTLE := &"mantle"
 const KEYS: Array[String] = [
-	"walk_ms", "jog_ms", "sprint_ms", "crouch_ms", "back_mult", "strafe_mult", "anim_blend_s"
+	"walk_ms",
+	"jog_ms",
+	"sprint_ms",
+	"crouch_ms",
+	"back_mult",
+	"strafe_mult",
+	"anim_blend_s",
+	"mantle_s",
 ]
 
 var errors: PackedStringArray = []
@@ -23,6 +32,7 @@ var motor: PlayerMotor
 var _playback: AnimationNodeStateMachinePlayback
 var _jumping := false
 var _landing := false
+var _mantling := false
 
 
 ## Animates the rig under `rig_root` (holding %GeneralSkeleton) with the
@@ -40,6 +50,7 @@ func setup(body: PlayerMotor, library: AnimationLibrary, rig_root: Node, cfg: Di
 	if motor != null and motor != body:
 		motor.jumped.disconnect(_on_jumped)
 		motor.landed.disconnect(_on_landed)
+		motor.mantle_started.disconnect(_on_mantle_started)
 	motor = body
 	if has_animation_library(""):
 		remove_animation_library("")
@@ -53,6 +64,8 @@ func setup(body: PlayerMotor, library: AnimationLibrary, rig_root: Node, cfg: Di
 		motor.jumped.connect(_on_jumped)
 	if not motor.landed.is_connected(_on_landed):
 		motor.landed.connect(_on_landed)
+	if not motor.mantle_started.is_connected(_on_mantle_started):
+		motor.mantle_started.connect(_on_mantle_started)
 	return true
 
 
@@ -62,6 +75,10 @@ func _on_jumped() -> void:
 
 func _on_landed(_impact_ms: float, _damage_hp: float) -> void:
 	_landing = true
+
+
+func _on_mantle_started(_rise_m: float) -> void:
+	_mantling = true
 
 
 func _process(_delta: float) -> void:
@@ -77,7 +94,14 @@ func update_state() -> void:
 	set("parameters/%s/blend_position" % CROUCH, blend)
 	var ground := CROUCH if motor.crouched else STAND
 	var current := _playback.get_current_node()
-	if _jumping:
+	if _mantling:
+		_mantling = false
+		_jumping = false
+		_landing = false
+		_playback.travel(MANTLE)
+	elif current == MANTLE or motor.state == PlayerMotor.State.MANTLING:
+		pass  # the mantle clip runs to its end, then returns to stand by itself
+	elif _jumping:
 		_jumping = false
 		_playback.travel(JUMP_START)
 	elif _landing:
@@ -99,7 +123,7 @@ func current_state() -> StringName:
 ## Every clip the animator plays.
 static func clip_names() -> Array[String]:
 	var out: Array[String] = [
-		"idle", "sprint", "crouch_idle", "jump_start", "jump_air", "jump_land"
+		"idle", "sprint", "crouch_idle", "jump_start", "jump_air", "jump_land", "mantle"
 	]
 	for d: String in ["f", "b", "l", "r"]:
 		out.append_array(["walk_" + d, "jog_" + d, "crouch_walk_" + d])
@@ -141,6 +165,11 @@ func _build(cfg: Dictionary) -> AnimationNodeStateMachine:
 	sm.add_node(JUMP_START, _clip("jump_start"))
 	sm.add_node(AIR, _clip("jump_air"))
 	sm.add_node(JUMP_LAND, _clip("jump_land"))
+	var mantle := _clip("mantle")
+	mantle.use_custom_timeline = true
+	mantle.timeline_length = float(cfg.mantle_s)
+	mantle.stretch_time_scale = true
+	sm.add_node(MANTLE, mantle)
 	var blend := float(cfg.anim_blend_s)
 	for pair: Array in [
 		[STAND, CROUCH],
@@ -152,10 +181,15 @@ func _build(cfg: Dictionary) -> AnimationNodeStateMachine:
 		[JUMP_START, JUMP_LAND],
 		[AIR, JUMP_LAND],
 		[JUMP_LAND, CROUCH],
+		[STAND, MANTLE],
+		[CROUCH, MANTLE],
+		[JUMP_START, MANTLE],
+		[AIR, MANTLE],
 	]:
 		sm.add_transition(pair[0], pair[1], _transition(blend, false))
 	sm.add_transition(JUMP_START, AIR, _transition(blend, true))
 	sm.add_transition(JUMP_LAND, STAND, _transition(blend, true))
+	sm.add_transition(MANTLE, STAND, _transition(blend, true))
 	return sm
 
 
