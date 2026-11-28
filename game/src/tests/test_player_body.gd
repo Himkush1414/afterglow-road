@@ -4,7 +4,7 @@ extends TestCase
 ## and hidden from the camera, body shader materials (double-sided
 ## garments), camera-relative matrices free of world positions, placement at
 ## the motor with the view's yaw, chest pitch after the animation, head eye
-## input.
+## input, arm retract from the forward wall cast.
 
 const DT := 1.0 / 60.0
 const HEAD_SEGMENTS: Array = ["head"]
@@ -194,3 +194,37 @@ func test_head_offset_uses_this_frame() -> void:
 	_motor.global_position = Vector3(10, 2, 5)  # moved; body not placed yet
 	var head: Vector3 = _cam.head_offset.call()
 	check_near(head.distance_to(Vector3(0, 1.6, 0)), 0.0, 1e-4, "head above the motor: %s" % head)
+
+
+func test_wall_cast_sets_the_arm_retract() -> void:
+	if not check(_setup(), ", ".join(_body.errors)):
+		return
+	var cfg := ContentDB.tuning("body")
+	var cast_m := float(cfg.wall_cast_m)
+	var radius := float(cfg.wall_cast_radius_m)
+	_motor.process_mode = Node.PROCESS_MODE_DISABLED  # no falling
+	_motor.global_position = Vector3.ZERO
+	var wall := StaticBody3D.new()
+	var shape := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(4, 3, 0.2)
+	shape.shape = box
+	wall.add_child(shape)
+	_root.add_child(wall)
+	var chest_y := 1.2  # synthetic rig: Hips 1.0 + Chest 0.2
+	for d: float in [cast_m * 2.0, 0.4, radius * 0.5]:
+		# wall face d metres in front of the chest (yaw 0 faces -Z)
+		wall.global_position = Vector3(0, chest_y, -(d + 0.1))
+		await tree.physics_frame
+		await tree.physics_frame
+		_body.update_retract()
+		var want := clampf(1.0 - maxf(0.0, d - radius) / cast_m, 0.0, 1.0)
+		check_near(
+			_body.arm_retract, want, 0.02, "wall %.2f m: retract %.3f" % [d, _body.arm_retract]
+		)
+	wall.global_position = Vector3(0, chest_y, -0.5)  # 0.4 m ahead, outside the sphere
+	await tree.physics_frame
+	await tree.physics_frame
+	_cam.yaw = PI  # turn away: the wall is behind
+	_body.update_retract()
+	check_near(_body.arm_retract, 0.0, 1e-6, "nothing ahead after turning")
