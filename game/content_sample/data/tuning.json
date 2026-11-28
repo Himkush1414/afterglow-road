@@ -531,5 +531,11 @@
 		"two_handed_poses": [
 			"tool_2h"
 		]
+	},
+	"mirror": {
+		"far_desktop_m": 30,
+		"far_phone_m": 12,
+		"crack_impact_j": 25,
+		"tint": 0.92
 	}
 }
