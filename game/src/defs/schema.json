@@ -2623,6 +2623,16 @@
 					"max": 1
 				}
 			}
+		},
+		"tuning_body": {
+			"type": "object",
+			"fields": {
+				"chest_pitch_share": {
+					"type": "number",
+					"min": 0,
+					"max": 1
+				}
+			}
 		}
 	},
 	"files": {
@@ -2644,6 +2654,13 @@
 							"type": "string"
 						},
 						"min_len": 1
+					},
+					"head_segments": {
+						"type": "list",
+						"of": {
+							"type": "string"
+						},
+						"optional": true
 					}
 				}
 			}
@@ -2720,6 +2737,10 @@
 					},
 					"grass": {
 						"type": "tuning_grass",
+						"optional": true
+					},
+					"body": {
+						"type": "tuning_body",
 						"optional": true
 					}
 				}
