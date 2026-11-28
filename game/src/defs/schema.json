@@ -2631,6 +2631,14 @@
 					"type": "number",
 					"min": 0,
 					"max": 1
+				},
+				"wall_cast_m": {
+					"type": "number",
+					"min": 0.01
+				},
+				"wall_cast_radius_m": {
+					"type": "number",
+					"min": 0.01
 				}
 			}
 		}

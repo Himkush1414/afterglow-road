@@ -464,6 +464,8 @@
 		"stick_deg_s": 160
 	},
 	"body": {
-		"chest_pitch_share": 0.35
+		"chest_pitch_share": 0.35,
+		"wall_cast_m": 0.6,
+		"wall_cast_radius_m": 0.1
 	}
 }

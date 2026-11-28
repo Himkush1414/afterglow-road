@@ -10,13 +10,16 @@ extends Node3D
 ## still do. Every surface gets the body shader (10 §2 rule 5): camera-space
 ## drawing for the main camera through a per-mesh view_local matrix built
 ## from local transforms only; garments draw both faces (open ends, Q-124).
+## A sphere swept forward from the chest each physics tick gives
+## `arm_retract` (10 §2 rule 6), which blends the arms toward the held-close
+## pose so hands and tools stay out of walls.
 ## Numbers: the "body" tuning group; head segments: customization.json.
 
 ## After PlayerCamera (-30), before the mirror camera (10 §2 rule 11).
 const PROCESS_PRIORITY := -20
 ## Render layer (1-based) of the head meshes (10 §2 rule 4).
 const HEAD_LAYER := 2
-const KEYS: Array[String] = ["chest_pitch_share"]
+const KEYS: Array[String] = ["chest_pitch_share", "wall_cast_m", "wall_cast_radius_m"]
 const SKIN_PREFIX := "skin_"
 const BODY_SHADER := preload("res://shaders/body.gdshader")
 const BODY_DOUBLE_SHADER := preload("res://shaders/body_double.gdshader")
@@ -28,8 +31,13 @@ var rig: Node3D
 var skeleton: Skeleton3D
 var animator: PlayerAnimator
 var spine: SpinePitch
+## 0 (nothing within the wall cast) .. 1 (touching): how far the arms pull in.
+var arm_retract := 0.0
 
 var _head_bone := -1
+var _chest_bone := -1
+var _cast_query: PhysicsShapeQueryParameters3D
+var _cast_m := 0.0
 ## Body meshes and their body-shader materials (one per surface).
 var _meshes: Array[MeshInstance3D] = []
 var _materials: Array[Array] = []
@@ -69,7 +77,14 @@ func setup(
 	if skeleton == null or _head_bone < 0:
 		errors.append("body: rig has no skeleton with a Head bone")
 		return false
+	_chest_bone = skeleton.find_bone("Chest")
 	_set_layers(head_segments)
+	_cast_m = float(cfg.wall_cast_m)
+	var sphere := SphereShape3D.new()
+	sphere.radius = float(cfg.wall_cast_radius_m)
+	_cast_query = PhysicsShapeQueryParameters3D.new()
+	_cast_query.shape = sphere
+	_cast_query.exclude = [motor.get_rid()]
 	view.cull_mask &= ~head_layer_mask()
 	view.head_offset = head_offset
 	spine = SpinePitch.new()
@@ -94,6 +109,32 @@ static func head_layer_mask() -> int:
 func _process(_delta: float) -> void:
 	if motor != null:
 		update_body()
+
+
+func _physics_process(_delta: float) -> void:
+	if motor != null and _cast_query != null:
+		update_retract()
+
+
+## Sweeps the wall cast from the chest along the view's yaw (physics state,
+## so call it in a physics tick) and sets `arm_retract`.
+func update_retract() -> void:
+	var chest := Vector3(0.0, 1.0, 0.0)
+	if _chest_bone >= 0:
+		chest = local_transform(skeleton) * skeleton.get_bone_global_pose(_chest_bone).origin
+	var start := motor.global_position + _turn() * chest
+	var forward := Basis(Vector3.UP, view.yaw) * Vector3.FORWARD
+	_cast_query.transform = Transform3D(Basis.IDENTITY, start)
+	_cast_query.motion = forward * _cast_m
+	var space := get_world_3d().direct_space_state
+	var hit := space.cast_motion(_cast_query)
+	var free := 1.0 if hit.is_empty() else float(hit[0])
+	if free >= 1.0:
+		# A sphere that starts inside a wall is not reported by the sweep.
+		_cast_query.motion = Vector3.ZERO
+		if not space.intersect_shape(_cast_query, 1).is_empty():
+			free = 0.0
+	arm_retract = clampf(1.0 - free, 0.0, 1.0)
 
 
 ## Places the rig for this rendered frame, passes on the view pitch and
