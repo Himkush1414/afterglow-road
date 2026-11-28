@@ -2,7 +2,7 @@ extends TestCase
 ## PlayerAnimator on a synthetic rig: every clip turns the Hips bone by its
 ## own angle, so the pose shows which clip plays. Blend positions follow the
 ## motor's velocity in the view's frame; crouch, jump start, air, land and
-## mantle states follow the motor.
+## mantle and swim states follow the motor.
 
 const DT := 1.0 / 60.0
 
@@ -143,3 +143,21 @@ func test_mantle_plays_for_the_mantle_time() -> void:
 	_motor.state = PlayerMotor.State.GROUNDED
 	_run(mantle_s * 0.5 + 0.3)
 	check_eq(_anim.current_state(), PlayerAnimator.STAND, "stand after the mantle")
+
+
+func test_swim_state_blends_by_speed() -> void:
+	if not _ready_rig():
+		return
+	var swim_ms := float(ContentDB.tuning("movement").swim_ms)
+	_run(0.3)
+	_motor.state = PlayerMotor.State.SWIMMING
+	_run(0.5)
+	check_eq(_anim.current_state(), PlayerAnimator.SWIM, "swim state")
+	check_near(_hips_deg(), _angles.swim_idle, 0.1, "still water: swim idle")
+	_motor.velocity = Vector3(0, 0, -swim_ms)
+	_run(0.5)
+	check_near(_hips_deg(), _angles.swim_forward, 0.1, "at swim speed: swim forward")
+	_motor.velocity = Vector3.ZERO
+	_motor.state = PlayerMotor.State.GROUNDED
+	_run(0.5)
+	check_eq(_anim.current_state(), PlayerAnimator.STAND, "back to stand out of the water")
