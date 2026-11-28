@@ -9,6 +9,12 @@ uniform mat4 view_local;
 uniform vec4 albedo : source_color = vec4(1.0);
 uniform sampler2D albedo_texture : source_color, hint_default_white, filter_linear_mipmap;
 uniform float roughness : hint_range(0.0, 1.0) = 1.0;
+// Render checks: front faces glow green, back faces red, lighting-free.
+uniform bool debug_faces = false;
+// Double-sided surfaces show their back faces to mirrors only: the
+// first-person camera would see a garment's inside through the hidden
+// head's neck opening (T-10-8). Render checks switch this on as a control.
+uniform bool back_faces_first_person = false;
 
 void vertex() {
 	mat4 m = ((CAMERA_VISIBLE_LAYERS & 2u) == 0u) ? view_local : MODELVIEW_MATRIX;
@@ -19,7 +25,14 @@ void vertex() {
 }
 
 void fragment() {
+	if (!FRONT_FACING && !back_faces_first_person && (CAMERA_VISIBLE_LAYERS & 2u) == 0u) {
+		discard;
+	}
 	vec4 c = albedo * texture(albedo_texture, UV);
 	ALBEDO = c.rgb;
 	ROUGHNESS = roughness;
+	if (debug_faces) {
+		ALBEDO = vec3(0.0);
+		EMISSION = FRONT_FACING ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+	}
 }
