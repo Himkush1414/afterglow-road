@@ -536,6 +536,7 @@
 		"far_desktop_m": 30,
 		"far_phone_m": 12,
 		"crack_impact_j": 25,
-		"tint": 0.92
+		"tint": 0.92,
+		"live_range_m": 6
 	}
 }
