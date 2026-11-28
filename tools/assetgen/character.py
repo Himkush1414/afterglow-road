@@ -13,7 +13,10 @@ Needs the MPFB extension installed in the Blender user resources in use
    "conform_bones": [<bone>, ...],  # small joints taken from the mean body
    "garments": {"<garment>": {"segments": [...], "offset_m": float,
                               "smooth": iterations}, ...},
-   "bodies": {"<id>": {"macros": {<MPFB macro>: value, ...}}, ...}}
+   "bodies": {"<id>": {"macros": {<MPFB macro>: value, ...}}, ...},
+   "faces": [{<MPFB target>: weight, ...}, ...],   # optional
+   "face_segment": "<segment>",                    # where the face keys live
+   "eyes": true}                                   # optional: keep the eyeballs
 
 For every body the MPFB "height" macro is solved so that the eyes (the mean
 of the left and right eye joints) stand at eye_height_m with the feet at 0.
@@ -23,7 +26,12 @@ gets two twist bones (lowerarm_twist_01/02_<side>, children of the lower
 arm) at the preset's shares, and the lower arm's weights are split between
 it and them along the forearm. An empty "eye_marker" child of the head bone
 marks the eye midpoint of each body. Each build of the preset becomes a
-shape key build_<name>: the body with the build's macros over its own.
+shape key build_<name>: the body with the build's macros over its own; each
+face of the preset becomes a shape key face_<n> (1-based): the body with
+those MPFB detail targets loaded over its macros (kept only on the parts it
+moves, normally the face segment).
+With "eyes", MPFB's eyeball helpers are kept as one mesh "eyes" with a
+material "eyes" (tinted by the eye colour in the game).
 Helper geometry (everything outside MPFB's "body" group) is removed. The
 body is then split into one mesh object per segment (skin_<segment>): a
 face goes to the segment of the bone holding most weight over its vertices.
@@ -59,6 +67,10 @@ from bl_ext.blender_org.mpfb.services.targetservice import TargetService  # noqa
 
 RIG = "game_engine"
 EYE_GROUPS = ("joint-l-eye", "joint-r-eye")
+EYEBALL_GROUPS = ("helper-l-eye", "helper-r-eye")
+EYES = "eyes"
+## A shape key moving no vertex further than this is dropped from a part.
+KEY_EPSILON_M = 1e-5
 RACES = ("asian", "caucasian", "african")
 EYE_TOLERANCE_M = 0.001
 SOLVE_STEPS = 30
@@ -217,14 +229,18 @@ def add_eye_marker(rig, point):
     return marker
 
 
-def add_build_keys(body, macros, builds, correction=None):
+def add_build_keys(body, macros, builds, correction=None, faces=()):
     """Shape keys build_<name> from the body's positions with each build's
-    macros over `macros`; the body is left baked at `macros`. `correction`
-    (one vector per vertex) is added to the basis and every key."""
+    macros over `macros`, and face_<n> with each face's detail targets over
+    `macros`; the body is left baked at `macros`. `correction` (one vector
+    per vertex) is added to the basis and every key."""
     shapes = {}
     for name in sorted(builds):
         set_macros(body, dict(macros, **builds[name]))
-        shapes[name] = [body.matrix_world.inverted() @ p for p in positions(body)]
+        shapes["build_" + name] = [body.matrix_world.inverted() @ p for p in positions(body)]
+    for n, face in enumerate(faces, start=1):
+        set_macros(body, macros)
+        shapes["face_%d" % n] = face_positions(body, face)
     set_macros(body, macros)
     TargetService.bake_targets(body)
     if correction:
@@ -235,9 +251,26 @@ def add_build_keys(body, macros, builds, correction=None):
                 pts[i] = pts[i] + d
     body.shape_key_add(name="Basis", from_mix=False)
     for name, pts in shapes.items():
-        key = body.shape_key_add(name="build_" + name, from_mix=False)
+        key = body.shape_key_add(name=name, from_mix=False)
         for v, p in zip(key.data, pts):
             v.co = p
+
+
+def face_positions(body, face):
+    """Local positions with the face's MPFB detail targets loaded on top of
+    the current macros; the targets are removed again."""
+    added = []
+    for target in sorted(face):
+        path = TargetService.target_full_path(target)
+        if not path:
+            raise SystemExit("unknown MPFB target %s" % target)
+        before = {k.name for k in body.data.shape_keys.key_blocks}
+        TargetService.load_target(body, path, weight=float(face[target]))
+        added += [k.name for k in body.data.shape_keys.key_blocks if k.name not in before]
+    pts = [body.matrix_world.inverted() @ p for p in positions(body)]
+    for name in added:
+        body.shape_key_remove(body.data.shape_keys.key_blocks[name])
+    return pts
 
 
 def conform_correction(body, mean_positions, bones):
@@ -252,15 +285,16 @@ def conform_correction(body, mean_positions, bones):
     return out
 
 
-def remove_helpers(body):
-    """Deletes every vertex outside the "body" group and MPFB's mask."""
+def remove_helpers(body, extra=()):
+    """Deletes every vertex outside the "body" group (and the `extra`
+    groups) and MPFB's mask."""
     for m in [m for m in body.modifiers if m.type == "MASK"]:
         body.modifiers.remove(m)
-    keep = body.vertex_groups["body"].index
+    groups = {body.vertex_groups[n].index for n in ("body",) + tuple(extra)}
     mesh = bmesh.new()
     mesh.from_mesh(body.data)
     layer = mesh.verts.layers.deform.verify()
-    doomed = [v for v in mesh.verts if keep not in v[layer]]
+    doomed = [v for v in mesh.verts if not groups.intersection(v[layer].keys())]
     bmesh.ops.delete(mesh, geom=doomed, context="VERTS")
     mesh.to_mesh(body.data)
     mesh.free()
@@ -324,6 +358,42 @@ def split_segments(body, rig, segments, prefix=None):
     for mat in tags:
         bpy.data.materials.remove(mat)
     return out
+
+
+def split_eyes(body):
+    """Separates the eyeball helpers from `body` into the mesh "eyes" with a
+    material "eyes"; returns it."""
+    bpy.ops.object.select_all(action="DESELECT")
+    body.select_set(True)
+    bpy.context.view_layer.objects.active = body
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="DESELECT")
+    for name in EYEBALL_GROUPS:
+        body.vertex_groups.active_index = body.vertex_groups[name].index
+        bpy.ops.object.vertex_group_select()
+    bpy.ops.mesh.separate(type="SELECTED")
+    bpy.ops.object.mode_set(mode="OBJECT")
+    eyes = [o for o in bpy.context.selected_objects if o.type == "MESH" and o != body][0]
+    eyes.name = EYES
+    eyes.data.name = EYES
+    eyes.data.materials.clear()
+    eyes.data.materials.append(bpy.data.materials.get(EYES) or bpy.data.materials.new(name=EYES))
+    return eyes
+
+
+def prune_keys(obj):
+    """Drops shape keys that move no vertex of `obj` (face keys on parts
+    away from the face); keeps the basis and every build key."""
+    keys = obj.data.shape_keys
+    if keys is None:
+        return
+    basis = keys.key_blocks[0]
+    for key in list(keys.key_blocks)[1:]:
+        if key.name.startswith("build_"):
+            continue
+        moved = max(((a.co - b.co).length for a, b in zip(key.data, basis.data)), default=0.0)
+        if moved < KEY_EPSILON_M:
+            obj.shape_key_remove(key)
 
 
 def garment_parts(body, rig, preset):
@@ -427,9 +497,16 @@ def main():
         eye = eye_point(body)
         split_forearm_weights(body, rig, shares)
         correction = conform_correction(body, mean_positions, preset.get("conform_bones", []))
-        add_build_keys(body, solved[body_id], preset.get("builds", {}), correction)
-        remove_helpers(body)
+        add_build_keys(
+            body, solved[body_id], preset.get("builds", {}), correction, preset.get("faces", [])
+        )
+        keep_eyes = bool(preset.get("eyes", False))
+        remove_helpers(body, EYEBALL_GROUPS if keep_eyes else ())
+        eyes = [split_eyes(body)] if keep_eyes else []
         parts = garment_parts(body, rig, preset) + split_segments(body, rig, preset["segments"])
+        parts += eyes
+        for part in parts:
+            prune_keys(part)
         marker = add_eye_marker(rig, eye)
         export(os.path.join(a.out, body_id + ".glb"), [rig, marker] + parts)
         bpy.data.objects.remove(marker, do_unlink=True)
