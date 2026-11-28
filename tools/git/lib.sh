@@ -89,12 +89,12 @@ require_owner_authorship() {
 ${wrong}"
 }
 
-# Number of queued (not yet replayed) entries.
+# Number of queued (not yet replayed) entries; review files and markers do not count.
 queue_length() {
 	local count=0 entry
 	if [[ -d "${QUEUE_DIR}" ]]; then
 		for entry in "${QUEUE_DIR}"/[0-9][0-9][0-9][0-9]-*; do
-			[[ -e "${entry}" ]] && count=$((count + 1))
+			[[ -e "${entry}" && "${entry}" != *.review && "${entry}" != *.posted ]] && count=$((count + 1))
 		done
 	fi
 	printf '%d\n' "${count}"
@@ -126,6 +126,7 @@ gh_gap() {
 }
 
 # Run a gh command with these back-off rules:
+#   missing permission (403 naming a permission): fail at once;
 #   rate limiting (403/429/secondary limit): wait 60 s, doubling to 15 min;
 #   transient states (mergeability still being computed, 5xx): retry after 10 s.
 # Anything else fails at once. Never loops tightly.
@@ -138,6 +139,11 @@ gh_retry() {
 		if ((status == 0)); then
 			[[ -n "${output}" ]] && printf '%s\n' "${output}"
 			return 0
+		fi
+		# A missing permission is also an HTTP 403, but waiting never fixes it.
+		if grep -qiE 'not accessible|permission' <<<"${output}" && ! grep -qiE 'rate limit' <<<"${output}"; then
+			printf '%s\n' "${output}" >&2
+			return "${status}"
 		fi
 		if grep -qiE 'rate limit|HTTP 403|HTTP 429|submitted too quickly' <<<"${output}"; then
 			note "rate limited; waiting ${backoff}s before retrying: $*"

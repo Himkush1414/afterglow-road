@@ -18,14 +18,16 @@ repository.
 
 ## Working on the repository
 
-Every change goes through a small branch and a pull request that is merged
-with a merge commit. The helper scripts do this in one step each:
+Every change goes through an issue, a small branch and a pull request that
+gets a written self-review and is then merged with a merge commit. The helper
+scripts do this in one step each:
 
 ```bash
 tools/git/install_hooks.sh                 # once per clone: enable the pre-commit secret scan
+tools/git/unit.sh issue <file|->           # open the issue for the task
 tools/git/unit.sh start <type>/<slug>      # branch from an up-to-date main
 # ... make one logical change, commit with a Conventional Commit message ...
-tools/git/unit.sh finish <file|->          # push, open the pull request, merge
+tools/git/unit.sh finish <file|-> --review <file>   # push, open the PR, post the review, merge
 ```
 
 Checks:
